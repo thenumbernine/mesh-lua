@@ -20,7 +20,8 @@ local function pathOfFilename(fn)
 	return fn:sub(1,lastSlashIndex)
 end
 
-local function tonumber1(x) return tonumber(x) end
+-- truncate arguments
+local function tonumber1(x) return tonumber(x) or 0 end
 
 local WavefrontOBJ = class()
 
@@ -125,7 +126,7 @@ function WavefrontOBJ:loadMtl(filename)
 	end
 end
 
-function WavefrontOBJ:draw()
+function WavefrontOBJ:draw(args)
 	-- this is compiled, so take your time drawing it
 	-- just be sure to minimize the hardware cost (ie texture & prim switches)
 	gl.glColor3f(1,1,1)
@@ -133,11 +134,11 @@ function WavefrontOBJ:draw()
 	gl.glDisable(gl.GL_CULL_FACE)
 	local curtex
 	for mtlname, fs in pairs(self.fsForMtl) do
-		if mtlname ~= '' then	-- cutting out the ''
+		if mtlname ~= '' then	-- cutting out the '' ... TODO just show this texture-less?
 			local mtl = assert(self.mtllib[mtlname])
 
 			assert(mtl.name == mtlname)
-			if mtl.tex then
+			if mtl.tex and not (args and args.disableTextures) then
 				curtex = mtl.tex
 				curtex:enable()
 				curtex:bind()
@@ -150,8 +151,12 @@ function WavefrontOBJ:draw()
 			if #fs.tris > 0 then
 				for _,vis in ipairs(fs.tris) do
 					for _,vi in ipairs(vis) do
-						if vi.vt then gl.glTexCoord2f(self.vts[vi.vt]:unpack()) end
-						if vi.vn then gl.glNormal3f(self.vns[vi.vn]:unpack()) end
+						if vi.vt then
+							gl.glTexCoord2f(self.vts[vi.vt]:unpack())
+						end
+						if vi.vn then
+							gl.glNormal3f(self.vns[vi.vn]:unpack())
+						end
 						gl.glVertex3f(self.vs[vi.v]:unpack())
 					end
 				end
@@ -161,8 +166,12 @@ function WavefrontOBJ:draw()
 					assert(#vis == 4)
 					for _,i in ipairs{3,4,1,4,1,2} do
 						local vi = vis[i]
-						if vi.vt then gl.glTexCoord2f(self.vts[vi.vt]:unpack()) end
-						if vi.vn then gl.glNormal3f(self.vns[vi.vn]:unpack()) end
+						if vi.vt then
+							gl.glTexCoord2f(self.vts[vi.vt]:unpack())
+						end
+						if vi.vn then
+							gl.glNormal3f(self.vns[vi.vn]:unpack())
+						end
 						gl.glVertex3f(self.vs[vi.v]:unpack())
 					end
 				end
