@@ -1,3 +1,3 @@
-Your typical obj file viewer.
+Your typical obj file class.
 
-Works with mtl files and textures.
+`view.lua` = obj file viewer. Works with mtl files and textures.
