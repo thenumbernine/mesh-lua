@@ -69,26 +69,10 @@ function App:setCenterD1()
 		addEdge(a,c)
 		addEdge(b,c)
 	end
-	for mtlname, fs in pairs(obj.fsForMtl) do
-		if #fs.tris > 0 then
-			for _,vis in ipairs(fs.tris) do
-				local v1 = vis[1].v
-				local v2 = vis[2].v
-				local v3 = vis[3].v
-				addTri(vis[1].v, vis[2].v, vis[3].v)
-			end
-		end
-		-- TODO tesselate upon obj load?
-		if #fs.quads > 0 then
-			for _,vis in ipairs(fs.quads) do
-				local v1 = vis[1].v
-				local v2 = vis[2].v
-				local v3 = vis[3].v
-				local v4 = vis[4].v
-				addTri(v3,v4,v1)
-				addTri(v4,v1,v2)
-			end
-		end
+	for a,b,c in obj:triiter() do
+		addEdge(a.v,b.v)
+		addEdge(a.v,c.v)
+		addEdge(b.v,c.v)
 	end
 	local totalCOM = vec3()
 	local totalArea = 0
@@ -109,34 +93,16 @@ function App:setCenterD2()
 	local obj = self.obj
 	local totalCOM = vec3()
 	local totalArea = 0
-	local function addTri(a,b,c)
+	for i,j,k in obj:triiter() do
+		local a = obj.vs[i.v]
+		local b = obj.vs[j.v]
+		local c = obj.vs[k.v]
 		local ab = b - a
 		local ac = c - a
 		local area = ab:cross(ac):length() * .5
 		local com = (a + b + c) * (1/3)
 		totalCOM = totalCOM + com * area
 		totalArea = totalArea + area
-	end
-	for mtlname, fs in pairs(obj.fsForMtl) do
-		if #fs.tris > 0 then
-			for _,vis in ipairs(fs.tris) do
-				local v1 = obj.vs[vis[1].v]
-				local v2 = obj.vs[vis[2].v]
-				local v3 = obj.vs[vis[3].v]
-				addTri(v1,v2,v3)
-			end
-		end
-		-- TODO tesselate upon obj load?
-		if #fs.quads > 0 then
-			for _,vis in ipairs(fs.quads) do
-				local v1 = obj.vs[vis[1].v]
-				local v2 = obj.vs[vis[2].v]
-				local v3 = obj.vs[vis[3].v]
-				local v4 = obj.vs[vis[4].v]
-				addTri(v3,v4,v1)
-				addTri(v4,v1,v2)
-			end
-		end
 	end
 	self:setCenter(totalCOM / totalArea)
 end
