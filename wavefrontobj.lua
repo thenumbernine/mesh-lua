@@ -91,7 +91,7 @@ function WavefrontOBJ:init(filename)
 			if not foundVT then usingMtl = '' end
 			local fs = self.fsForMtl[usingMtl]
 			if not fs then
-				fs = table()
+				fs = {}
 				fs.tris = table()
 				fs.quads = table()
 				self.fsForMtl[usingMtl] = fs
@@ -132,7 +132,7 @@ function WavefrontOBJ:loadMtl(filename)
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
 		if lineType == 'newmtl' then
-			mtl = table()
+			mtl = {}
 			mtl.name = assert(words[1])
 			if self.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			self.mtllib[mtl.name] = mtl
@@ -198,9 +198,25 @@ function WavefrontOBJ:vtxiter()
 	end)
 end
 
-function WavefrontOBJ:faceiter()
+-- yields with each material collection for a particular material name
+-- default = no name = iterates over all materials
+function WavefrontOBJ:mtliter(mtlname)
 	return coroutine.wrap(function()
-		for mtlname, fs in pairs(self.fsForMtl) do
+		if mtlname then
+			local fs = self.fsForMtl[mtlname]
+			if fs then coroutine.yield(fs, mtlname) end
+		else
+			for mtlname, fs in pairs(self.fsForMtl) do
+				coroutine.yield(fs, mtlname)
+			end
+		end
+	end)
+end
+
+-- yields with each face in a particular material or in all materials
+function WavefrontOBJ:faceiter(mtlname)
+	return coroutine.wrap(function()
+		for fs in self:mtliter(mtlname) do
 			if #fs.tris > 0 then
 				for _,vis in ipairs(fs.tris) do
 					coroutine.yield(vis)	-- has [1].v [2].v [3].v for vtx indexes
@@ -216,9 +232,9 @@ function WavefrontOBJ:faceiter()
 end
 
 -- yields with vi object which has  .v .vt .vn as indexes into .vs[] .vts[] .vns[]
-function WavefrontOBJ:triiter()
+function WavefrontOBJ:triiter(mtlname)
 	return coroutine.wrap(function()
-		for vis in self:faceiter() do
+		for vis in self:faceiter(mtlname) do
 			if #vis == 3 then
 				coroutine.yield(vis[1], vis[2], vis[3])
 			elseif #vis == 4 then
@@ -232,9 +248,9 @@ function WavefrontOBJ:triiter()
 end
 
 -- same as above, but then yield for each vi individually
-function WavefrontOBJ:triindexiter()
+function WavefrontOBJ:triindexiter(mtlname)
 	return coroutine.wrap(function()
-		for i,j,k in self:triiter() do
+		for i,j,k in self:triiter(mtlname) do
 			coroutine.yield(i)
 			coroutine.yield(j)
 			coroutine.yield(k)
@@ -249,7 +265,10 @@ function WavefrontOBJ:draw(args)
 	for mtlname, fs in pairs(self.fsForMtl) do
 		local mtl = assert(self.mtllib[mtlname])
 		assert(not mtl or mtl.name == mtlname)
-		if mtl and mtl.tex_Kd and not (args and args.disableTextures) then
+		if mtl
+		and mtl.tex_Kd 
+		and not (args and args.disableTextures) 
+		then
 			-- TODO use .Ka, Kd, Ks, Ns, etc
 			-- with fixed pipeline?  opengl lighting?
 			-- with a shader in the wavefrontobj lib? 
@@ -258,18 +277,20 @@ function WavefrontOBJ:draw(args)
 			curtex:enable()
 			curtex:bind()
 			gl.glColor3f(1,1,1)
-		elseif curtex then
-			curtex:unbind()
-			curtex:disable()
-			curtex = nil
-			if mtlname ~= '' then
-				gl.glColor3f(1,1,1)
-			else
-				gl.glColor3f(0,0,0)
+		else
+			if curtex then
+				curtex:unbind()
+				curtex:disable()
+				curtex = nil
+				if mtlname ~= '' then
+					gl.glColor3f(1,1,1)
+				else
+					gl.glColor3f(0,0,0)
+				end
 			end
 		end
 		gl.glBegin(gl.GL_TRIANGLES)
-		for vi in self:triindexiter() do
+		for vi in self:triindexiter(mtlname) do
 			if vi.vt then
 				gl.glTexCoord2f(self.vts[vi.vt]:unpack())
 			end
@@ -285,6 +306,7 @@ function WavefrontOBJ:draw(args)
 		curtex:unbind()
 		curtex:disable()
 	end
+	require 'gl.report''here'
 end
 
 return WavefrontOBJ
