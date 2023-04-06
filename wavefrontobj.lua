@@ -122,6 +122,27 @@ function WavefrontOBJ:init(filename)
 	self.vs = vs
 	self.vts = vts
 	self.vns = vns
+
+	-- and just for kicks, track all edges
+	self.edges = {}
+	local function addEdge(a,b)
+		if a > b then return addEdge(b,a) end
+		self.edges[a] = self.edges[a] or {}
+		self.edges[a][b] = true
+	end
+	for a,b,c in self:triiter() do
+		addEdge(a.v,b.v)
+		addEdge(a.v,c.v)
+		addEdge(b.v,c.v)
+	end
+
+	-- [[ TODO all this can go in a superclass for all 3d obj file formats
+	-- TODO store these?  or only calculate upon demand?
+	self.com0 = self:calcCOM0()
+	self.com1 = self:calcCOM1()
+	self.com2 = self:calcCOM2()
+	self.com3 = self:calcCOM3()
+	--]]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -266,12 +287,12 @@ function WavefrontOBJ:draw(args)
 		local mtl = assert(self.mtllib[mtlname])
 		assert(not mtl or mtl.name == mtlname)
 		if mtl
-		and mtl.tex_Kd 
-		and not (args and args.disableTextures) 
+		and mtl.tex_Kd
+		and not (args and args.disableTextures)
 		then
 			-- TODO use .Ka, Kd, Ks, Ns, etc
 			-- with fixed pipeline?  opengl lighting?
-			-- with a shader in the wavefrontobj lib? 
+			-- with a shader in the wavefrontobj lib?
 			-- with ... nothing?
 			curtex = mtl.tex_Kd
 			curtex:enable()
@@ -307,6 +328,93 @@ function WavefrontOBJ:draw(args)
 		curtex:disable()
 	end
 	require 'gl.report''here'
+end
+
+-- calculate COM by 0-forms (vertexes)
+function WavefrontOBJ:calcCOM0()
+	return self.vs:sum() / #self.vs
+end
+
+-- calculate COM by 1-forms (edges)
+-- depend on self.edges being stored
+function WavefrontOBJ:calcCOM1()
+	local totalCOM = vec3()
+	local totalArea = 0
+	for a,bs in pairs(self.edges) do
+		for b in pairs(bs) do
+			local v1 = self.vs[a]
+			local v2 = self.vs[b]
+			local area = (v1 - v2):length()
+			local com = (v1 + v2) * .5
+			totalCOM = totalCOM + com * area
+			totalArea = totalArea + area
+		end
+	end
+	return totalCOM / totalArea
+end
+
+-- calculate COM by 2-forms (triangles)
+function WavefrontOBJ:calcCOM2()
+	local totalCOM = vec3()
+	local totalArea = 0
+	for i,j,k in self:triiter() do
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+		local ab = b - a
+		local ac = c - a
+		local area = ab:cross(ac):length() * .5
+		local com = (a + b + c) * (1/3)
+		totalCOM = totalCOM + com * area
+		totalArea = totalArea + area
+	end
+	return totalCOM / totalArea
+end
+
+-- calculate COM by 3-forms (enclosed volume)
+function WavefrontOBJ:calcCOM3()
+	local totalCOM = vec3()
+	local totalVolume = 0
+	for i,j,k in self:triiter() do
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+
+		-- using [a,b,c,0] as the 4 pts of our tetrahedron
+		local com = (a + b + c) * (1/4)
+
+		local volume = 0
+		volume = volume + a[1] * b[2] * c[3]
+		volume = volume + a[2] * b[3] * c[1]
+		volume = volume + a[3] * b[1] * c[2]
+		volume = volume - c[1] * b[2] * a[3]
+		volume = volume - c[2] * b[3] * a[1]
+		volume = volume - c[3] * b[1] * a[2]
+
+		totalCOM = totalCOM + com * volume
+		totalVolume = totalVolume + volume
+	end
+	return totalCOM / totalVolume
+end
+
+-- calculates overall volume
+function WavefrontOBJ:calcVolume()
+	local volume = 0
+	for i,j,k in self:triiter() do
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+		-- volume += det|a b c|
+		volume = volume + a[1] * b[2] * c[3]
+		volume = volume + a[2] * b[3] * c[1]
+		volume = volume + a[3] * b[1] * c[2]
+		volume = volume - c[1] * b[2] * a[3]
+		volume = volume - c[2] * b[3] * a[1]
+		volume = volume - c[3] * b[1] * a[2]
+	end
+	if volume < 0 then volume = -volume end
+	volume = volume / 6
+	return volume
 end
 
 return WavefrontOBJ

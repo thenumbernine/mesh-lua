@@ -16,8 +16,11 @@ App.enableLighting = false
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
+
 	self.obj = WavefrontObj(fn)
-	self:setCenterD2()
+	print('volume', self.obj:calcVolume())
+
+	self:setCenter(self.obj.com3)
 	gl.glEnable(gl.GL_DEPTH_TEST)
 	self.displayList = {}
 end
@@ -48,65 +51,6 @@ function App:deleteDisplayList()
 	end
 end
 
--- center by vtx avg
-function App:setCenterD0()
-	local obj = self.obj
-	self:setCenter(obj.vs:sum() / #obj.vs)
-end
-
--- center by edge avg
-function App:setCenterD1()
-	-- TODO this upon load
-	local obj = self.obj
-	local edges = {}
-	local function addEdge(a,b)
-		if a > b then return addEdge(b,a) end
-		edges[a] = edges[a] or {}
-		edges[a][b] = true
-	end
-	local function addTri(a,b,c)
-		addEdge(a,b)
-		addEdge(a,c)
-		addEdge(b,c)
-	end
-	for a,b,c in obj:triiter() do
-		addEdge(a.v,b.v)
-		addEdge(a.v,c.v)
-		addEdge(b.v,c.v)
-	end
-	local totalCOM = vec3()
-	local totalArea = 0
-	for a,bs in pairs(edges) do
-		for b in pairs(bs) do
-			local v1 = obj.vs[a]
-			local v2 = obj.vs[b]
-			local area = (v1 - v2):length()
-			local com = (v1 + v2) * .5
-			totalCOM = totalCOM + com * area
-			totalArea = totalArea + area
-		end
-	end
-	self:setCenter(totalCOM / totalArea)
-end
-
-function App:setCenterD2()
-	local obj = self.obj
-	local totalCOM = vec3()
-	local totalArea = 0
-	for i,j,k in obj:triiter() do
-		local a = obj.vs[i.v]
-		local b = obj.vs[j.v]
-		local c = obj.vs[k.v]
-		local ab = b - a
-		local ac = c - a
-		local area = ab:cross(ac):length() * .5
-		local com = (a + b + c) * (1/3)
-		totalCOM = totalCOM + com * area
-		totalArea = totalArea + area
-	end
-	self:setCenter(totalCOM / totalArea)
-end
-
 function App:setCenter(center)
 	local size = self.obj.vs:mapi(function(v) return (v - center):length() end):sup()
 	self.view.orbit:set(center:unpack())
@@ -115,13 +59,16 @@ end
 
 function App:updateGUI()
 	if ig.igButton'set to vtx center' then
-		self:setCenterD0()
+		self:setCenter(self.obj.com0)
 	end
 	if ig.igButton'set to line center' then
-		self:setCenterD1()
+		self:setCenter(self.obj.com1)
 	end
 	if ig.igButton'set to face center' then
-		self:setCenterD2()
+		self:setCenter(self.obj.com2)
+	end
+	if ig.igButton'set to volume center' then
+		self:setCenter(self.obj.com3)
 	end
 	-- TODO D3 for volume-centered
 	ig.luatableCheckbox('ortho', self.view, 'ortho')
