@@ -3,6 +3,7 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local string = require 'ext.string'
 local file = require 'ext.file'
+local timer = require 'ext.timer'
 local gl = require 'gl'
 local Tex2D = require 'gl.tex2d'
 local vec2 = require 'vec.vec2'
@@ -59,89 +60,101 @@ function WavefrontOBJ:init(filename)
 
 	self.relpath = file(filename):getdir()
 
-	self.fsForMtl = {}
-	self.mtllib = table()
-	local curmtl = ''	-- use this instead of 'nil' so the fsForMtl will have a valid key
-	self.mtllib[curmtl] = table{name=curmtl}
-	assert(file(filename):exists(), "failed to find material file "..filename)
-	for line in io.lines(filename) do
-		local words = string.split(string.trim(line), '%s+')
-		local lineType = words:remove(1):lower()
-		if lineType == 'v' then
-			assert(#words >= 2)
-			vs:insert(wordsToVec3(words))
-		elseif lineType == 'vt' then
-			assert(#words >= 2)
-			vts:insert(wordsToVec2(words))
-		elseif lineType == 'vn' then
-			assert(#words >= 2)
-			vns:insert(wordsToVec3(words))
-		-- TODO lineType == 'vp'
-		elseif lineType == 'f' then
-			local usingMtl = curmtl
-			local vis = table()
-			local foundVT = false
-			for _,vertexIndexString in ipairs(words) do
-				local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
-				local vertexIndices = vertexIndexStringParts:mapi(tonumber1)	-- may be nil
-				local vi, vti, vni = unpack(vertexIndices)
-				if vti then foundVT = true end
-				vis:insert{v=vi, vt=vti, vn=vni}
+	timer('loading', function()
+		self.fsForMtl = {}
+		self.mtllib = table()
+		local curmtl = ''	-- use this instead of 'nil' so the fsForMtl will have a valid key
+		self.mtllib[curmtl] = table{name=curmtl}
+		assert(file(filename):exists(), "failed to find material file "..filename)
+		for line in io.lines(filename) do
+			local words = string.split(string.trim(line), '%s+')
+			local lineType = words:remove(1):lower()
+			if lineType == 'v' then
+				assert(#words >= 2)
+				vs:insert(wordsToVec3(words))
+			elseif lineType == 'vt' then
+				assert(#words >= 2)
+				vts:insert(wordsToVec2(words))
+			elseif lineType == 'vn' then
+				assert(#words >= 2)
+				vns:insert(wordsToVec3(words))
+			-- TODO lineType == 'vp'
+			elseif lineType == 'f' then
+				local usingMtl = curmtl
+				local vis = table()
+				local foundVT = false
+				for _,vertexIndexString in ipairs(words) do
+					local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
+					local vertexIndices = vertexIndexStringParts:mapi(tonumber1)	-- may be nil
+					local vi, vti, vni = unpack(vertexIndices)
+					if vti then foundVT = true end
+					vis:insert{v=vi, vt=vti, vn=vni}
+				end
+				if not foundVT then usingMtl = '' end
+				local fs = self.fsForMtl[usingMtl]
+				if not fs then
+					fs = {}
+					fs.tris = table()
+					fs.quads = table()
+					self.fsForMtl[usingMtl] = fs
+				end
+				if #words == 3 then
+					fs.tris:insert(vis)
+				elseif #words == 4 then
+					fs.quads:insert(vis)
+				else
+					error("got unknown number of vertices on this face: "..#words)
+				end
+			elseif lineType == 's' then
+				-- TODO then smooth is on
+				-- for all subsequent polys, or for the entire group (including previously defined polys) ?
+			elseif lineType == 'g' then
+				-- TODO then we start a new group
+			elseif lineType == 'usemtl' then
+				curmtl = assert(words[1])
+			elseif lineType == 'mtllib' then
+				self:loadMtl(assert(words[1]))
 			end
-			if not foundVT then usingMtl = '' end
-			local fs = self.fsForMtl[usingMtl]
-			if not fs then
-				fs = {}
-				fs.tris = table()
-				fs.quads = table()
-				self.fsForMtl[usingMtl] = fs
-			end
-			if #words == 3 then
-				fs.tris:insert(vis)
-			elseif #words == 4 then
-				fs.quads:insert(vis)
-			else
-				error("got unknown number of vertices on this face: "..#words)
-			end
-		elseif lineType == 's' then
-			-- TODO then smooth is on
-			-- for all subsequent polys, or for the entire group (including previously defined polys) ?
-		elseif lineType == 'g' then
-			-- TODO then we start a new group
-		elseif lineType == 'usemtl' then
-			curmtl = assert(words[1])
-		elseif lineType == 'mtllib' then
-			self:loadMtl(assert(words[1]))
 		end
-	end
-	-- check
-	for mtlname, fs in pairs(self.fsForMtl) do
-		assert(self.mtllib[mtlname], "failed to find mtl "..mtlname)
-	end
-	-- could've done this up front...
-	self.vs = vs
-	self.vts = vts
-	self.vns = vns
+		-- check
+		for mtlname, fs in pairs(self.fsForMtl) do
+			assert(self.mtllib[mtlname], "failed to find mtl "..mtlname)
+		end
+		-- could've done this up front...
+		self.vs = vs
+		self.vts = vts
+		self.vns = vns
+	end)
 
 	-- and just for kicks, track all edges
-	self.edges = {}
-	local function addEdge(a,b)
-		if a > b then return addEdge(b,a) end
-		self.edges[a] = self.edges[a] or {}
-		self.edges[a][b] = true
-	end
-	for a,b,c in self:triiter() do
-		addEdge(a.v,b.v)
-		addEdge(a.v,c.v)
-		addEdge(b.v,c.v)
-	end
+	timer('edges', function()
+		self.edges = {}
+		local function addEdge(a,b)
+			if a > b then return addEdge(b,a) end
+			self.edges[a] = self.edges[a] or {}
+			self.edges[a][b] = true
+		end
+		for a,b,c in self:triiter() do
+			addEdge(a.v,b.v)
+			addEdge(a.v,c.v)
+			addEdge(b.v,c.v)
+		end
+	end)
 
 	-- [[ TODO all this can go in a superclass for all 3d obj file formats
 	-- TODO store these?  or only calculate upon demand?
-	self.com0 = self:calcCOM0()
-	self.com1 = self:calcCOM1()
-	self.com2 = self:calcCOM2()
-	self.com3 = self:calcCOM3()
+	timer('com0', function()
+		self.com0 = self:calcCOM0()
+	end)
+	timer('com1', function()
+		self.com1 = self:calcCOM1()
+	end)
+	timer('com2', function()
+		self.com2 = self:calcCOM2()
+	end)
+	timer('com3', function()
+		self.com3 = self:calcCOM3()
+	end)
 	--]]
 end
 
@@ -191,7 +204,8 @@ function WavefrontOBJ:loadMtl(filename)
 		-- 'Ni' = index of refraction aka optical density
 		elseif lineType == 'map_kd' then	-- diffuse map
 			assert(mtl)
-			mtl.map_Kd = file(self.relpath)(assert(words[1])).path
+			local localpath = assert(words[1]):gsub('\\', '/')
+			mtl.map_Kd = file(self.relpath)(localpath).path
 			mtl.tex_Kd = Tex2D{
 				filename = mtl.map_Kd,
 				minFilter = gl.GL_NEAREST;
