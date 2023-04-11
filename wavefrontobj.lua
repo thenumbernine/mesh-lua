@@ -344,6 +344,8 @@ function WavefrontOBJ:calcCOM1()
 		for b in pairs(bs) do
 			local v1 = self.vs[a]
 			local v2 = self.vs[b]
+			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
+			-- for 1D, volume = |b-a|
 			local area = (v1 - v2):length()
 			local com = (v1 + v2) * .5
 			totalCOM = totalCOM + com * area
@@ -361,9 +363,11 @@ function WavefrontOBJ:calcCOM2()
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
 		local c = self.vs[k.v]
+		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
+		-- for 2D, volume = |(b-a)x(c-a)|
 		local ab = b - a
 		local ac = c - a
-		local area = ab:cross(ac):length() * .5
+		local area = .5 * ab:cross(ac):length()
 		local com = (a + b + c) * (1/3)
 		totalCOM = totalCOM + com * area
 		totalArea = totalArea + area
@@ -381,6 +385,8 @@ function WavefrontOBJ:calcCOM3()
 		local c = self.vs[k.v]
 
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
+		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
+		-- for 3D, volume = det|a b c|
 		local com = (a + b + c) * (1/4)
 
 		local volume = 0
@@ -404,7 +410,7 @@ function WavefrontOBJ:calcVolume()
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
 		local c = self.vs[k.v]
-		-- volume += det|a b c|
+
 		volume = volume + a[1] * b[2] * c[3]
 		volume = volume + a[2] * b[3] * c[1]
 		volume = volume + a[3] * b[1] * c[2]
