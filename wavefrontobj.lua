@@ -59,6 +59,7 @@ function WavefrontOBJ:init(filename)
 	local vns = table()
 
 	self.relpath = file(filename):getdir()
+	self.mtlFilenames = table()
 
 	timer('loading', function()
 		self.fsForMtl = {}
@@ -90,7 +91,13 @@ function WavefrontOBJ:init(filename)
 					if vti then foundVT = true end
 					vis:insert{v=vi, vt=vti, vn=vni}
 				end
-				if not foundVT then usingMtl = '' end
+
+				-- TODO hmm really?
+				-- if no vt found then we can still use the Ks Kd etc from the mtl
+				-- we just have to take care when drawing it not to have the texture bound
+				-- (unlike the other faces in the mtl which do have vt's)
+				--if not foundVT then usingMtl = '' end
+
 				local fs = self.fsForMtl[usingMtl]
 				if not fs then
 					fs = {}
@@ -103,6 +110,7 @@ function WavefrontOBJ:init(filename)
 				elseif #words == 4 then
 					fs.quads:insert(vis)
 				else
+					-- TODO in theory any # of vtxs is valid and you should treat them all like they're polygons
 					error("got unknown number of vertices on this face: "..#words)
 				end
 			elseif lineType == 's' then
@@ -159,8 +167,10 @@ function WavefrontOBJ:init(filename)
 end
 
 function WavefrontOBJ:loadMtl(filename)
+	self.mtlFilenames:insert(filename)
 	local mtl
 	filename = file(self.relpath)(filename).path
+	-- TODO don't assert, and just flag what material files loaded vs didn't?
 	assert(file(filename):exists(), "failed to find material file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
@@ -206,6 +216,11 @@ function WavefrontOBJ:loadMtl(filename)
 			assert(mtl)
 			local localpath = assert(words[1]):gsub('\\', '/')
 			mtl.map_Kd = file(self.relpath)(localpath).path
+			-- TODO
+			-- load textures?
+			-- what if the caller isn't using GL?
+			-- load images instead?
+			-- just store filename and let the caller deal with it?
 			mtl.tex_Kd = Tex2D{
 				filename = mtl.map_Kd,
 				minFilter = gl.GL_NEAREST;
@@ -273,7 +288,7 @@ function WavefrontOBJ:triiter(mtlname)
 			if #vis == 3 then
 				coroutine.yield(vis[1], vis[2], vis[3])
 			elseif #vis == 4 then
-				coroutine.yield(vis[1], vis[2], vis[4])
+				coroutine.yield(vis[1], vis[2], vis[3])
 				coroutine.yield(vis[1], vis[3], vis[4])
 			else
 				error("here")
@@ -435,6 +450,37 @@ function WavefrontOBJ:calcVolume()
 	if volume < 0 then volume = -volume end
 	volume = volume / 6
 	return volume
+end
+
+function WavefrontOBJ:save(filename)
+	local o = assert(file(filename):open'w')
+	-- TODO write smooth flag, groups, etc
+	for _,mtl in ipairs(self.mtlFilenames) do
+		o:write('mtllib ', mtl, '\n')
+	end
+	for _,v in ipairs(self.vs) do
+		o:write('v ', table.concat(v, ' '), '\n')
+	end
+	for _,vt in ipairs(self.vts) do
+		o:write('vt ', table.concat(vt, ' '), '\n')
+	end
+	for _,vn in ipairs(self.vns) do
+		o:write('vn ', table.concat(vn, ' '), '\n')
+	end
+	for _,mtl in ipairs(table.keys(self.fsForMtl):sort()) do
+		o:write('usemtl ', mtl, '\n')
+		local fs = self.fsForMtl[mtl]
+		for _,polys in ipairs{fs.tris, fs.quads} do
+			for _,vis in ipairs(polys) do
+				o:write('f ', table.mapi(vis, function(vi)
+					local vs = table{vi.v, vi.vt, vi.vn}
+					for i=1,vs:maxn() do vs[i] = vs[i] or '' end
+					return vs:concat'/'
+				end):concat' ', '\n')
+			end
+		end
+	end
+	o:close()
 end
 
 return WavefrontOBJ

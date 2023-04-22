@@ -21,14 +21,14 @@ function App:initGL(...)
 	print('volume', self.obj:calcVolume())
 
 	self:setCenter(self.obj.com3)
-	gl.glEnable(gl.GL_DEPTH_TEST)
-	gl.glEnable(gl.GL_BLEND)
-	gl.glEnable(gl.GL_CULL_FACE)
-	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 	self.displayList = {}
 end
 
 function App:update()
+	gl.glEnable(gl.GL_DEPTH_TEST)
+	gl.glEnable(gl.GL_BLEND)
+	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+	gl.glEnable(gl.GL_CULL_FACE)
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	glCallOrRun(self.displayList, function()
 		if self.enableLighting then
