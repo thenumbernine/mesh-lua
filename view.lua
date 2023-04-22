@@ -13,6 +13,7 @@ App.title = 'WavefrontOBJ preview'
 
 App.enableTextures = true
 App.enableLighting = false
+App.enableNearest = false
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
@@ -86,6 +87,15 @@ function App:updateGUI()
 	end
 	if ig.luatableCheckbox('use lighting', self, 'enableLighting') then
 		self:deleteDisplayList()
+	end
+	if ig.luatableCheckbox('nearest', self, 'enableNearest') then
+		for mtlname, mtl in pairs(self.obj.mtllib) do
+			if mtl.tex_Kd then
+				mtl.tex_Kd:bind()
+				mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.enableNearest and gl.GL_NEAREST or gl.GL_LINEAR)
+				mtl.tex_Kd:unbind()
+			end
+		end
 	end
 end
 
