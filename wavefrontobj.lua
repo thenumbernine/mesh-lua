@@ -315,6 +315,11 @@ function WavefrontOBJ:draw(args)
 	for mtlname, fs in pairs(self.fsForMtl) do
 		local mtl = assert(self.mtllib[mtlname])
 		assert(not mtl or mtl.name == mtlname)
+		if mtl.Kd then
+			gl.glColor4f(mtl.Kd:unpack())
+		else
+			gl.glColor4f(1,1,1,1)
+		end
 		if mtl
 		and mtl.tex_Kd
 		and not (args and args.disableTextures)
@@ -326,17 +331,11 @@ function WavefrontOBJ:draw(args)
 			curtex = mtl.tex_Kd
 			curtex:enable()
 			curtex:bind()
-			gl.glColor3f(1,1,1)
 		else
 			if curtex then
 				curtex:unbind()
 				curtex:disable()
 				curtex = nil
-				if mtlname ~= '' then
-					gl.glColor3f(1,1,1)
-				else
-					gl.glColor3f(0,0,0)
-				end
 			end
 		end
 		gl.glBegin(gl.GL_TRIANGLES)

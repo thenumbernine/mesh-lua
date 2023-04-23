@@ -11,6 +11,7 @@ local App = class(require 'imguiapp.withorbit'())
 
 App.title = 'WavefrontOBJ preview'
 
+App.enableWireframe = false
 App.enableTextures = true
 App.enableLighting = false
 App.enableNearest = false
@@ -30,7 +31,11 @@ function App:update()
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 	gl.glEnable(gl.GL_CULL_FACE)
+	gl.glClearColor(.2, .3, .5, 1)
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
+	if self.enableWireframe then
+		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+	end
 	glCallOrRun(self.displayList, function()
 		if self.enableLighting then
 			gl.glEnable(gl.GL_LIGHTING)
@@ -45,6 +50,9 @@ function App:update()
 			gl.glDisable(gl.GL_LIGHT0)
 		end
 	end)
+	if self.enableWireframe then
+		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+	end
 	App.super.update(self)
 	require 'gl.report''here'
 end
@@ -76,19 +84,17 @@ function App:updateGUI()
 		self:setCenter(self.obj.com3)
 	end
 	-- TODO D3 for volume-centered
-	ig.luatableCheckbox('ortho', self.view, 'ortho')
+	ig.luatableCheckbox('ortho view', self.view, 'ortho')
 	if ig.igButton'reset view' then
 		self.view.ortho = false
 		self.view.angle:set(0,0,0,1)
 		self:setCenterD0()
 	end
+	ig.luatableCheckbox('wireframe', self, 'enableWireframe')
 	if ig.luatableCheckbox('use textures', self, 'enableTextures') then
 		self:deleteDisplayList()
 	end
-	if ig.luatableCheckbox('use lighting', self, 'enableLighting') then
-		self:deleteDisplayList()
-	end
-	if ig.luatableCheckbox('nearest', self, 'enableNearest') then
+	if ig.luatableCheckbox('nearest filter', self, 'enableNearest') then
 		for mtlname, mtl in pairs(self.obj.mtllib) do
 			if mtl.tex_Kd then
 				mtl.tex_Kd:bind()
@@ -96,6 +102,9 @@ function App:updateGUI()
 				mtl.tex_Kd:unbind()
 			end
 		end
+	end
+	if ig.luatableCheckbox('use lighting', self, 'enableLighting') then
+		self:deleteDisplayList()
 	end
 end
 
