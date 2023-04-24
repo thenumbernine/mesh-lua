@@ -1,4 +1,5 @@
 --  https://en.wikipedia.org/wiki/Wavefront_.obj_file
+local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local string = require 'ext.string'
@@ -10,6 +11,17 @@ local Tex2D = require 'gl.tex2d'
 local vec2 = require 'vec.vec2'
 local vec3 = require 'vec.vec3'
 local vec4 = require 'vec.vec4'
+local vector = require 'ffi.cpp.vector'
+local vec2f = require 'vec-ffi.vec2f'
+local vec3f = require 'vec-ffi.vec3f'
+
+ffi.cdef[[
+typedef struct {
+	vec3f_t pos;
+	vec2f_t tc;
+	vec3f_t n;
+} obj_vertex_t;
+]]
 
 local function pathOfFilename(fn)
 	-- find the last index of / in fn
@@ -169,6 +181,31 @@ function WavefrontOBJ:init(filename)
 		mtl.com3 = self:calcCOM3(mtlname)
 	end
 --]]
+
+	-- now for performance I can either store everything in a packed array
+	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
+	for mtlname, polysPerSides in pairs(self.fsForMtl) do
+		local i = 0
+		for a,b,c in self:triiter(mtlname) do
+			i = i + 3
+		end
+		local vtxBuf = vector('obj_vertex_t', i)
+		i = 0
+		for a,b,c in self:triiter(mtlname) do
+			for _,vi in ipairs{a,b,c} do
+				local v = vtxBuf.v + i
+				v.pos:set(self.vs[vi.v]:unpack())
+				if vi.vt then
+					v.tc:set(self.vts[vi.vt]:unpack())
+				end
+				if vi.vn then
+					v.normal:set(self.vns[vi.vn]:unpack())
+				end
+				i = i + 1
+			end
+		end
+		self.mtllib[mtlname].vtxBuf = vtxBuf
+	end
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -345,6 +382,8 @@ function WavefrontOBJ:draw(args)
 			end
 		end
 		if args.beginMtl then args.beginMtl(mtl) end
+		
+		--[[ immediate mode
 		gl.glBegin(gl.GL_TRIANGLES)
 		for vi in self:triindexiter(mtlname) do
 			-- TODO store a set of unique face v/vt/vn index-vertexes
@@ -359,6 +398,19 @@ function WavefrontOBJ:draw(args)
 			gl.glVertex3f(self.vs[vi.v]:unpack())
 		end
 		gl.glEnd()
+		--]]
+		-- [[ vertex client arrays
+		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].pos.s)
+		gl.glTexCoordPointer(2, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].tc.s)
+		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].n.s)
+		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
+		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxBuf.size)
+		gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
+		gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
+		--]]
 		if args.endMtl then args.endMtl(mtl) end
 	end
 	gl.glPopAttrib()
