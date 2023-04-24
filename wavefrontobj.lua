@@ -129,6 +129,10 @@ function WavefrontOBJ:init(filename)
 		self.vns = vns
 	end)
 
+-- TODO all this per-material-group
+-- should meshes have their own vtx lists?
+-- or should they just index into a master list (like obj files do?)
+
 	-- and just for kicks, track all edges
 	timer('edges', function()
 		self.edges = {}
@@ -144,8 +148,8 @@ function WavefrontOBJ:init(filename)
 		end
 	end)
 
-	-- [[ TODO all this can go in a superclass for all 3d obj file formats
-	-- TODO store these?  or only calculate upon demand?
+-- [[ TODO all this can go in a superclass for all 3d obj file formats
+-- TODO store these?  or only calculate upon demand?
 	timer('com0', function()
 		self.com0 = self:calcCOM0()
 	end)
@@ -158,7 +162,13 @@ function WavefrontOBJ:init(filename)
 	timer('com3', function()
 		self.com3 = self:calcCOM3()
 	end)
-	--]]
+	-- can only do this with com2 and com3 since they use tris, which are stored per-material
+	-- ig i could with edges and vtxs too if I flag them per-material
+	for mtlname,mtl in pairs(self.mtllib) do
+		mtl.com2 = self:calcCOM2(mtlname)
+		mtl.com3 = self:calcCOM3(mtlname)
+	end
+--]]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -334,8 +344,12 @@ function WavefrontOBJ:draw(args)
 				curtex = nil
 			end
 		end
+		if args.beginMtl then args.beginMtl(mtl) end
 		gl.glBegin(gl.GL_TRIANGLES)
 		for vi in self:triindexiter(mtlname) do
+			-- TODO store a set of unique face v/vt/vn index-vertexes
+			-- and then bake those into a unique vertex array, and store its index alongside face's other indexes
+			-- that'll be most compat with GL indexed arrays
 			if vi.vt then
 				gl.glTexCoord2f(self.vts[vi.vt]:unpack())
 			end
@@ -345,6 +359,7 @@ function WavefrontOBJ:draw(args)
 			gl.glVertex3f(self.vs[vi.v]:unpack())
 		end
 		gl.glEnd()
+		if args.endMtl then args.endMtl(mtl) end
 	end
 	gl.glPopAttrib()
 	if curtex then
@@ -380,10 +395,10 @@ function WavefrontOBJ:calcCOM1()
 end
 
 -- calculate COM by 2-forms (triangles)
-function WavefrontOBJ:calcCOM2()
+function WavefrontOBJ:calcCOM2(mtlname)
 	local totalCOM = vec3()
 	local totalArea = 0
-	for i,j,k in self:triiter() do
+	for i,j,k in self:triiter(mtlname) do
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
 		local c = self.vs[k.v]
@@ -400,10 +415,10 @@ function WavefrontOBJ:calcCOM2()
 end
 
 -- calculate COM by 3-forms (enclosed volume)
-function WavefrontOBJ:calcCOM3()
+function WavefrontOBJ:calcCOM3(mtlname)
 	local totalCOM = vec3()
 	local totalVolume = 0
-	for i,j,k in self:triiter() do
+	for i,j,k in self:triiter(mtlname) do
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
 		local c = self.vs[k.v]
