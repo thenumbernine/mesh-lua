@@ -4,17 +4,13 @@ local gl = require 'gl'
 local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
 local WavefrontObj = require 'wavefrontobj.wavefrontobj'
+local vec4f = require 'vec-ffi.vec4f'
 
 local fn = assert((...))
 
 local App = class(require 'imguiapp.withorbit'())
 
 App.title = 'WavefrontOBJ preview'
-
-App.enableWireframe = false
-App.enableTextures = true
-App.enableLighting = false
-App.enableNearest = false
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
@@ -24,6 +20,13 @@ function App:initGL(...)
 
 	self:setCenter(self.obj.com3)
 	self.displayList = {}
+
+	-- gui options
+	self.enableWireframe = false
+	self.enableTextures = true
+	self.enableLighting = false
+	self.enableNearest = false
+	self.bgcolor = vec4f(.2, .3, .5, 1)
 end
 
 function App:update()
@@ -31,7 +34,7 @@ function App:update()
 	gl.glEnable(gl.GL_BLEND)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 	gl.glEnable(gl.GL_CULL_FACE)
-	gl.glClearColor(.2, .3, .5, 1)
+	gl.glClearColor(self.bgcolor:unpack())
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	if self.enableWireframe then
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
@@ -71,6 +74,7 @@ function App:setCenter(center)
 end
 
 function App:updateGUI()
+	ig.igColorPicker3('background color', self.bgcolor.s, 0)
 	if ig.igButton'set to vtx center' then
 		self:setCenter(self.obj.com0)
 	end

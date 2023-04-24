@@ -5,6 +5,7 @@ local string = require 'ext.string'
 local file = require 'ext.file'
 local timer = require 'ext.timer'
 local gl = require 'gl'
+local Image = require 'image'
 local Tex2D = require 'gl.tex2d'
 local vec2 = require 'vec.vec2'
 local vec3 = require 'vec.vec3'
@@ -101,18 +102,12 @@ function WavefrontOBJ:init(filename)
 				local fs = self.fsForMtl[usingMtl]
 				if not fs then
 					fs = {}
-					fs.tris = table()
-					fs.quads = table()
 					self.fsForMtl[usingMtl] = fs
 				end
-				if #words == 3 then
-					fs.tris:insert(vis)
-				elseif #words == 4 then
-					fs.quads:insert(vis)
-				else
-					-- TODO in theory any # of vtxs is valid and you should treat them all like they're polygons
-					error("got unknown number of vertices on this face: "..#words)
-				end
+				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
+				local nvtx = #words
+				fs[nvtx] = fs[nvtx] or table()
+				fs[nvtx]:insert(vis)
 			elseif lineType == 's' then
 				-- TODO then smooth is on
 				-- for all subsequent polys, or for the entire group (including previously defined polys) ?
@@ -221,20 +216,30 @@ function WavefrontOBJ:loadMtl(filename)
 			-- what if the caller isn't using GL?
 			-- load images instead?
 			-- just store filename and let the caller deal with it?
-			mtl.tex_Kd = Tex2D{
-				filename = mtl.map_Kd,
-				minFilter = gl.GL_NEAREST;
-				magFilter = gl.GL_LINEAR;
-			}
-			-- old compat
-			mtl.tex = mtl.tex_Kd
-			mtl.filename = mtl.map_Kd
+			mtl.image_Kd = Image(mtl.map_Kd)
+			-- TODO here ... maybe I want a console .obj editor that doesn't use GL
+			-- in which case ... when should the .obj class load the gl textures?
+			-- manually?  upon first draw?  both?
 		--elseif lineType == 'map_ks' then	-- specular color map
 		--elseif lineType == 'map_ns' then	-- specular highlight map
 		--elseif lineType == 'map_bump' or lineType == 'bump' then
 		--elseif lineType == 'disp' then
 		--elseif lineType == 'decal' then
 		-- and don't forget textre map options
+		end
+	end
+end
+
+-- upon ctor the images are loaded (in case the caller isn't using GL)
+-- so upon first draw - or upon manual call - load the gl textures
+function WavefrontOBJ:loadGLTexs()
+	for mtlname, mtl in pairs(self.mtllib) do
+		if mtl.image_Kd and not mtl.tex_Kd then
+			mtl.tex_Kd = Tex2D{
+				image = mtl.image_Kd,
+				minFilter = gl.GL_NEAREST,
+				magFilter = gl.GL_LINEAR,
+			}
 		end
 	end
 end
@@ -267,14 +272,9 @@ end
 function WavefrontOBJ:faceiter(mtlname)
 	return coroutine.wrap(function()
 		for fs in self:mtliter(mtlname) do
-			if #fs.tris > 0 then
-				for _,vis in ipairs(fs.tris) do
+			for k=3,table.maxn(fs) do
+				for _,vis in ipairs(fs[k]) do
 					coroutine.yield(vis)	-- has [1].v [2].v [3].v for vtx indexes
-				end
-			end
-			if #fs.quads > 0 then
-				for _,vis in ipairs(fs.quads) do
-					coroutine.yield(vis)	-- has [1].v [2].v [3].v [4].v for vtx indexes
 				end
 			end
 		end
@@ -285,13 +285,8 @@ end
 function WavefrontOBJ:triiter(mtlname)
 	return coroutine.wrap(function()
 		for vis in self:faceiter(mtlname) do
-			if #vis == 3 then
-				coroutine.yield(vis[1], vis[2], vis[3])
-			elseif #vis == 4 then
-				coroutine.yield(vis[1], vis[2], vis[3])
-				coroutine.yield(vis[1], vis[3], vis[4])
-			else
-				error("here")
+			for j=2,#vis-1 do
+				coroutine.yield(vis[1], vis[j], vis[j+1])
 			end
 		end
 	end)
@@ -309,6 +304,7 @@ function WavefrontOBJ:triindexiter(mtlname)
 end
 
 function WavefrontOBJ:draw(args)
+	self:loadGLTexs()	-- load if not loaded
 	gl.glPushAttrib(gl.GL_ENABLE_BIT)
 	gl.glDisable(gl.GL_CULL_FACE)
 	local curtex
@@ -469,8 +465,8 @@ function WavefrontOBJ:save(filename)
 	for _,mtl in ipairs(table.keys(self.fsForMtl):sort()) do
 		o:write('usemtl ', mtl, '\n')
 		local fs = self.fsForMtl[mtl]
-		for _,polys in ipairs{fs.tris, fs.quads} do
-			for _,vis in ipairs(polys) do
+		for k=3,table.maxn(fs) do
+			for _,vis in ipairs(fs[k]) do
 				o:write('f ', table.mapi(vis, function(vi)
 					local vs = table{vi.v, vi.vt, vi.vn}
 					for i=1,vs:maxn() do vs[i] = vs[i] or '' end
