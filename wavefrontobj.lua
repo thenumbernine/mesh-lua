@@ -5,21 +5,20 @@ local table = require 'ext.table'
 local string = require 'ext.string'
 local file = require 'ext.file'
 local timer = require 'ext.timer'
-local gl = require 'gl'
-local Image = require 'image'
-local Tex2D = require 'gl.tex2d'
 local vec2 = require 'vec.vec2'
 local vec3 = require 'vec.vec3'
 local vec4 = require 'vec.vec4'
 local vector = require 'ffi.cpp.vector'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
+local Image = require 'image'
 
 ffi.cdef[[
 typedef struct {
 	vec3f_t pos;
-	vec2f_t tc;
-	vec3f_t n;
+	vec2f_t texCoord;
+	vec3f_t normal;
+	vec3f_t com;	// com of tri containing this vertex.  only good for un-indexed drawing.
 } obj_vertex_t;
 ]]
 
@@ -181,31 +180,6 @@ function WavefrontOBJ:init(filename)
 		mtl.com3 = self:calcCOM3(mtlname)
 	end
 --]]
-
-	-- now for performance I can either store everything in a packed array
-	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
-	for mtlname, polysPerSides in pairs(self.fsForMtl) do
-		local i = 0
-		for a,b,c in self:triiter(mtlname) do
-			i = i + 3
-		end
-		local vtxBuf = vector('obj_vertex_t', i)
-		i = 0
-		for a,b,c in self:triiter(mtlname) do
-			for _,vi in ipairs{a,b,c} do
-				local v = vtxBuf.v + i
-				v.pos:set(self.vs[vi.v]:unpack())
-				if vi.vt then
-					v.tc:set(self.vts[vi.vt]:unpack())
-				end
-				if vi.vn then
-					v.normal:set(self.vns[vi.vn]:unpack())
-				end
-				i = i + 1
-			end
-		end
-		self.mtllib[mtlname].vtxBuf = vtxBuf
-	end
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -279,7 +253,15 @@ end
 
 -- upon ctor the images are loaded (in case the caller isn't using GL)
 -- so upon first draw - or upon manual call - load the gl textures
-function WavefrontOBJ:loadGLTexs()
+function WavefrontOBJ:loadGL(shader)
+	local gl = require 'gl'
+	local glreport = require 'gl.report'
+	local Tex2D = require 'gl.tex2d'
+	local GLArrayBuffer = require 'gl.arraybuffer'
+	local GLAttribute = require 'gl.attribute'
+	local GLVertexArray = require 'gl.vertexarray'
+	
+	-- load textures
 	for mtlname, mtl in pairs(self.mtllib) do
 		if mtl.image_Kd and not mtl.tex_Kd then
 			mtl.tex_Kd = Tex2D{
@@ -287,6 +269,74 @@ function WavefrontOBJ:loadGLTexs()
 				minFilter = gl.GL_NEAREST,
 				magFilter = gl.GL_LINEAR,
 			}
+		end
+	end
+
+	-- now for performance I can either store everything in a packed array
+	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
+	for mtlname, polysPerSides in pairs(self.fsForMtl) do
+		local mtl = self.mtllib[mtlname]
+		if not mtl.vtxCPUBuf then
+			local i = 0
+			for a,b,c in self:triiter(mtlname) do
+				i = i + 3
+			end
+			local vtxCPUBuf = vector('obj_vertex_t', i)
+			i = 0
+			for a,b,c in self:triiter(mtlname) do
+				local com = (self.vs[a.v] + self.vs[b.v] + self.vs[c.v]) / 3
+				for _,vi in ipairs{a,b,c} do
+					local v = vtxCPUBuf.v + i
+					v.pos:set(self.vs[vi.v]:unpack())
+					if vi.vt then
+						v.texCoord:set(self.vts[vi.vt]:unpack())
+					end
+					if vi.vn then
+						v.normal:set(self.vns[vi.vn]:unpack())
+					end
+					v.com:set(com:unpack())
+					i = i + 1
+				end
+			end
+			mtl.vtxCPUBuf = vtxCPUBuf
+		
+			-- [=[
+			mtl.vtxBuf = GLArrayBuffer{
+				size = mtl.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
+				data = mtl.vtxCPUBuf.v,
+				usage = gl.GL_STATIC_DRAW,
+			}
+			assert(glreport'here')
+
+			mtl.vtxAttrs = {}
+			for _,info in ipairs{
+				{name='pos', size=3},
+				{name='texCoord', size=2},
+				{name='normal', size=3},
+				{name='com', size=3},
+			} do
+				local srcAttr = shader.attrs[info.name]
+				if srcAttr then
+					mtl.vtxAttrs[info.name] = GLAttribute{
+						buffer = mtl.vtxBuf,
+						size = info.size,
+						type = gl.GL_FLOAT,
+						stride = ffi.sizeof'obj_vertex_t',
+						offset = ffi.offsetof('obj_vertex_t', info.name),
+					}
+					assert(glreport'here')
+				end
+			end
+			shader:use()
+			assert(glreport'here')
+			mtl.vao = GLVertexArray{
+				program = shader,
+				attrs = mtl.vtxAttrs,
+			}
+			shader:setAttrs(mtl.vtxAttrs)
+			shader:useNone()
+			assert(glreport'here')
+			--]=]
 		end
 	end
 end
@@ -351,18 +401,23 @@ function WavefrontOBJ:triindexiter(mtlname)
 end
 
 function WavefrontOBJ:draw(args)
-	self:loadGLTexs()	-- load if not loaded
+	local gl = require 'gl'
+	
+	self:loadGL()	-- load if not loaded
 	gl.glPushAttrib(gl.GL_ENABLE_BIT)
 	gl.glDisable(gl.GL_CULL_FACE)
 	local curtex
 	for mtlname, fs in pairs(self.fsForMtl) do
 		local mtl = assert(self.mtllib[mtlname])
 		assert(not mtl or mtl.name == mtlname)
+		--[[
 		if mtl.Kd then
 			gl.glColor4f(mtl.Kd:unpack())
 		else
 			gl.glColor4f(1,1,1,1)
 		end
+		--]]
+		--[[
 		if mtl
 		and mtl.tex_Kd
 		and not (args and args.disableTextures)
@@ -381,6 +436,7 @@ function WavefrontOBJ:draw(args)
 				curtex = nil
 			end
 		end
+		--]]
 		if args.beginMtl then args.beginMtl(mtl) end
 		
 		--[[ immediate mode
@@ -399,17 +455,34 @@ function WavefrontOBJ:draw(args)
 		end
 		gl.glEnd()
 		--]]
-		-- [[ vertex client arrays
-		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].pos.s)
-		gl.glTexCoordPointer(2, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].tc.s)
-		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxBuf.v[0].n.s)
+		--[[ vertex client arrays
+		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
+		gl.glTexCoordPointer(2, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxBuf.size)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
 		gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
+		--]]
+		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texCoord.loc, 2, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
+		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
+		gl.glEnableVertexAttribArray(args.shader.attrs.texCoord.loc)
+		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
+		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
+		gl.glDisableVertexAttribArray(args.shader.attrs.texCoord.loc)
+		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
+		--]]
+		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
+		mtl.vao:use()
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
+		mtl.vao:useNone()
 		--]]
 		if args.endMtl then args.endMtl(mtl) end
 	end

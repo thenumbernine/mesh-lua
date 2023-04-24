@@ -5,7 +5,10 @@ local GLProgram = require 'gl.program'
 local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
 local WavefrontObj = require 'wavefrontobj.wavefrontobj'
+local vec3f = require 'vec-ffi.vec3f'
 local vec4f = require 'vec-ffi.vec4f'
+local matrix_ffi = require 'matrix.ffi'
+matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = assert((...))
 
@@ -32,41 +35,64 @@ function App:initGL(...)
 
 	self.shader = GLProgram{
 		vertexCode = [[
-varying vec2 texCoordv;
-varying vec4 colorv;
+#version 460
 
-uniform vec3 offset;
+in vec3 pos;
+in vec2 texCoord;
+in vec3 normal;
+in vec3 com;
+
+uniform vec4 color;
+uniform vec3 offset;	//per-material
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+out vec2 texCoordv;
+out vec3 normalv;
+out vec4 colorv;
 
 void main() {
-	texCoordv = gl_MultiTexCoord0.xy;
-	colorv = gl_Color;
-	vec3 vertex = gl_Vertex.xyz;
-	vertex += offset;
-	gl_Position = gl_ProjectionMatrix * (gl_ModelViewMatrix * vec4(vertex, 1.));
+	texCoordv = texCoord;
+	normalv = normal;
+	colorv = color;
+	vec3 vertex = pos + offset;
+	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertex, 1.));
 }
 ]],
 		fragmentCode = [[
+#version 460
+
 uniform sampler2D tex;
 uniform bool useLighting;
 uniform bool useTextures;
 
-varying vec2 texCoordv;
-varying vec4 colorv;
+in vec2 texCoordv;
+in vec3 normalv;
+in vec4 colorv;
+
+out vec4 fragColor;
 
 void main() {
-	gl_FragColor = colorv;
+	fragColor = colorv;
 	if (useLighting) {
+		fragColor.rgb *= dot(normalv, vec3(1., 1., 1.));
 	}
 	if (useTextures) {
-		gl_FragColor *=texture2D(tex, texCoordv);
+		fragColor *= texture(tex, texCoordv);
 	}
 }
 ]],
 		uniforms = {
 			tex = 0,
+			color = {1,1,1,1},
 		},
 	}
+
+	self.obj:loadGL(self.shader)
 end
+
+App.modelViewMatrix = matrix_ffi.zeros{4,4}
+App.projectionMatrix = matrix_ffi.zeros{4,4}
 
 function App:update()
 	gl.glEnable(gl.GL_DEPTH_TEST)
@@ -78,6 +104,10 @@ function App:update()
 	if self.useWireframe then
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
+
+	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.modelViewMatrix.ptr)
+	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
+
 --	glCallOrRun(self.displayList, function()
 		self.shader:use()
 		if self.shader.uniforms.useLighting then
@@ -86,12 +116,29 @@ function App:update()
 		self.obj:draw{
 			-- TODO option for calculated normals?
 			-- TODO shader options?
+			shader = self.shader,
 			beginMtl = function(mtl)
-				local useTextures = mtl.tex_Kd and self.useTextures
-				gl.glUniform1i(self.shader.uniforms.useTextures.loc, useTextures and 1 or 0)
-
-				local offset = (mtl.com3 - self.obj.com3) * self.explodeDist
-				gl.glUniform3f(self.shader.uniforms.offset.loc, offset:unpack())
+				if mtl.tex_Kd then mtl.tex_Kd:bind() end
+				-- [[
+				self.shader:setUniforms{
+					useTextures = mtl.tex_Kd and self.useTextures and 1 or 0,
+					color = mtl.Kd or {1,1,1,1},
+					offset = vec3f(((mtl.com3 - self.obj.com3) * self.explodeDist):unpack()).s,
+					modelViewMatrix = self.modelViewMatrix.ptr,
+					projectionMatrix = self.projectionMatrix.ptr,
+				}
+				--]]
+				--[[
+				gl.glUniform1i(self.shader.uniforms.useTextures.loc, mtl.tex_Kd and self.useTextures and 1 or 0)
+				if mtl.Kd then
+					gl.glUniform4f(self.shader.uniforms.color.loc, mtl.Kd:unpack())
+				else
+					gl.glUniform4f(self.shader.uniforms.color.loc, 1,1,1,1)
+				end
+				gl.glUniform3f(self.shader.uniforms.offset.loc, ((mtl.com3 - self.obj.com3) * self.explodeDist):unpack())
+				gl.glUniformMatrix4fv(self.shader.uniforms.modelViewMatrix.loc, 1, gl.GL_FALSE, self.modelViewMatrix.ptr)
+				gl.glUniformMatrix4fv(self.shader.uniforms.projectionMatrix.loc, 1, gl.GL_FALSE, self.projectionMatrix.ptr)
+				--]]
 			end,
 		}
 		self.shader:useNone()
@@ -134,7 +181,7 @@ function App:updateGUI()
 	if ig.igButton'reset view' then
 		self.view.ortho = false
 		self.view.angle:set(0,0,0,1)
-		self:setCenterD0()
+		self:setCenter(self.obj.com3)
 	end
 	-- TODO max dependent on bounding radius of model, same with COM camera positioning
 	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
