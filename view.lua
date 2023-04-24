@@ -21,6 +21,7 @@ function App:initGL(...)
 
 	self.obj = WavefrontObj(fn)
 	print('volume', self.obj:calcVolume())
+	print('bbox volume', (self.obj.bbox.max - self.obj.bbox.min):volume())
 
 	self:setCenter(self.obj.com3)
 	self.displayList = {}
@@ -29,6 +30,9 @@ function App:initGL(...)
 	self.useWireframe = false
 	self.useTextures = true
 	self.useLighting = false
+	self.useCullFace = true
+	self.useDepthTest = true
+	self.useBlend = true
 	self.useTexFilterNearest = false
 	self.explodeDist = 0
 	self.bgcolor = vec4f(.2, .3, .5, 1)
@@ -95,10 +99,18 @@ App.modelViewMatrix = matrix_ffi.zeros{4,4}
 App.projectionMatrix = matrix_ffi.zeros{4,4}
 
 function App:update()
-	gl.glEnable(gl.GL_DEPTH_TEST)
-	gl.glEnable(gl.GL_BLEND)
-	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-	gl.glEnable(gl.GL_CULL_FACE)
+	if self.useDepthTest then
+		gl.glEnable(gl.GL_DEPTH_TEST)
+	end
+	if self.useBlend then
+		gl.glEnable(gl.GL_BLEND)
+		gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
+	end
+	if self.useCullFace then
+		--gl.glFrontFace(gl.GL_CCW)
+		--gl.glCullFace(gl.GL_BACK)
+		gl.glEnable(gl.GL_CULL_FACE)
+	end
 	gl.glClearColor(self.bgcolor:unpack())
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	if self.useWireframe then
@@ -119,7 +131,6 @@ function App:update()
 			shader = self.shader,
 			beginMtl = function(mtl)
 				if mtl.tex_Kd then mtl.tex_Kd:bind() end
-				-- [[
 				self.shader:setUniforms{
 					useTextures = mtl.tex_Kd and self.useTextures and 1 or 0,
 					color = mtl.Kd or {1,1,1,1},
@@ -127,25 +138,13 @@ function App:update()
 					modelViewMatrix = self.modelViewMatrix.ptr,
 					projectionMatrix = self.projectionMatrix.ptr,
 				}
-				--]]
-				--[[
-				gl.glUniform1i(self.shader.uniforms.useTextures.loc, mtl.tex_Kd and self.useTextures and 1 or 0)
-				if mtl.Kd then
-					gl.glUniform4f(self.shader.uniforms.color.loc, mtl.Kd:unpack())
-				else
-					gl.glUniform4f(self.shader.uniforms.color.loc, 1,1,1,1)
-				end
-				gl.glUniform3f(self.shader.uniforms.offset.loc, ((mtl.com3 - self.obj.com3) * self.explodeDist):unpack())
-				gl.glUniformMatrix4fv(self.shader.uniforms.modelViewMatrix.loc, 1, gl.GL_FALSE, self.modelViewMatrix.ptr)
-				gl.glUniformMatrix4fv(self.shader.uniforms.projectionMatrix.loc, 1, gl.GL_FALSE, self.projectionMatrix.ptr)
-				--]]
 			end,
 		}
 		self.shader:useNone()
 --	end)
-	if self.useWireframe then
-		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
-	end
+	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+	gl.glDisable(gl.GL_BLEND)
+	gl.glDisable(gl.GL_CULL_FACE)
 	App.super.update(self)
 	require 'gl.report''here'
 end
@@ -186,6 +185,9 @@ function App:updateGUI()
 	-- TODO max dependent on bounding radius of model, same with COM camera positioning
 	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
 	ig.luatableCheckbox('wireframe', self, 'useWireframe')
+	ig.luatableCheckbox('use cull face', self, 'useCullFace')
+	ig.luatableCheckbox('use depth test', self, 'useDepthTest')
+	ig.luatableCheckbox('use blend', self, 'useBlend')
 	if ig.luatableCheckbox('use textures', self, 'useTextures') then
 		self:deleteDisplayList()
 	end

@@ -180,6 +180,19 @@ function WavefrontOBJ:init(filename)
 		mtl.com3 = self:calcCOM3(mtlname)
 	end
 --]]
+-- [[ calculate bbox
+	local vec3huge = vec3f(math.huge, math.huge, math.huge)
+	self.bbox = {
+		min = vec3f(vec3huge),
+		max = -vec3huge,
+	}
+	for _,v in ipairs(self.vs) do
+		for i=0,2 do
+			self.bbox.min.s[i] = math.min(self.bbox.min.s[i], v[i+1])
+			self.bbox.max.s[i] = math.max(self.bbox.max.s[i], v[i+1])
+		end
+	end
+--]]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -369,8 +382,14 @@ end
 function WavefrontOBJ:faceiter(mtlname)
 	return coroutine.wrap(function()
 		for fs in self:mtliter(mtlname) do
-			for k=3,table.maxn(fs) do
-				for _,vis in ipairs(fs[k]) do
+			-- order not guaranteed:
+			--for k,fks in pairs(fs) do
+			-- order guaranteed, but fails for no-triangles
+			--for k=3,table.maxn(fs) do
+			-- involves a sort so ..
+			for _,k in ipairs(table.keys(fs):sort()) do
+				local fsk = fs[k]
+				for _,vis in ipairs(fsk) do
 					coroutine.yield(vis)	-- has [1].v [2].v [3].v for vtx indexes
 				end
 			end
@@ -404,8 +423,6 @@ function WavefrontOBJ:draw(args)
 	local gl = require 'gl'
 	
 	self:loadGL()	-- load if not loaded
-	gl.glPushAttrib(gl.GL_ENABLE_BIT)
-	gl.glDisable(gl.GL_CULL_FACE)
 	local curtex
 	for mtlname, fs in pairs(self.fsForMtl) do
 		local mtl = assert(self.mtllib[mtlname])
@@ -486,7 +503,6 @@ function WavefrontOBJ:draw(args)
 		--]]
 		if args.endMtl then args.endMtl(mtl) end
 	end
-	gl.glPopAttrib()
 	if curtex then
 		curtex:unbind()
 		curtex:disable()
