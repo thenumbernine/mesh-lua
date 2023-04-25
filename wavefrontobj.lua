@@ -88,10 +88,14 @@ function WavefrontOBJ:init(filename)
 
 	timer('loading', function()
 		self.tris = table() -- triangulation of all faces
-		self.facesForMtl = {}
-		self.mtllib = table()
-		local curmtl = ''	-- use this instead of 'nil' so the facesForMtl will have a valid key
-		self.mtllib[curmtl] = table{name=curmtl}
+		
+		-- map of materials
+		self.mtllib = {}
+		local curmtl = ''
+		self.mtllib[curmtl] = {
+			name = curmtl,
+			faces = table(),
+		}
 		assert(file(filename):exists(), "failed to find material file "..filename)
 		for line in io.lines(filename) do
 			local words = string.split(string.trim(line), '%s+')
@@ -124,10 +128,10 @@ function WavefrontOBJ:init(filename)
 				-- (unlike the other faces in the mtl which do have vt's)
 				--if not foundVT then usingMtl = '' end
 
-				local facesPerPolySize = self.facesForMtl[usingMtl]
+				local facesPerPolySize = self.mtllib[usingMtl].faces
 				if not facesPerPolySize then
 					facesPerPolySize = {}
-					self.facesForMtl[usingMtl] = facesPerPolySize
+					self.mtllib[usingMtl].faces = facesPerPolySize
 				end
 				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 				local nvtx = #words
@@ -145,22 +149,6 @@ function WavefrontOBJ:init(filename)
 				curmtl = assert(words[1])
 			elseif lineType == 'mtllib' then
 				self:loadMtl(assert(words[1]))
-			end
-		end
-		-- check
-		for mtlname in pairs(self.facesForMtl) do
-			if not self.mtllib[mtlname] then
-				io.stderr:write("mtllib failed to find mtl in obj: "..mtlname..'\n')
-				self.mtllib[mtlname] = {
-					name = mtlname,
-				}
-			end
-		end
-		for mtlname in pairs(self.mtllib) do
-			if not self.facesForMtl[mtlname] then
-				-- not really an error
-				--io.stderr:write("obj failed to find mtl in mtllib: "..mtlname..'\n')
-				self.facesForMtl[mtlname] = {}
 			end
 		end
 		-- could've done this up front...
@@ -285,6 +273,7 @@ function WavefrontOBJ:loadMtl(filename)
 		if lineType == 'newmtl' then
 			mtl = {}
 			mtl.name = assert(words[1])
+			mtl.faces = table()
 			if self.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			self.mtllib[mtl.name] = mtl
 		-- elseif lineType == 'illum' then
@@ -356,11 +345,11 @@ end
 function WavefrontOBJ:mtliter(mtlname)
 	return coroutine.wrap(function()
 		if mtlname then
-			local fs = self.facesForMtl[mtlname]
-			if fs then coroutine.yield(fs, mtlname) end
+			local mtl = self.mtllib[mtlname]
+			if mtl then coroutine.yield(mtl, mtlname) end
 		else
-			for mtlname, fs in pairs(self.facesForMtl) do
-				coroutine.yield(fs, mtlname)
+			for mtlname, mtl in pairs(self.mtllib) do
+				coroutine.yield(mtl, mtlname)
 			end
 		end
 	end)
@@ -369,15 +358,16 @@ end
 -- yields with each face in a particular material or in all materials
 function WavefrontOBJ:faceiter(mtlname)
 	return coroutine.wrap(function()
-		for fs in self:mtliter(mtlname) do
+		for mtl in self:mtliter(mtlname) do
+			local facesPerPolySize = assert(mtl.faces)
 			-- order not guaranteed:
-			--for k,fks in pairs(fs) do
+			--for polySize,faces in pairs(facesPerPolySize) do
 			-- order guaranteed, but fails for no-triangles
-			--for k=3,table.maxn(fs) do
+			--for polySize=3,table.maxn(facesPerPolySize) do
 			-- involves a sort so ..
-			for _,k in ipairs(table.keys(fs):sort()) do
-				local fsk = fs[k]
-				for _,vis in ipairs(fsk) do
+			for _,polySize in ipairs(table.keys(facesPerPolySize):sort()) do
+				local faces = facesPerPolySize[polySize]
+				for _,vis in ipairs(faces) do
 					coroutine.yield(vis)	-- has [1].v [2].v [3].v for vtx indexes
 				end
 			end
@@ -514,9 +504,10 @@ function WavefrontOBJ:save(filename)
 	for _,vn in ipairs(self.vns) do
 		o:write('vn ', table.concat(vn, ' '), '\n')
 	end
-	for _,mtl in ipairs(table.keys(self.facesForMtl):sort()) do
-		o:write('usemtl ', mtl, '\n')
-		local fs = self.facesForMtl[mtl]
+	for _,mtlname in ipairs(table.keys(self.mtllib):sort()) do
+		local mtl = self.mtllib[mtlname]
+		o:write('usemtl ', mtlname, '\n')
+		local fs = mtl.faces
 		for k=3,table.maxn(fs) do
 			for _,vis in ipairs(fs[k]) do
 				o:write('f ', table.mapi(vis, function(vi)
@@ -558,8 +549,7 @@ function WavefrontOBJ:loadGL(shader)
 
 	-- now for performance I can either store everything in a packed array
 	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
-	for mtlname, polysPerSides in pairs(self.facesForMtl) do
-		local mtl = self.mtllib[mtlname]
+	for mtlname, mtl in pairs(self.mtllib) do
 		if not mtl.vtxCPUBuf then
 			-- count total number of triangles
 			-- TODO save this #?
@@ -570,7 +560,7 @@ function WavefrontOBJ:loadGL(shader)
 			end
 			
 			--[[ save face normals and face area?
-			for polySize,faces in pairs(self.facesForMtl[mtlname]) do
+			for polySize,faces in pairs(self.mtllib[mtlname].faces) do
 				for _,face in ipairs(faces) do
 					for j=2,polySize-1 do
 						local a = face[1]
@@ -676,9 +666,8 @@ function WavefrontOBJ:draw(args)
 	
 	self:loadGL()	-- load if not loaded
 	local curtex
-	for mtlname, fs in pairs(self.facesForMtl) do
-		local mtl = assert(self.mtllib[mtlname])
-		assert(not mtl or mtl.name == mtlname)
+	for mtlname, mtl in pairs(self.mtllib) do
+		local fs = mtl.faces
 		--[[
 		if mtl.Kd then
 			gl.glColor4f(mtl.Kd:unpack())

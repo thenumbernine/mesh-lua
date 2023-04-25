@@ -11,7 +11,7 @@ for mtlname in pairs(obj.mtllib) do
 	for a,b,c in obj:triiter(mtlname) do
 		tris:insert{a,b,c}
 	end
-	obj.facesForMtl[mtlname] = #tris > 0 and {[3] = tris} or nil
+	obj.mtllib[mtlname].faces = #tris > 0 and {[3] = tris} or nil
 end
 
 obj:save(outfn)
