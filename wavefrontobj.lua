@@ -48,13 +48,8 @@ local function pathOfFilename(fn)
 	return fn:sub(1,lastSlashIndex)
 end
 
--- tonumber but truncate arguments and default to 0
-local function tonumberor0(x)
-	return tonumber(x) or 0
-end
-
 local function wordsToNumbers(w)
-	return w:mapi(tonumberor0):unpack()
+	return w:mapi(function(x) return tonumber(x) end):unpack(1, table.maxn(w))
 end
 
 local function wordsToVec2(w)
@@ -68,7 +63,7 @@ end
 -- used for colors
 local function wordsToColor(w)
 	-- TODO error if not 3 or 4?
-	local r,g,b,a = w:mapi(function(x) return tonumber(x) end):unpack()
+	local r,g,b,a = w:mapi(function(x) return tonumber(x) end):unpack(1, 4)
 	r = r or 0
 	g = g or 0
 	b = b or 0
@@ -116,8 +111,8 @@ function WavefrontOBJ:init(filename)
 				local foundVT = false
 				for _,vertexIndexString in ipairs(words) do
 					local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
-					local vertexIndices = vertexIndexStringParts:mapi(tonumberor0)	-- may be nil
-					local vi, vti, vni = unpack(vertexIndices)
+					local vertexIndices = vertexIndexStringParts:mapi(function(x) return tonumber(x) end)	-- may be nil
+					local vi, vti, vni = unpack(vertexIndices, 1, 3)
 					if vti then foundVT = true end
 					vis:insert{v=vi, vt=vti, vn=vni}
 				end
@@ -156,7 +151,8 @@ function WavefrontOBJ:init(filename)
 			elseif lineType == 'usemtl' then
 				curmtl = assert(words[1])
 			elseif lineType == 'mtllib' then
-				self:loadMtl(assert(words[1]))
+				-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
+				self:loadMtl(words:concat' ')
 			end
 		end
 		-- could've done this up front...
@@ -462,7 +458,7 @@ function WavefrontOBJ:loadMtl(filename)
 			mtl.Ks = wordsToColor(words)
 		elseif lineType == 'ns' then	-- specular exponent 
 			assert(mtl)
-			mtl.Ns = tonumberor0(words[1])
+			mtl.Ns = tonumber(words[1]) or 1
 		-- 'd' = alpha
 		-- 'Tr' = 1 - d = opacity
 		-- 'Tf' = "transmission filter color"
@@ -471,12 +467,60 @@ function WavefrontOBJ:loadMtl(filename)
 		-- 'Ni' = index of refraction aka optical density
 		elseif lineType == 'map_kd' then	-- diffuse map
 			assert(mtl)
-			local localpath = assert(words[1])
+			local function getTexOpts(w)
+				local opts = {}
+				local found
+				repeat
+					found = false
+					local function parse(n)
+						w:remove(1)
+						local res = table()
+						for i=1,n do
+							local v = w[1]
+							if n == 3 then	-- colors have optionally 1 thru 3 numeric args
+								v = tonumber(v)
+								if not v then break end
+							else
+								v = tonumber(v) or v
+							end
+							w:remove(1)
+							res:insert(v)
+						end
+						found = true
+						return res
+					end
+					local valid = {
+						blendu = 1,
+						blendv = 1,
+						boost = 1,
+						mm = 2,	-- only 2 numeric
+						o = 3,	-- up to 3 numeric
+						s = 3,	-- up to 3 numeric
+						t = 3,	-- up to 3 numeric
+						texres = 1,
+						clamp = 1,
+						bm = 1,
+						imfchan = 1,
+						type = 1,	-- for reflection maps only
+					}
+					local l = w[1]:lower()
+					if l:sub(1,1) == '-' then
+						local k = l:sub(2)
+						local v = valid[k]
+						if v then
+							opts[k] = parse(v)
+						end
+					end
+				until not found
+			end
+			local opts = getTexOpts(words)
+			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
+			local localpath = words:concat' '
 			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
 			localpath = localpath:gsub('\\', '/')
 			local path = file(self.relpath)(localpath)
 			if not path:exists() then
-				print("couldn't load map_Kd "..path)
+				print("couldn't load map_Kd "..tostring(path))
 			else
 				mtl.map_Kd = path.path
 				-- TODO
