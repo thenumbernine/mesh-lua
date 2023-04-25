@@ -16,11 +16,24 @@ local Image = require 'image'
 ffi.cdef[[
 typedef struct {
 	vec3f_t pos;
+	vec3f_t normal;		//loaded normal
+	vec3f_t normal2;	//generated normal ... because i want the viewer to toggle between the two
 	vec2f_t texCoord;
-	vec3f_t normal;
-	vec3f_t com;	// com of tri containing this vertex.  only good for un-indexed drawing.
+	
+	// per-triangle stats (duplicated 3x per-vertex)
+	float area;
+	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
 } obj_vertex_t;
 ]]
+
+
+local function triArea(a,b,c)
+	local ab = b - a
+	local ac = c - a
+	return .5 * ab:cross(ac):length()
+end
+
+
 
 local function pathOfFilename(fn)
 	-- find the last index of / in fn
@@ -36,12 +49,12 @@ local function pathOfFilename(fn)
 end
 
 -- tonumber but truncate arguments and default to 0
-local function tonumber1(x)
+local function tonumberor0(x)
 	return tonumber(x) or 0
 end
 
 local function wordsToNumbers(w)
-	return w:mapi(tonumber1):unpack()
+	return w:mapi(tonumberor0):unpack()
 end
 
 local function wordsToVec2(w)
@@ -74,9 +87,10 @@ function WavefrontOBJ:init(filename)
 	self.mtlFilenames = table()
 
 	timer('loading', function()
-		self.fsForMtl = {}
+		self.tris = table() -- triangulation of all faces
+		self.facesForMtl = {}
 		self.mtllib = table()
-		local curmtl = ''	-- use this instead of 'nil' so the fsForMtl will have a valid key
+		local curmtl = ''	-- use this instead of 'nil' so the facesForMtl will have a valid key
 		self.mtllib[curmtl] = table{name=curmtl}
 		assert(file(filename):exists(), "failed to find material file "..filename)
 		for line in io.lines(filename) do
@@ -98,7 +112,7 @@ function WavefrontOBJ:init(filename)
 				local foundVT = false
 				for _,vertexIndexString in ipairs(words) do
 					local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
-					local vertexIndices = vertexIndexStringParts:mapi(tonumber1)	-- may be nil
+					local vertexIndices = vertexIndexStringParts:mapi(tonumberor0)	-- may be nil
 					local vi, vti, vni = unpack(vertexIndices)
 					if vti then foundVT = true end
 					vis:insert{v=vi, vt=vti, vn=vni}
@@ -110,15 +124,18 @@ function WavefrontOBJ:init(filename)
 				-- (unlike the other faces in the mtl which do have vt's)
 				--if not foundVT then usingMtl = '' end
 
-				local fs = self.fsForMtl[usingMtl]
-				if not fs then
-					fs = {}
-					self.fsForMtl[usingMtl] = fs
+				local facesPerPolySize = self.facesForMtl[usingMtl]
+				if not facesPerPolySize then
+					facesPerPolySize = {}
+					self.facesForMtl[usingMtl] = facesPerPolySize
 				end
 				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 				local nvtx = #words
-				fs[nvtx] = fs[nvtx] or table()
-				fs[nvtx]:insert(vis)
+				facesPerPolySize[nvtx] = facesPerPolySize[nvtx] or table()
+				facesPerPolySize[nvtx]:insert(vis)
+				for i=2,nvtx-2 do
+					self.tris:insert{vis[1], vis[i], vis[i+1]}
+				end
 			elseif lineType == 's' then
 				-- TODO then smooth is on
 				-- for all subsequent polys, or for the entire group (including previously defined polys) ?
@@ -131,8 +148,20 @@ function WavefrontOBJ:init(filename)
 			end
 		end
 		-- check
-		for mtlname, fs in pairs(self.fsForMtl) do
-			assert(self.mtllib[mtlname], "failed to find mtl "..mtlname)
+		for mtlname in pairs(self.facesForMtl) do
+			if not self.mtllib[mtlname] then
+				io.stderr:write("mtllib failed to find mtl in obj: "..mtlname..'\n')
+				self.mtllib[mtlname] = {
+					name = mtlname,
+				}
+			end
+		end
+		for mtlname in pairs(self.mtllib) do
+			if not self.facesForMtl[mtlname] then
+				-- not really an error
+				--io.stderr:write("obj failed to find mtl in mtllib: "..mtlname..'\n')
+				self.facesForMtl[mtlname] = {}
+			end
 		end
 		-- could've done this up front...
 		self.vs = vs
@@ -147,15 +176,23 @@ function WavefrontOBJ:init(filename)
 	-- and just for kicks, track all edges
 	timer('edges', function()
 		self.edges = {}
-		local function addEdge(a,b)
-			if a > b then return addEdge(b,a) end
+		local function addEdge(a,b,t)
+			if a > b then return addEdge(b,a,t) end
 			self.edges[a] = self.edges[a] or {}
-			self.edges[a][b] = true
+			self.edges[a][b] = self.edges[a][b] or {
+				tris = table()
+			}
+			local e = self.edges[a][b]
+			e.tris:insert(t)
+			t.edges:insert(e)
 		end
-		for a,b,c in self:triiter() do
-			addEdge(a.v,b.v)
-			addEdge(a.v,c.v)
-			addEdge(b.v,c.v)
+		for _,t in ipairs(self.tris) do
+			assert(not t.edges)
+			t.edges = table()
+			local a,b,c = table.unpack(t)
+			addEdge(a.v, b.v, t)
+			addEdge(a.v, c.v, t)
+			addEdge(b.v, c.v, t)
 		end
 	end)
 
@@ -193,6 +230,44 @@ function WavefrontOBJ:init(filename)
 		end
 	end
 --]]
+-- TODO maybe calc bounding radius?
+
+-- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+	local numSharpEdges = 0
+	for a,other in pairs(self.edges) do
+		for b,edge in pairs(other) do
+			-- #tris == 0 is an edge construction error
+			-- #tris == 1 is a sharp edge ... which means a non-convex
+			-- #tris == 2 is good
+			-- any more ... we have something weird
+			if #edge.tris == 0 then
+				error'here'
+			elseif #edge.tris == 1 then
+				numSharpEdges = numSharpEdges + 1
+			elseif #edge.tris > 2 then
+				print('found an edge with != 2 tris: ' ..#edge.tris)
+			end
+		end
+	end
+	print('numSharpEdges = '..numSharpEdges)
+
+-- for all faces (not flagged)
+--  traverse neighbors by edge and make sure the normals align
+--  complain if the normals flip
+--  or should this be robust enough to determine volume without correct normals / tri order?
+--  I'll assume ccw polys for now.
+	local function checkTri(t)
+		-- for all edges in the t, go to the other faces matching.
+		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+		for _,e in ipairs(t.edges) do
+			
+		end
+	end
+	-- TODO master list of faces?
+	for _,t in ipairs(self.tris) do
+		checkTri(t)
+	end
+--]]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -200,7 +275,10 @@ function WavefrontOBJ:loadMtl(filename)
 	local mtl
 	filename = file(self.relpath)(filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
-	assert(file(filename):exists(), "failed to find material file "..filename)
+	if not file(filename):exists() then
+		io.stderr:write("failed to find material file "..filename..'\n')
+		return
+	end
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
@@ -264,96 +342,6 @@ function WavefrontOBJ:loadMtl(filename)
 	end
 end
 
--- upon ctor the images are loaded (in case the caller isn't using GL)
--- so upon first draw - or upon manual call - load the gl textures
-function WavefrontOBJ:loadGL(shader)
-	local gl = require 'gl'
-	local glreport = require 'gl.report'
-	local Tex2D = require 'gl.tex2d'
-	local GLArrayBuffer = require 'gl.arraybuffer'
-	local GLAttribute = require 'gl.attribute'
-	local GLVertexArray = require 'gl.vertexarray'
-	
-	-- load textures
-	for mtlname, mtl in pairs(self.mtllib) do
-		if mtl.image_Kd and not mtl.tex_Kd then
-			mtl.tex_Kd = Tex2D{
-				image = mtl.image_Kd,
-				minFilter = gl.GL_NEAREST,
-				magFilter = gl.GL_LINEAR,
-			}
-		end
-	end
-
-	-- now for performance I can either store everything in a packed array
-	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
-	for mtlname, polysPerSides in pairs(self.fsForMtl) do
-		local mtl = self.mtllib[mtlname]
-		if not mtl.vtxCPUBuf then
-			local i = 0
-			for a,b,c in self:triiter(mtlname) do
-				i = i + 3
-			end
-			local vtxCPUBuf = vector('obj_vertex_t', i)
-			i = 0
-			for a,b,c in self:triiter(mtlname) do
-				local com = (self.vs[a.v] + self.vs[b.v] + self.vs[c.v]) / 3
-				for _,vi in ipairs{a,b,c} do
-					local v = vtxCPUBuf.v + i
-					v.pos:set(self.vs[vi.v]:unpack())
-					if vi.vt then
-						v.texCoord:set(self.vts[vi.vt]:unpack())
-					end
-					if vi.vn then
-						v.normal:set(self.vns[vi.vn]:unpack())
-					end
-					v.com:set(com:unpack())
-					i = i + 1
-				end
-			end
-			mtl.vtxCPUBuf = vtxCPUBuf
-		
-			-- [=[
-			mtl.vtxBuf = GLArrayBuffer{
-				size = mtl.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
-				data = mtl.vtxCPUBuf.v,
-				usage = gl.GL_STATIC_DRAW,
-			}
-			assert(glreport'here')
-
-			mtl.vtxAttrs = {}
-			for _,info in ipairs{
-				{name='pos', size=3},
-				{name='texCoord', size=2},
-				{name='normal', size=3},
-				{name='com', size=3},
-			} do
-				local srcAttr = shader.attrs[info.name]
-				if srcAttr then
-					mtl.vtxAttrs[info.name] = GLAttribute{
-						buffer = mtl.vtxBuf,
-						size = info.size,
-						type = gl.GL_FLOAT,
-						stride = ffi.sizeof'obj_vertex_t',
-						offset = ffi.offsetof('obj_vertex_t', info.name),
-					}
-					assert(glreport'here')
-				end
-			end
-			shader:use()
-			assert(glreport'here')
-			mtl.vao = GLVertexArray{
-				program = shader,
-				attrs = mtl.vtxAttrs,
-			}
-			shader:setAttrs(mtl.vtxAttrs)
-			shader:useNone()
-			assert(glreport'here')
-			--]=]
-		end
-	end
-end
-
 -- common interface?  for dif 3d format types?
 function WavefrontOBJ:vtxiter()
 	return coroutine.wrap(function()
@@ -368,10 +356,10 @@ end
 function WavefrontOBJ:mtliter(mtlname)
 	return coroutine.wrap(function()
 		if mtlname then
-			local fs = self.fsForMtl[mtlname]
+			local fs = self.facesForMtl[mtlname]
 			if fs then coroutine.yield(fs, mtlname) end
 		else
-			for mtlname, fs in pairs(self.fsForMtl) do
+			for mtlname, fs in pairs(self.facesForMtl) do
 				coroutine.yield(fs, mtlname)
 			end
 		end
@@ -419,12 +407,276 @@ function WavefrontOBJ:triindexiter(mtlname)
 	end)
 end
 
+-- calculate COM by 0-forms (vertexes)
+function WavefrontOBJ:calcCOM0()
+	return self.vs:sum() / #self.vs
+end
+
+-- calculate COM by 1-forms (edges)
+-- depend on self.edges being stored
+function WavefrontOBJ:calcCOM1()
+	local totalCOM = vec3()
+	local totalArea = 0
+	for a,bs in pairs(self.edges) do
+		for b in pairs(bs) do
+			local v1 = self.vs[a]
+			local v2 = self.vs[b]
+			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
+			-- for 1D, volume = |b-a|
+			local area = (v1 - v2):length()
+			local com = (v1 + v2) * .5
+			totalCOM = totalCOM + com * area
+			totalArea = totalArea + area
+		end
+	end
+	return totalCOM / totalArea
+end
+
+-- calculate COM by 2-forms (triangles)
+function WavefrontOBJ:calcCOM2(mtlname)
+	local totalCOM = vec3()
+	local totalArea = 0
+	for i,j,k in self:triiter(mtlname) do
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
+		-- for 2D, volume = |(b-a)x(c-a)|
+		local area = triArea(a, b, c)
+		local com = (a + b + c) * (1/3)
+		totalCOM = totalCOM + com * area
+		totalArea = totalArea + area
+	end
+	return totalCOM / totalArea
+end
+
+-- calculate COM by 3-forms (enclosed volume)
+function WavefrontOBJ:calcCOM3(mtlname)
+	local totalCOM = vec3()
+	local totalVolume = 0
+	for i,j,k in self:triiter(mtlname) do
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+
+		-- using [a,b,c,0] as the 4 pts of our tetrahedron
+		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
+		-- for 3D, volume = det|a b c|
+		local com = (a + b + c) * (1/4)
+
+		local volume = 0
+		volume = volume + a[1] * b[2] * c[3]
+		volume = volume + a[2] * b[3] * c[1]
+		volume = volume + a[3] * b[1] * c[2]
+		volume = volume - c[1] * b[2] * a[3]
+		volume = volume - c[2] * b[3] * a[1]
+		volume = volume - c[3] * b[1] * a[2]
+
+		totalCOM = totalCOM + com * volume
+		totalVolume = totalVolume + volume
+	end
+	return totalCOM / totalVolume
+end
+
+-- calculates overall volume
+function WavefrontOBJ:calcVolume()
+	local volume = 0
+	for i,j,k in self:triiter() do
+		-- volume of parallelogram with vertices at 0, a, b, c
+		local a = self.vs[i.v]
+		local b = self.vs[j.v]
+		local c = self.vs[k.v]
+
+		volume = volume + a[1] * b[2] * c[3]
+		volume = volume + a[2] * b[3] * c[1]
+		volume = volume + a[3] * b[1] * c[2]
+		volume = volume - c[1] * b[2] * a[3]
+		volume = volume - c[2] * b[3] * a[1]
+		volume = volume - c[3] * b[1] * a[2]
+	end
+	if volume < 0 then volume = -volume end
+	volume = volume / 6
+	return volume
+end
+
+function WavefrontOBJ:save(filename)
+	local o = assert(file(filename):open'w')
+	-- TODO write smooth flag, groups, etc
+	for _,mtl in ipairs(self.mtlFilenames) do
+		o:write('mtllib ', mtl, '\n')
+	end
+	for _,v in ipairs(self.vs) do
+		o:write('v ', table.concat(v, ' '), '\n')
+	end
+	for _,vt in ipairs(self.vts) do
+		o:write('vt ', table.concat(vt, ' '), '\n')
+	end
+	for _,vn in ipairs(self.vns) do
+		o:write('vn ', table.concat(vn, ' '), '\n')
+	end
+	for _,mtl in ipairs(table.keys(self.facesForMtl):sort()) do
+		o:write('usemtl ', mtl, '\n')
+		local fs = self.facesForMtl[mtl]
+		for k=3,table.maxn(fs) do
+			for _,vis in ipairs(fs[k]) do
+				o:write('f ', table.mapi(vis, function(vi)
+					local vs = table{vi.v, vi.vt, vi.vn}
+					for i=1,vs:maxn() do vs[i] = vs[i] or '' end
+					return vs:concat'/'
+				end):concat' ', '\n')
+			end
+		end
+	end
+	o:close()
+end
+
+
+-- all the draw functionality is tied tightly with view.lua so ... 
+-- idk if i should move it from one or the other
+
+
+-- upon ctor the images are loaded (in case the caller isn't using GL)
+-- so upon first draw - or upon manual call - load the gl textures
+function WavefrontOBJ:loadGL(shader)
+	local gl = require 'gl'
+	local glreport = require 'gl.report'
+	local Tex2D = require 'gl.tex2d'
+	local GLArrayBuffer = require 'gl.arraybuffer'
+	local GLAttribute = require 'gl.attribute'
+	local GLVertexArray = require 'gl.vertexarray'
+	
+	-- load textures
+	for mtlname, mtl in pairs(self.mtllib) do
+		if mtl.image_Kd and not mtl.tex_Kd then
+			mtl.tex_Kd = Tex2D{
+				image = mtl.image_Kd,
+				minFilter = gl.GL_NEAREST,
+				magFilter = gl.GL_LINEAR,
+			}
+		end
+	end
+
+	-- now for performance I can either store everything in a packed array
+	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
+	for mtlname, polysPerSides in pairs(self.facesForMtl) do
+		local mtl = self.mtllib[mtlname]
+		if not mtl.vtxCPUBuf then
+			-- count total number of triangles
+			-- TODO save this #?
+			-- TODO save the triangulation?
+			local i = 0
+			for a,b,c in self:triiter(mtlname) do
+				i = i + 3
+			end
+			
+			--[[ save face normals and face area?
+			for polySize,faces in pairs(self.facesForMtl[mtlname]) do
+				for _,face in ipairs(faces) do
+					for j=2,polySize-1 do
+						local a = face[1]
+						local b = face[j]
+						local c = face[j+1]
+					end
+				end
+			end
+			--]]
+
+			-- calculate vertex normals
+			local vtxnormals = {}
+			for a,b,c in self:triiter(mtlname) do
+				local va = self.vs[a.v]
+				local vb = self.vs[b.v]
+				local vc = self.vs[c.v]
+				local normal = (vb - va):cross(vc - vb):normalize()
+				for _,vi in ipairs{a,b,c} do
+					vtxnormals[vi.v] = (vtxnormals[vi.v] or vec3()) + normal
+				end
+			end
+			for _,k in ipairs(table.keys(vtxnormals)) do
+				vtxnormals[k] = vtxnormals[k]:normalize()
+			end
+			
+			local vtxCPUBuf = vector('obj_vertex_t', i)
+			i = 0
+			for a,b,c in self:triiter(mtlname) do
+				local va = self.vs[a.v]
+				local vb = self.vs[b.v]
+				local vc = self.vs[c.v]
+				local com = (va + vb + vc) / 3
+				local area = triArea(va, vb, vc)
+				for _,vi in ipairs{a,b,c} do
+					local v = vtxCPUBuf.v + i
+					v.pos:set(self.vs[vi.v]:unpack())
+					if vi.vt then
+						if vi.vt < 1 or vi.vt > #self.vts then
+							print("found an oob vt "..vi.vt)
+						else
+							v.texCoord:set(self.vts[vi.vt]:unpack())
+						end
+					end
+					if vi.vn then
+						if vi.vn < 1 or vi.vn > #self.vns then
+							print("found an oob fn "..vi.vn)
+						else
+							v.normal:set(self.vns[vi.vn]:unpack())
+						end
+					end
+					v.normal2:set(vtxnormals[vi.v]:unpack())
+					v.area = area
+					v.com:set(com:unpack())
+					i = i + 1
+				end
+			end
+			mtl.vtxCPUBuf = vtxCPUBuf
+		
+			-- [=[
+			mtl.vtxBuf = GLArrayBuffer{
+				size = mtl.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
+				data = mtl.vtxCPUBuf.v,
+				usage = gl.GL_STATIC_DRAW,
+			}
+			assert(glreport'here')
+
+			mtl.vtxAttrs = {}
+			for _,info in ipairs{
+				{name='pos', size=3},
+				{name='texCoord', size=2},
+				{name='normal', size=3},
+				{name='normal2', size=3},
+				{name='com', size=3},
+			} do
+				local srcAttr = shader.attrs[info.name]
+				if srcAttr then
+					mtl.vtxAttrs[info.name] = GLAttribute{
+						buffer = mtl.vtxBuf,
+						size = info.size,
+						type = gl.GL_FLOAT,
+						stride = ffi.sizeof'obj_vertex_t',
+						offset = ffi.offsetof('obj_vertex_t', info.name),
+					}
+					assert(glreport'here')
+				end
+			end
+			shader:use()
+			assert(glreport'here')
+			mtl.vao = GLVertexArray{
+				program = shader,
+				attrs = mtl.vtxAttrs,
+			}
+			shader:setAttrs(mtl.vtxAttrs)
+			shader:useNone()
+			assert(glreport'here')
+			--]=]
+		end
+	end
+end
+
 function WavefrontOBJ:draw(args)
 	local gl = require 'gl'
 	
 	self:loadGL()	-- load if not loaded
 	local curtex
-	for mtlname, fs in pairs(self.fsForMtl) do
+	for mtlname, fs in pairs(self.facesForMtl) do
 		local mtl = assert(self.mtllib[mtlname])
 		assert(not mtl or mtl.name == mtlname)
 		--[[
@@ -510,128 +762,38 @@ function WavefrontOBJ:draw(args)
 	require 'gl.report''here'
 end
 
--- calculate COM by 0-forms (vertexes)
-function WavefrontOBJ:calcCOM0()
-	return self.vs:sum() / #self.vs
-end
-
--- calculate COM by 1-forms (edges)
--- depend on self.edges being stored
-function WavefrontOBJ:calcCOM1()
-	local totalCOM = vec3()
-	local totalArea = 0
-	for a,bs in pairs(self.edges) do
-		for b in pairs(bs) do
-			local v1 = self.vs[a]
-			local v2 = self.vs[b]
-			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
-			-- for 1D, volume = |b-a|
-			local area = (v1 - v2):length()
-			local com = (v1 + v2) * .5
-			totalCOM = totalCOM + com * area
-			totalArea = totalArea + area
+-- make sure my edges match my faces
+function WavefrontOBJ:drawEdges()
+	local gl = require 'gl'
+	gl.glColor3f(1,1,1)
+	gl.glBegin(gl.GL_LINES)
+	for a,other in pairs(self.edges) do
+		for b,edge in pairs(other) do
+			gl.glVertex3f(self.vs[a]:unpack())
+			gl.glVertex3f(self.vs[b]:unpack())
 		end
 	end
-	return totalCOM / totalArea
+	gl.glEnd()
 end
 
--- calculate COM by 2-forms (triangles)
-function WavefrontOBJ:calcCOM2(mtlname)
-	local totalCOM = vec3()
-	local totalArea = 0
-	for i,j,k in self:triiter(mtlname) do
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
-		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
-		-- for 2D, volume = |(b-a)x(c-a)|
-		local ab = b - a
-		local ac = c - a
-		local area = .5 * ab:cross(ac):length()
-		local com = (a + b + c) * (1/3)
-		totalCOM = totalCOM + com * area
-		totalArea = totalArea + area
-	end
-	return totalCOM / totalArea
-end
-
--- calculate COM by 3-forms (enclosed volume)
-function WavefrontOBJ:calcCOM3(mtlname)
-	local totalCOM = vec3()
-	local totalVolume = 0
-	for i,j,k in self:triiter(mtlname) do
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
-
-		-- using [a,b,c,0] as the 4 pts of our tetrahedron
-		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
-		-- for 3D, volume = det|a b c|
-		local com = (a + b + c) * (1/4)
-
-		local volume = 0
-		volume = volume + a[1] * b[2] * c[3]
-		volume = volume + a[2] * b[3] * c[1]
-		volume = volume + a[3] * b[1] * c[2]
-		volume = volume - c[1] * b[2] * a[3]
-		volume = volume - c[2] * b[3] * a[1]
-		volume = volume - c[3] * b[1] * a[2]
-
-		totalCOM = totalCOM + com * volume
-		totalVolume = totalVolume + volume
-	end
-	return totalCOM / totalVolume
-end
-
--- calculates overall volume
-function WavefrontOBJ:calcVolume()
-	local volume = 0
-	for i,j,k in self:triiter() do
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
-
-		volume = volume + a[1] * b[2] * c[3]
-		volume = volume + a[2] * b[3] * c[1]
-		volume = volume + a[3] * b[1] * c[2]
-		volume = volume - c[1] * b[2] * a[3]
-		volume = volume - c[2] * b[3] * a[1]
-		volume = volume - c[3] * b[1] * a[2]
-	end
-	if volume < 0 then volume = -volume end
-	volume = volume / 6
-	return volume
-end
-
-function WavefrontOBJ:save(filename)
-	local o = assert(file(filename):open'w')
-	-- TODO write smooth flag, groups, etc
-	for _,mtl in ipairs(self.mtlFilenames) do
-		o:write('mtllib ', mtl, '\n')
-	end
-	for _,v in ipairs(self.vs) do
-		o:write('v ', table.concat(v, ' '), '\n')
-	end
-	for _,vt in ipairs(self.vts) do
-		o:write('vt ', table.concat(vt, ' '), '\n')
-	end
-	for _,vn in ipairs(self.vns) do
-		o:write('vn ', table.concat(vn, ' '), '\n')
-	end
-	for _,mtl in ipairs(table.keys(self.fsForMtl):sort()) do
-		o:write('usemtl ', mtl, '\n')
-		local fs = self.fsForMtl[mtl]
-		for k=3,table.maxn(fs) do
-			for _,vis in ipairs(fs[k]) do
-				o:write('f ', table.mapi(vis, function(vi)
-					local vs = table{vi.v, vi.vt, vi.vn}
-					for i=1,vs:maxn() do vs[i] = vs[i] or '' end
-					return vs:concat'/'
-				end):concat' ', '\n')
+function WavefrontOBJ:drawNormals(useNormal2)
+	local gl = require 'gl'
+	gl.glColor3f(0,1,1)
+	gl.glBegin(gl.GL_LINES)
+	for mtlname,mtl in pairs(self.mtllib) do
+		if mtl.vtxCPUBuf then	-- default mtl '' can be empty...
+			for i=0,mtl.vtxCPUBuf.size-1,3 do
+				local v = mtl.vtxCPUBuf.v[i]
+				gl.glVertex3f(v.com:unpack())
+				if not useNormal2 then
+					gl.glVertex3f((v.com + v.normal):unpack())
+				else
+					gl.glVertex3f((v.com + v.normal2):unpack())
+				end
 			end
 		end
 	end
-	o:close()
+	gl.glEnd()
 end
 
 return WavefrontOBJ

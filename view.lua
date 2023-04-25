@@ -28,8 +28,14 @@ function App:initGL(...)
 
 	-- gui options
 	self.useWireframe = false
+	self.useDrawEdges = false
+	self.useDrawNormals = false
 	self.useTextures = true
+	
 	self.useLighting = false
+	self.useGeneratedNormals = false
+	self.lightDir = vec3f(1,1,1)
+
 	self.useCullFace = true
 	self.useDepthTest = true
 	self.useBlend = true
@@ -43,9 +49,11 @@ function App:initGL(...)
 
 in vec3 pos;
 in vec2 texCoord;
-in vec3 normal;
+in vec3 normal;		//mesh-provided normal
+in vec3 normal2;	//generated normal
 in vec3 com;
 
+uniform bool useNormal2;
 uniform vec4 color;
 uniform vec3 offset;	//per-material
 uniform mat4 modelViewMatrix;
@@ -57,7 +65,7 @@ out vec4 colorv;
 
 void main() {
 	texCoordv = texCoord;
-	normalv = normal;
+	normalv = useNormal2 ? normal : normal2;
 	colorv = color;
 	vec3 vertex = pos + offset;
 	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertex, 1.));
@@ -68,6 +76,7 @@ void main() {
 
 uniform sampler2D tex;
 uniform bool useLighting;
+uniform vec3 lightDir;
 uniform bool useTextures;
 
 in vec2 texCoordv;
@@ -79,7 +88,7 @@ out vec4 fragColor;
 void main() {
 	fragColor = colorv;
 	if (useLighting) {
-		fragColor.rgb *= dot(normalv, vec3(1., 1., 1.));
+		fragColor.rgb *= dot(normalv, lightDir);
 	}
 	if (useTextures) {
 		fragColor *= texture(tex, texCoordv);
@@ -99,6 +108,9 @@ App.modelViewMatrix = matrix_ffi.zeros{4,4}
 App.projectionMatrix = matrix_ffi.zeros{4,4}
 
 function App:update()
+	gl.glClearColor(self.bgcolor:unpack())
+	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
+	
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
 	end
@@ -111,8 +123,6 @@ function App:update()
 		--gl.glCullFace(gl.GL_BACK)
 		gl.glEnable(gl.GL_CULL_FACE)
 	end
-	gl.glClearColor(self.bgcolor:unpack())
-	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 	if self.useWireframe then
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
@@ -120,11 +130,22 @@ function App:update()
 	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.modelViewMatrix.ptr)
 	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
 
---	glCallOrRun(self.displayList, function()
+	self.obj:loadGL(self.shader)
+
+	if self.useDrawNormals then
+		self.obj:drawNormals(self.useGeneratedNormals)
+	end
+	if self.useDrawEdges then
+		self.obj:drawEdges()
+	else
 		self.shader:use()
-		if self.shader.uniforms.useLighting then
-			gl.glUniform1i(self.shader.uniforms.useLighting.loc, self.useLighting and 1 or 0)
-		end
+		self.shader:setUniforms{
+			useNormal2 = self.useGeneratedNormals and 1 or 0,
+			useLighting = self.useLighting and 1 or 0,
+			lightDir = self.lightDir:normalize().s,
+			modelViewMatrix = self.modelViewMatrix.ptr,
+			projectionMatrix = self.projectionMatrix.ptr,
+		}
 		self.obj:draw{
 			-- TODO option for calculated normals?
 			-- TODO shader options?
@@ -132,28 +153,20 @@ function App:update()
 			beginMtl = function(mtl)
 				if mtl.tex_Kd then mtl.tex_Kd:bind() end
 				self.shader:setUniforms{
-					useTextures = mtl.tex_Kd and self.useTextures and 1 or 0,
+					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
 					color = mtl.Kd or {1,1,1,1},
 					offset = vec3f(((mtl.com3 - self.obj.com3) * self.explodeDist):unpack()).s,
-					modelViewMatrix = self.modelViewMatrix.ptr,
-					projectionMatrix = self.projectionMatrix.ptr,
 				}
 			end,
 		}
 		self.shader:useNone()
---	end)
+	end
+
 	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
 	gl.glDisable(gl.GL_BLEND)
 	gl.glDisable(gl.GL_CULL_FACE)
 	App.super.update(self)
 	require 'gl.report''here'
-end
-
-function App:deleteDisplayList()
-	if self.displayList.id then
-		gl.glDeleteLists(self.displayList.id, 1)
-		self.displayList.id = nil
-	end
 end
 
 function App:setCenter(center)
@@ -182,15 +195,11 @@ function App:updateGUI()
 		self.view.angle:set(0,0,0,1)
 		self:setCenter(self.obj.com3)
 	end
-	-- TODO max dependent on bounding radius of model, same with COM camera positioning
-	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
-	ig.luatableCheckbox('wireframe', self, 'useWireframe')
+
 	ig.luatableCheckbox('use cull face', self, 'useCullFace')
 	ig.luatableCheckbox('use depth test', self, 'useDepthTest')
 	ig.luatableCheckbox('use blend', self, 'useBlend')
-	if ig.luatableCheckbox('use textures', self, 'useTextures') then
-		self:deleteDisplayList()
-	end
+	ig.luatableCheckbox('use textures', self, 'useTextures')
 	if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
 		for mtlname, mtl in pairs(self.obj.mtllib) do
 			if mtl.tex_Kd then
@@ -200,12 +209,16 @@ function App:updateGUI()
 			end
 		end
 	end
-	if ig.luatableCheckbox('use lighting', self, 'useLighting') then
-		self:deleteDisplayList()
-	end
+	ig.luatableCheckbox('use lighting', self, 'useLighting')
+	ig.luatableCheckbox('use generated normals', self, 'useGeneratedNormals')
+	
+	-- TODO max dependent on bounding radius of model, same with COM camera positioning
+	-- TODO per-tri exploding as well
+	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
+	ig.luatableCheckbox('wireframe', self, 'useWireframe')
+	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
+	ig.luatableCheckbox('draw normals', self, 'useDrawNormals')
 
-	-- TODO per-mesh explode coeff for viewing distinct pieces
-	-- then maybe per-tri as well?
 end
 
 App():run()
