@@ -29,14 +29,11 @@ typedef struct {
 } obj_vertex_t;
 ]]
 
-
 local function triArea(a,b,c)
 	local ab = b - a
 	local ac = c - a
 	return .5 * ab:cross(ac):length()
 end
-
-
 
 local function pathOfFilename(fn)
 	-- find the last index of / in fn
@@ -153,7 +150,9 @@ function WavefrontOBJ:init(filename)
 				-- TODO then smooth is on
 				-- for all subsequent polys, or for the entire group (including previously defined polys) ?
 			elseif lineType == 'g' then
-				-- TODO then we start a new group
+				-- TODO then we start a new named group
+			elseif lineType == 'o' then
+				-- TODO then we start a new named object
 			elseif lineType == 'usemtl' then
 				curmtl = assert(words[1])
 			elseif lineType == 'mtllib' then
@@ -232,7 +231,7 @@ function WavefrontOBJ:init(filename)
 --]]
 -- TODO maybe calc bounding radius?
 
--- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+--[=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 	local numSharpEdges = 0
 	for a,other in pairs(self.edges) do
 		for b,edge in pairs(other) do
@@ -251,7 +250,7 @@ function WavefrontOBJ:init(filename)
 	end
 	print('numSharpEdges = '..numSharpEdges)
 
--- for all faces (not flagged)
+-- for all faces (not checked)
 --  traverse neighbors by edge and make sure the normals align
 --  complain if the normals flip
 --  or should this be robust enough to determine volume without correct normals / tri order?
@@ -285,12 +284,12 @@ t1.v3      t1.v2
 t1.v1*-------*
       t2.v3   t2.v1
 --]]
-print('folding from', t1.index, 'to', t2.index)
+--print('folding from', t1.index, 'to', t2.index)
 					local i11 = findLocalIndex(t1, e[1])	-- where in t1 is the edge's first?
 					local i12 = findLocalIndex(t1, e[2])	-- where in t1 is the edge's second?
 					local i21 = findLocalIndex(t2, e[1])	-- where in t2 is the edge's first?
 					local i22 = findLocalIndex(t2, e[2])	-- where in t2 is the edge's second?
-print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)					
+--print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)					
 					assert(i11 and i12 and i21 and i22)
 					assert(t1[i11].v == t2[i21].v)	-- e[1] matches between t1 and t2
 					assert(t1[i12].v == t2[i22].v)	-- e[2] matches between t1 and t2
@@ -301,17 +300,17 @@ print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)
 					assert(t2[i22].v == e[2])
 
 					local v = matrix{3,3}:lambda(function(i,j) return self.vs[t2[i].v][j] end)
-print('v\n'..v)					
+--print('v\n'..v)					
 					local d1 = v[2] - v[1]
 					local d2 = v[3] - v[2]
 					local n = d1:cross(d2)
 					local nlen = n:norm()
-print('|d1 x d2| = '..nlen)
+--print('|d1 x d2| = '..nlen)
 					if nlen < 1e-9 then
 						-- can't fold this because i'ts not a triangle ... it's a line
 					else
 						n = nlen < 1e-9 and matrix{0,0,1} or n:normalize()
-print('n = '..n)
+--print('n = '..n)
 						local isrc
 						if t1[i11].uv then
 							isrc = i11
@@ -323,8 +322,8 @@ print('n = '..n)
 						t2.normal = matrix(n)
 						t2.uvorigin2D = matrix(t1[isrc].uv)			-- copy matching uv from edge neighbor
 						t2.uvorigin3D = matrix(self.vs[t1[isrc].v])	-- copy matching 3D position
-print('uv2D = '..t2.uvorigin2D)
-print('uv3D = '..t2.uvorigin3D)
+--print('uv2D = '..t2.uvorigin2D)
+--print('uv3D = '..t2.uvorigin3D)
 					
 						--[[ first tri basis
 						local ex = d1:normalize()
@@ -343,19 +342,19 @@ print('uv3D = '..t2.uvorigin3D)
 							q:rotate(t1.uvbasisT[2]),
 							n,
 						}
-print('|ez-n| = '..matrix(q:rotate(t1.uvbasisT[3]) - n):norm())
+--print('|ez-n| = '..matrix(q:rotate(t1.uvbasisT[3]) - n):norm())
 						--]]
-print('ex = '..t2.uvbasisT[1])
-print('ey = '..t2.uvbasisT[2])			
+--print('ex = '..t2.uvbasisT[1])
+--print('ey = '..t2.uvbasisT[2])			
 
 						for i=1,3 do
 							local d = v[i] - t2.uvorigin3D
 							local m = matrix{t2.uvbasisT[1], t2.uvbasisT[2]}
-print('d = '..d)
-print('m\n'..m)
-print('m * d = '..(m * d))
+--print('d = '..d)
+--print('m\n'..m)
+--print('m * d = '..(m * d))
 							t2[i].uv = m * d + t2.uvorigin2D
-print('uv = '..t2[i].uv)
+--print('uv = '..t2[i].uv)
 							if not math.isfinite(t2[i].uv[1]) or not math.isfinite(t2[i].uv[2]) then
 								error("here")
 							end
@@ -372,40 +371,40 @@ print('uv = '..t2[i].uv)
 			-- t1 is our origin
 			-- t1->t2 is our x axis with unit length
 			local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
-print('v\n'..v)					
+--print('v\n'..v)					
 			local d1 = v[2] - v[1]
 			local d2 = v[3] - v[2]
 			local ex = d1:normalize()
 			local n = d1:cross(d2)
 			local nlen = n:norm()
-print('|d1 x d2| = '..nlen)
+--print('|d1 x d2| = '..nlen)
 			if nlen < 1e-9 then
 				-- can't fold this because i'ts not a triangle ... it's a line
 			else
 				n = n:normalize()
-print('n = '..n)			
-print('ex = '..ex)			
+--print('n = '..n)			
+--print('ex = '..ex)			
 				t.normal = matrix(n)
 				t.uvorigin2D = matrix{0,0}
 				t.uvorigin3D = matrix(v[1])
-print('uv2D = '..t.uvorigin2D)
-print('uv3D = '..t.uvorigin3D)
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
 				t.uvbasisT = matrix{
 					ex,
 					n:cross(ex):normalize(),
 					n,
 				}
-print('ey = '..t.uvbasisT[2])			
+--print('ey = '..t.uvbasisT[2])			
 				for i=1,3 do
 					local d = v[i] - t.uvorigin3D
 					-- horizontal tangent space only:
 					local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
-print('d = '..d)
-print('m\n'..m)
-print('m * d = '..(m * d))
+--print('d = '..d)
+--print('m\n'..m)
+--print('m * d = '..(m * d))
 					t[i].uv = m * d + t.uvorigin2D
-print('uv = '..t[i].uv)
+--print('uv = '..t[i].uv)
 					if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
 						error("here")
 					end
@@ -415,9 +414,9 @@ print('uv = '..t[i].uv)
 		end
 	end
 	for _,t in ipairs(self.tris) do
-		t.flagged = nil
+		t.checked = nil
 	end
---]]
+--]=]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -461,9 +460,9 @@ function WavefrontOBJ:loadMtl(filename)
 		elseif lineType == 'ks' then	-- specular color
 			assert(mtl)
 			mtl.Ks = wordsToColor(words)
-		elseif lineType == 'ns' then	-- specular highlight color
+		elseif lineType == 'ns' then	-- specular exponent 
 			assert(mtl)
-			mtl.Ns = wordsToColor(words)
+			mtl.Ns = tonumberor0(words[1])
 		-- 'd' = alpha
 		-- 'Tr' = 1 - d = opacity
 		-- 'Tf' = "transmission filter color"
@@ -472,17 +471,25 @@ function WavefrontOBJ:loadMtl(filename)
 		-- 'Ni' = index of refraction aka optical density
 		elseif lineType == 'map_kd' then	-- diffuse map
 			assert(mtl)
-			local localpath = assert(words[1]):gsub('\\', '/')
-			mtl.map_Kd = file(self.relpath)(localpath).path
-			-- TODO
-			-- load textures?
-			-- what if the caller isn't using GL?
-			-- load images instead?
-			-- just store filename and let the caller deal with it?
-			mtl.image_Kd = Image(mtl.map_Kd)
-			-- TODO here ... maybe I want a console .obj editor that doesn't use GL
-			-- in which case ... when should the .obj class load the gl textures?
-			-- manually?  upon first draw?  both?
+			local localpath = assert(words[1])
+			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
+			localpath = localpath:gsub('\\', '/')
+			local path = file(self.relpath)(localpath)
+			if not path:exists() then
+				print("couldn't load map_Kd "..path)
+			else
+				mtl.map_Kd = path.path
+				-- TODO
+				-- load textures?
+				-- what if the caller isn't using GL?
+				-- load images instead?
+				-- just store filename and let the caller deal with it?
+				mtl.image_Kd = Image(mtl.map_Kd)
+				print('loaded map_Kd '..mtl.map_Kd..' as '..mtl.image_Kd.width..' x '..mtl.image_Kd.height..' x '..mtl.image_Kd.channels..' ('..mtl.image_Kd.format..')')
+				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
+				-- in which case ... when should the .obj class load the gl textures?
+				-- manually?  upon first draw?  both?
+			end
 		--elseif lineType == 'map_ks' then	-- specular color map
 		--elseif lineType == 'map_ns' then	-- specular highlight map
 		--elseif lineType == 'map_bump' or lineType == 'bump' then

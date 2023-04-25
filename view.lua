@@ -34,6 +34,8 @@ function App:initGL(...)
 	self.drawUVs = false
 	self.drawUVs3D = true
 	self.useTextures = true
+	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
+	self.useTexFilterNearest = false
 	
 	self.useLighting = false
 	self.useGeneratedNormals = false
@@ -42,7 +44,6 @@ function App:initGL(...)
 	self.useCullFace = true
 	self.useDepthTest = true
 	self.useBlend = true
-	self.useTexFilterNearest = false
 	self.explodeDist = 0
 	self.bgcolor = vec4f(.2, .3, .5, 1)
 
@@ -57,6 +58,7 @@ in vec3 normal2;	//generated normal
 in vec3 com;
 
 uniform bool useNormal2;
+uniform bool useFlipTexture;
 uniform vec4 Ka;
 uniform vec4 Kd;
 uniform vec4 Ks;
@@ -65,6 +67,7 @@ uniform vec3 offset;	//per-material
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 
+out vec3 fragPosv;	// position in view space
 out vec2 texCoordv;
 out vec3 normalv;
 out vec4 Kav;
@@ -74,23 +77,27 @@ out float Nsv;
 
 void main() {
 	texCoordv = texCoord;
-	normalv = useNormal2 ? normal : normal2;
+	if (useFlipTexture) texCoordv.y = 1. - texCoordv.y;
+	normalv = (modelViewMatrix * vec4(useNormal2 ? normal : normal2, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
 	Ksv = Ks;
 	Nsv = Ns;
 	vec3 vertex = pos + offset;
-	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertex, 1.));
+	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
+	fragPosv = fragPos.xyz;
+	gl_Position = projectionMatrix * fragPos;
 }
 ]],
 		fragmentCode = [[
 #version 460
 
-uniform sampler2D tex;
+uniform sampler2D map_Kd;
 uniform bool useLighting;
 uniform vec3 lightDir;
 uniform bool useTextures;
 
+in vec3 fragPosv;
 in vec2 texCoordv;
 in vec3 normalv;
 in vec4 Kav;
@@ -101,21 +108,27 @@ in float Nsv;
 out vec4 fragColor;
 
 void main() {
-	fragColor = Kdv;
-	if (useLighting) {
-		fragColor.rgb *= dot(normalv, lightDir);
-	}
+	vec3 normal = normalize(normalv);
+	fragColor = Kav;
+	vec4 diffuseColor = Kdv;
 	if (useTextures) {
-		fragColor *= texture(tex, texCoordv);
+		diffuseColor *= texture(map_Kd, texCoordv);
+	}
+	fragColor += diffuseColor;
+	if (useLighting) {
+		fragColor.xyz *= max(0., dot(normal, lightDir));
 	}
 	if (useLighting) {
-//		fragColor += Ksv * pow(normalv.z, Nsv);	// TODO better specular plz
+		vec3 viewPos = vec3(0., 0., 0.);
+		vec3 viewDir = normalize(viewPos - fragPosv);
+		vec3 reflectDir = reflect(-lightDir, normal);
+		float spec = pow(max(dot(viewDir, reflectDir), 0.), Nsv);
+		fragColor += Ksv * spec;
 	}
-	fragColor += Kav;
 }
 ]],
 		uniforms = {
-			tex = 0,
+			map_Kd = 0,
 			Ka = {1,1,1,1},
 			Kd = {1,1,1,1},
 			Ks = {1,1,1,1},
@@ -165,8 +178,9 @@ function App:update()
 	if self.useDrawPolys then
 		self.shader:use()
 		self.shader:setUniforms{
-			useNormal2 = self.useGeneratedNormals and 1 or 0,
-			useLighting = self.useLighting and 1 or 0,
+			useFlipTexture = self.useFlipTexture,
+			useNormal2 = self.useGeneratedNormals,
+			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
 			modelViewMatrix = self.modelViewMatrix.ptr,
 			projectionMatrix = self.projectionMatrix.ptr,
@@ -179,7 +193,8 @@ function App:update()
 				if mtl.tex_Kd then mtl.tex_Kd:bind() end
 				self.shader:setUniforms{
 					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
-					Ka = mtl.Ka or {0,0,0,0},
+					--Ka = mtl.Ka or {0,0,0,0},	-- why are most obj files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
+					Ka = {0,0,0,0},
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
 					Ns = mtl.Ns or 1,
@@ -231,6 +246,7 @@ function App:updateGUI()
 	ig.luatableCheckbox('use depth test', self, 'useDepthTest')
 	ig.luatableCheckbox('use blend', self, 'useBlend')
 	ig.luatableCheckbox('use textures', self, 'useTextures')
+	ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
 	if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
 		for mtlname, mtl in pairs(self.obj.mtllib) do
 			if mtl.tex_Kd then
