@@ -54,19 +54,25 @@ in vec3 normal2;	//generated normal
 in vec3 com;
 
 uniform bool useNormal2;
-uniform vec4 color;
+uniform vec4 Ka;
+uniform vec4 Kd;
+uniform vec4 Ks;
 uniform vec3 offset;	//per-material
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 
 out vec2 texCoordv;
 out vec3 normalv;
-out vec4 colorv;
+out vec4 Kav;
+out vec4 Kdv;
+out vec4 Ksv;
 
 void main() {
 	texCoordv = texCoord;
 	normalv = useNormal2 ? normal : normal2;
-	colorv = color;
+	Kav = Ka;
+	Kdv = Kd;
+	Ksv = Ks;
 	vec3 vertex = pos + offset;
 	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertex, 1.));
 }
@@ -81,23 +87,31 @@ uniform bool useTextures;
 
 in vec2 texCoordv;
 in vec3 normalv;
-in vec4 colorv;
+in vec4 Kav;
+in vec4 Kdv;
+in vec4 Ksv;
 
 out vec4 fragColor;
 
 void main() {
-	fragColor = colorv;
+	fragColor = Kdv;
 	if (useLighting) {
 		fragColor.rgb *= dot(normalv, lightDir);
 	}
 	if (useTextures) {
 		fragColor *= texture(tex, texCoordv);
 	}
+	if (useLighting) {
+//		fragColor += Ksv * normalv.z;	// TODO better specular plz
+	}
+	fragColor += Kav;
 }
 ]],
 		uniforms = {
 			tex = 0,
-			color = {1,1,1,1},
+			Ka = {1,1,1,1},
+			Kd = {1,1,1,1},
+			Ks = {1,1,1,1},
 		},
 	}
 
@@ -154,7 +168,9 @@ function App:update()
 				if mtl.tex_Kd then mtl.tex_Kd:bind() end
 				self.shader:setUniforms{
 					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
-					color = mtl.Kd or {1,1,1,1},
+					Ka = mtl.Ka or {0,0,0,0},
+					Kd = mtl.Kd or {1,1,1,1},
+					Ks = mtl.Ks or {1,1,1,1},
 					offset = vec3f(((mtl.com3 - self.obj.com3) * self.explodeDist):unpack()).s,
 				}
 			end,
