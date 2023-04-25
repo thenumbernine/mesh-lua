@@ -8,6 +8,7 @@ local timer = require 'ext.timer'
 local vec2 = require 'vec.vec2'
 local vec3 = require 'vec.vec3'
 local vec4 = require 'vec.vec4'
+local matrix = require 'matrix'
 local vector = require 'ffi.cpp.vector'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
@@ -137,8 +138,14 @@ function WavefrontOBJ:init(filename)
 				local nvtx = #words
 				facesPerPolySize[nvtx] = facesPerPolySize[nvtx] or table()
 				facesPerPolySize[nvtx]:insert(vis)
-				for i=2,nvtx-2 do
-					self.tris:insert{vis[1], vis[i], vis[i+1]}
+				for i=2,nvtx-1 do
+					-- store a copy of the vertex indices per triangle index
+					self.tris:insert{
+						index = #self.tris+1,
+						table(vis[1]):setmetatable(nil),
+						table(vis[i]):setmetatable(nil),
+						table(vis[i+1]):setmetatable(nil),
+					}
 				end
 			elseif lineType == 's' then
 				-- TODO then smooth is on
@@ -168,7 +175,10 @@ function WavefrontOBJ:init(filename)
 			if a > b then return addEdge(b,a,t) end
 			self.edges[a] = self.edges[a] or {}
 			self.edges[a][b] = self.edges[a][b] or {
-				tris = table()
+				[1] = a,
+				[2] = b,
+				tris = table(),
+				length = (self.vs[a] - self.vs[b]):length(),
 			}
 			local e = self.edges[a][b]
 			e.tris:insert(t)
@@ -244,16 +254,116 @@ function WavefrontOBJ:init(filename)
 --  complain if the normals flip
 --  or should this be robust enough to determine volume without correct normals / tri order?
 --  I'll assume ccw polys for now.
-	local function checkTri(t)
-		-- for all edges in the t, go to the other faces matching.
-		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-		for _,e in ipairs(t.edges) do
-			
+	local function findLocalIndex(t, v)
+		for i=1,3 do
+			if t[i].v == v then return i end
 		end
 	end
-	-- TODO master list of faces?
+	local function propagateUV(t)
+		if t.checked then return end
+print('tri', t.index)
+		t.checked = true
+		-- for all edges in the t, go to the other faces matching.
+		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+		for _,e in ipairs(table(t.edges):sort(function(a,b) return a.length > b.length end)) do
+			print('edge length', e.length)
+			if #e.tris == 2 then
+				local t1,t2 = table.unpack(e.tris)
+				if t2 == t then
+					t1, t2 = t2, t1
+				end
+				assert(t1 == t)
+				if not t2.checked then
+print('folding from', t1.index, 'to', t2.index)
+					local i11 = findLocalIndex(t1, e[1])	-- where in t1 is the edge's first?
+					local i12 = findLocalIndex(t1, e[2])	-- where in t1 is the edge's second?
+					local i21 = findLocalIndex(t2, e[1])	-- where in t2 is the edge's first?
+					local i22 = findLocalIndex(t2, e[2])	-- where in t2 is the edge's second?
+print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)					
+					assert(t1[i11].v == t2[i21].v)	-- e[1] matches between t1 and t2
+					assert(t1[i12].v == t2[i22].v)	-- e[2] matches between t1 and t2
+					-- tables are identical
+					assert(t1[i11].v == e[1])
+					assert(t1[i12].v == e[2])
+					assert(t2[i21].v == e[1])
+					assert(t2[i22].v == e[2])
+
+					local v = matrix{3,3}:lambda(function(i,j) return self.vs[t2[i].v][j] end)
+					local d1 = v[2] - v[1]
+					local d2 = v[3] - v[2]
+					local ex = d1:normalize()
+					local n = d1:cross(d2):normalize()
+					t2.normal = matrix(n)
+					t2.uvorigin2D = matrix(t1[i11].uv)			-- copy matching uv from edge neighbor
+					t2.uvorigin3D = matrix(self.vs[t1[i11].v])	-- copy matching 3D position
+					t2.uvbasisT = matrix{
+						ex,
+						n:cross(ex):normalize(),
+						n,
+					}
+
+					for i=1,3 do
+						local d = v[i] - t2.uvorigin3D
+						local m = matrix{t2.uvbasisT[1], t2.uvbasisT[2]}
+						t2[i].uv = m * d + t2.uvorigin2D
+print(t2[i].uv)
+					end
+
+
+--[[
+t1.v3      t1.v2
+     *-------* t2.v2
+     |   ___/|
+     |__/    |
+t1.v1*-------*
+      t2.v3   t2.v1
+--]]
+					-- find the rotation from normal 1 to normal 2
+					-- that'll just be the matrix formed from n1 and n2's basis ...
+					--local q = quat():vectorRotate(t1.uvbasisT[3], t2.uvbasisT[3])
+
+
+					propagateUV(t2)
+				end
+			end
+		end
+	end
 	for _,t in ipairs(self.tris) do
-		checkTri(t)
+		if not t.checked then
+			-- t1 is our origin
+			-- t1->t2 is our x axis with unit length
+			local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
+			local d1 = v[2] - v[1]
+			local d2 = v[3] - v[2]
+			local ex = d1:normalize()
+			local n = d1:cross(d2):normalize()
+print('n = '..n)			
+print('ex = '..ex)			
+			t.normal = matrix(n)
+			t.uvorigin2D = matrix{0,0}
+			t.uvorigin3D = matrix(v[1])
+			-- tangent space.  store as row vectors i.e. transpose, hence the T
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+print('ey = '..t.uvbasisT[2])			
+			for i=1,3 do
+				local d = v[i] - t.uvorigin3D
+				-- horizontal tangent space only:
+				local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
+print('d = '..d)
+print('m\n'..m)
+print('m * d = '..(m * d))
+				t[i].uv = m * d + t.uvorigin2D
+print('uv = '..t[i].uv)
+			end
+			propagateUV(t)
+		end
+	end
+	for _,t in ipairs(self.tris) do
+		t.flagged = nil
 	end
 --]]
 end
@@ -531,7 +641,7 @@ end
 function WavefrontOBJ:loadGL(shader)
 	local gl = require 'gl'
 	local glreport = require 'gl.report'
-	local Tex2D = require 'gl.tex2d'
+	local GLTex2D = require 'gl.tex2d'
 	local GLArrayBuffer = require 'gl.arraybuffer'
 	local GLAttribute = require 'gl.attribute'
 	local GLVertexArray = require 'gl.vertexarray'
@@ -539,7 +649,7 @@ function WavefrontOBJ:loadGL(shader)
 	-- load textures
 	for mtlname, mtl in pairs(self.mtllib) do
 		if mtl.image_Kd and not mtl.tex_Kd then
-			mtl.tex_Kd = Tex2D{
+			mtl.tex_Kd = GLTex2D{
 				image = mtl.image_Kd,
 				minFilter = gl.GL_NEAREST,
 				magFilter = gl.GL_LINEAR,
@@ -783,6 +893,47 @@ function WavefrontOBJ:drawNormals(useNormal2)
 		end
 	end
 	gl.glEnd()
+end
+
+function WavefrontOBJ:drawUVs(_3D)
+	local gl = require 'gl'
+	local GLTex2D = require 'gl.tex2d'
+	self.uvMap = self.uvMap or GLTex2D{
+		image = Image(64, 64, 3, 'unsigned char', function(u,v)
+			return (u+.5)/64*255, (v+.5)/64*255, 127
+		end),
+		minFilter = gl.GL_NEAREST,
+		magFilter = gl.GL_LINEAR,
+		wrap = {s = gl.GL_REPEAT, t = gl.GL_REPEAT},
+	}
+	gl.glColor3f(1,1,1)
+	for mode=0,1 do
+		if mode == 0 then
+			self.uvMap:enable()
+			self.uvMap:bind()
+		else
+			gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+		end
+		gl.glBegin(gl.GL_TRIANGLES)
+		for _,t in ipairs(self.tris) do
+			for _,tv in ipairs(t) do
+				uv = tv.uv or {0,0}
+				gl.glTexCoord2f(uv[1], uv[2])
+				if _3D then
+					gl.glVertex3f(self.vs[tv.v]:unpack())
+				else
+					gl.glVertex2f(uv[1], uv[2])
+				end
+			end
+		end
+		gl.glEnd()
+		if mode == 1 then
+			self.uvMap:unbind()
+			self.uvMap:disable()
+		else
+			gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+		end
+	end
 end
 
 return WavefrontOBJ

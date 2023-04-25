@@ -29,7 +29,10 @@ function App:initGL(...)
 	-- gui options
 	self.useWireframe = false
 	self.useDrawEdges = false
+	self.useDrawPolys = true
 	self.useDrawNormals = false
+	self.drawUVs = false
+	self.drawUVs3D = true
 	self.useTextures = true
 	
 	self.useLighting = false
@@ -57,6 +60,7 @@ uniform bool useNormal2;
 uniform vec4 Ka;
 uniform vec4 Kd;
 uniform vec4 Ks;
+uniform float Ns;
 uniform vec3 offset;	//per-material
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
@@ -66,6 +70,7 @@ out vec3 normalv;
 out vec4 Kav;
 out vec4 Kdv;
 out vec4 Ksv;
+out float Nsv;
 
 void main() {
 	texCoordv = texCoord;
@@ -73,6 +78,7 @@ void main() {
 	Kav = Ka;
 	Kdv = Kd;
 	Ksv = Ks;
+	Nsv = Ns;
 	vec3 vertex = pos + offset;
 	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertex, 1.));
 }
@@ -90,6 +96,7 @@ in vec3 normalv;
 in vec4 Kav;
 in vec4 Kdv;
 in vec4 Ksv;
+in float Nsv;
 
 out vec4 fragColor;
 
@@ -102,7 +109,7 @@ void main() {
 		fragColor *= texture(tex, texCoordv);
 	}
 	if (useLighting) {
-//		fragColor += Ksv * normalv.z;	// TODO better specular plz
+//		fragColor += Ksv * pow(normalv.z, Nsv);	// TODO better specular plz
 	}
 	fragColor += Kav;
 }
@@ -112,6 +119,7 @@ void main() {
 			Ka = {1,1,1,1},
 			Kd = {1,1,1,1},
 			Ks = {1,1,1,1},
+			Ns = 1,
 		},
 	}
 
@@ -124,13 +132,15 @@ App.projectionMatrix = matrix_ffi.zeros{4,4}
 function App:update()
 	gl.glClearColor(self.bgcolor:unpack())
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
+
+	gl.glDepthFunc(gl.GL_LEQUAL)
+	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 	
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
 	end
 	if self.useBlend then
 		gl.glEnable(gl.GL_BLEND)
-		gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 	end
 	if self.useCullFace then
 		--gl.glFrontFace(gl.GL_CCW)
@@ -151,7 +161,8 @@ function App:update()
 	end
 	if self.useDrawEdges then
 		self.obj:drawEdges()
-	else
+	end
+	if self.useDrawPolys then
 		self.shader:use()
 		self.shader:setUniforms{
 			useNormal2 = self.useGeneratedNormals and 1 or 0,
@@ -171,11 +182,15 @@ function App:update()
 					Ka = mtl.Ka or {0,0,0,0},
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
+					Ns = mtl.Ns or 1,
 					offset = vec3f(((mtl.com3 - self.obj.com3) * self.explodeDist):unpack()).s,
 				}
 			end,
 		}
 		self.shader:useNone()
+	end
+	if self.drawUVs then
+		self.obj:drawUVs(self.drawUVs3D)
 	end
 
 	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
@@ -233,8 +248,10 @@ function App:updateGUI()
 	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
 	ig.luatableCheckbox('wireframe', self, 'useWireframe')
 	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
+	ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
 	ig.luatableCheckbox('draw normals', self, 'useDrawNormals')
-
+	ig.luatableCheckbox('draw uvs', self, 'drawUVs')
+	ig.luatableCheckbox('draw uvs 3D', self, 'drawUVs3D')
 end
 
 App():run()
