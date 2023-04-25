@@ -8,6 +8,7 @@ local timer = require 'ext.timer'
 local vec2 = require 'vec.vec2'
 local vec3 = require 'vec.vec3'
 local vec4 = require 'vec.vec4'
+local quat = require 'vec.quat'
 local matrix = require 'matrix'
 local vector = require 'ffi.cpp.vector'
 local vec2f = require 'vec-ffi.vec2f'
@@ -260,13 +261,11 @@ function WavefrontOBJ:init(filename)
 		end
 	end
 	local function propagateUV(t)
-		if t.checked then return end
-print('tri', t.index)
-		t.checked = true
+--print('tri', t.index)
 		-- for all edges in the t, go to the other faces matching.
 		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
 		for _,e in ipairs(table(t.edges):sort(function(a,b) return a.length > b.length end)) do
-			print('edge length', e.length)
+--print('edge length', e.length)
 			if #e.tris == 2 then
 				local t1,t2 = table.unpack(e.tris)
 				if t2 == t then
@@ -274,6 +273,15 @@ print('tri', t.index)
 				end
 				assert(t1 == t)
 				if not t2.checked then
+					t2.checked = true
+--[[
+t1.v3      t1.v2
+     *-------* t2.v2
+     |   ___/|
+     |__/    |
+t1.v1*-------*
+      t2.v3   t2.v1
+--]]
 print('folding from', t1.index, 'to', t2.index)
 					local i11 = findLocalIndex(t1, e[1])	-- where in t1 is the edge's first?
 					local i12 = findLocalIndex(t1, e[2])	-- where in t1 is the edge's second?
@@ -291,38 +299,45 @@ print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)
 					local v = matrix{3,3}:lambda(function(i,j) return self.vs[t2[i].v][j] end)
 					local d1 = v[2] - v[1]
 					local d2 = v[3] - v[2]
-					local ex = d1:normalize()
 					local n = d1:cross(d2):normalize()
+print('n = '..n)			
 					t2.normal = matrix(n)
 					t2.uvorigin2D = matrix(t1[i11].uv)			-- copy matching uv from edge neighbor
 					t2.uvorigin3D = matrix(self.vs[t1[i11].v])	-- copy matching 3D position
+print('uv2D = '..t.uvorigin2D)
+print('uv3D = '..t.uvorigin3D)
+					
+					--[[ first tri basis
+					local ex = d1:normalize()
 					t2.uvbasisT = matrix{
 						ex,
 						n:cross(ex):normalize(),
 						n,
 					}
+					--]]
+					-- [[ subsequent tri basis should be constructed from rotating the prev tri basis
+					-- find the rotation from normal 1 to normal 2
+					-- that'll just be the matrix formed from n1 and n2's basis ...
+					local q = quat():vectorRotate(t1.normal, t2.normal)
+					t2.uvbasisT = matrix{
+						q:rotate(t1.uvbasisT[1]),
+						q:rotate(t1.uvbasisT[2]),
+						n,
+					}
+print('|ez-n| = '..matrix(q:rotate(t1.uvbasisT[3]) - n):norm())
+					--]]
+print('ex = '..t.uvbasisT[1])
+print('ey = '..t.uvbasisT[2])			
 
 					for i=1,3 do
 						local d = v[i] - t2.uvorigin3D
 						local m = matrix{t2.uvbasisT[1], t2.uvbasisT[2]}
+print('d = '..d)
+print('m\n'..m)
+print('m * d = '..(m * d))
 						t2[i].uv = m * d + t2.uvorigin2D
-print(t2[i].uv)
+print('uv = '..t2[i].uv)
 					end
-
-
---[[
-t1.v3      t1.v2
-     *-------* t2.v2
-     |   ___/|
-     |__/    |
-t1.v1*-------*
-      t2.v3   t2.v1
---]]
-					-- find the rotation from normal 1 to normal 2
-					-- that'll just be the matrix formed from n1 and n2's basis ...
-					--local q = quat():vectorRotate(t1.uvbasisT[3], t2.uvbasisT[3])
-
-
 					propagateUV(t2)
 				end
 			end
@@ -330,6 +345,7 @@ t1.v1*-------*
 	end
 	for _,t in ipairs(self.tris) do
 		if not t.checked then
+			t.checked = true
 			-- t1 is our origin
 			-- t1->t2 is our x axis with unit length
 			local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
@@ -342,6 +358,8 @@ print('ex = '..ex)
 			t.normal = matrix(n)
 			t.uvorigin2D = matrix{0,0}
 			t.uvorigin3D = matrix(v[1])
+print('uv2D = '..t.uvorigin2D)
+print('uv3D = '..t.uvorigin3D)
 			-- tangent space.  store as row vectors i.e. transpose, hence the T
 			t.uvbasisT = matrix{
 				ex,
