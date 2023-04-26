@@ -269,10 +269,8 @@ function WavefrontOBJ:init(filename)
 		end
 		return t2, t1
 	end
-	local function propagateUV(t, tsrc, esrc)
-		if t.checked then return end
-		t.checked = true
-		
+	local notDoneYet = table(self.tris)
+	local function calcUVBasis(t, tsrc, esrc)
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
 		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
@@ -283,7 +281,7 @@ function WavefrontOBJ:init(filename)
 		local nlen = n:norm()
 --print('|d1 x d2| = '..nlen)
 		if nlen < 1e-9 then
-			return
+			return true
 			-- can't fold this because i'ts not a triangle ... it's a line
 		end
 		n = n / nlen
@@ -377,48 +375,65 @@ tsrc.v1*-------*
 				error("here")
 			end
 		end
+	end
+	while #notDoneYet > 0 do
+		-- TODO heuristic of picking best starting edge
+		local t = notDoneYet:remove(1)
+		local todo = table{{tri=t, prevtri=nil, edge=nil}} 
+		while #todo > 0 do
+			-- TODO heuristic for picking best continuing edge
+			local tinfo = todo:remove(1)
+			local t, tsrc, e = tinfo.tri, tinfo.prevtri, tinfo.edge
+			
+			-- calc the basis by rotating it around the edge
+			local foundLine = calcUVBasis(t, tsrc, e)
 
-		assert(t[1].uv and t[2].uv and t[3].uv)
+			if not foundLine then
+		
+				assert(t[1].uv and t[2].uv and t[3].uv)
 
---print('tri', t.index)
-		-- for all edges in the t, go to the other faces matching.
-		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-		for _,e in ipairs(table(t.edges):sort(function(a,b)
-			--[[ prioritize longest edge ... cube makes a long straight shape with one bend.
-			return a.length > b.length
-			--]]
-			--[[ prioritize shortest edge ... cube makes a zigzag
-			return a.length < b.length
-			--]]
-			-- [[ prioritize biggest area
-			local ta = getEdgeOppositeTri(a, t)
-			if not ta then return false end
-			local tb = getEdgeOppositeTri(b, t)
-			if not tb then return true end
-			return ta.area > tb.area
-			--]]
-			--[[ prioritize smallest area
-			local ta = getEdgeOppositeTri(a, t)
-			if not ta then return false end
-			local tb = getEdgeOppositeTri(b, t)
-			if not tb then return true end
-			return ta.area > tb.area
-			--]]
-		end)) do
---print('edge length', e.length)
-			if #e.tris == 2 then
-				local t2, t1 = getEdgeOppositeTri(e, t)
-				assert(t1 == t)
-				assert(t1[1].uv and t1[2].uv and t1[3].uv)
-				propagateUV(t2, t1, e)
+				-- TODO here instead of cycling the neighbors, insert them into a to-be-calcd list
+
+		--print('tri', t.index)
+				-- for all edges in the t, go to the other faces matching.
+				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+				for _,e in ipairs(table(t.edges):sort(function(a,b)
+					-- [[ prioritize longest edge ... cube makes a long straight shape with one bend.
+					return a.length > b.length
+					--]]
+					--[[ prioritize shortest edge ... cube makes a zigzag
+					return a.length < b.length
+					--]]
+					--[[ prioritize biggest area
+					local ta = getEdgeOppositeTri(a, t)
+					if not ta then return false end
+					local tb = getEdgeOppositeTri(b, t)
+					if not tb then return true end
+					return ta.area > tb.area
+					--]]
+					--[[ prioritize smallest area
+					local ta = getEdgeOppositeTri(a, t)
+					if not ta then return false end
+					local tb = getEdgeOppositeTri(b, t)
+					if not tb then return true end
+					return ta.area > tb.area
+					--]]
+				end)) do
+		--print('edge length', e.length)
+					if #e.tris == 2 then
+						local t2, t1 = getEdgeOppositeTri(e, t)
+						assert(t1 == t)
+						assert(t1[1].uv and t1[2].uv and t1[3].uv)
+						local i = notDoneYet:find(t2)
+						if i then
+							notDoneYet:remove(i)
+							todo:insert{tri=t2, prevtri=t1, edge=e}
+							--calcUVBasis(t2, t1, e)
+						end
+					end
+				end
 			end
 		end
-	end
-	for _,t in ipairs(self.tris) do
-		propagateUV(t)
-	end
-	for _,t in ipairs(self.tris) do
-		t.checked = nil
 	end
 --]=]
 end
