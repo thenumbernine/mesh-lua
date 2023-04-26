@@ -269,8 +269,117 @@ function WavefrontOBJ:init(filename)
 		end
 		return t2, t1
 	end
-	local function propagateUV(t)
+	local function propagateUV(t, tsrc, esrc)
+		if t.checked then return end
+		t.checked = true
+		
+		-- t[1] is our origin
+		-- t[1]->t[2] is our x axis with unit length
+		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
+--print('v\n'..v)					
+		local d1 = v[2] - v[1]
+		local d2 = v[3] - v[2]
+		local n = d1:cross(d2)
+		local nlen = n:norm()
+--print('|d1 x d2| = '..nlen)
+		if nlen < 1e-9 then
+			return
+			-- can't fold this because i'ts not a triangle ... it's a line
+		end
+		n = n / nlen
+--print('n = '..n)
+		t.normal = matrix(n)
+	
+		if not tsrc then	-- first basis
+			t.uvorigin2D = matrix{0,0}
+			t.uvorigin3D = matrix(v[1])
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
+			local ex = d1:normalize()
+--print('ex = '..ex)			
+			-- tangent space.  store as row vectors i.e. transpose, hence the T
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+--print('ey = '..t.uvbasisT[2])			
+		else
+		
+--[[
+tsrc.v3      tsrc.v2
+       *-------* t.v2
+       |   ___/|
+       |__/    |
+tsrc.v1*-------*
+      t.v3   t.v1
+--]]
+--print('folding from', tsrc.index, 'to', t.index)
+			local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
+			local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
+			local i21 = findLocalIndex(t, esrc[1])	-- where in t is the edge's first?
+			local i22 = findLocalIndex(t, esrc[2])	-- where in t is the edge's second?
+--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
+			assert(i11 and i12 and i21 and i22)
+			assert(tsrc[i11].v == t[i21].v)	-- esrc[1] matches between tsrc and t
+			assert(tsrc[i12].v == t[i22].v)	-- esrc[2] matches between tsrc and t
+			-- tables are identical
+			assert(tsrc[i11].v == esrc[1])
+			assert(tsrc[i12].v == esrc[2])
+			assert(t[i21].v == esrc[1])
+			assert(t[i22].v == esrc[2])
+
+			local isrc
+			if tsrc[i11].uv then
+				isrc = i11
+			elseif tsrc[i12].uv then
+				isrc = i12
+			else
+				error("how can we fold a line when the src tri doesn't have uv coords for it?")
+			end
+			t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
+			t.uvorigin3D = matrix(self.vs[tsrc[isrc].v])	-- copy matching 3D position
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
+	
+			--[[ first tri basis
+			local ex = d1:normalize()
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+			--]]
+			-- [[ subsequent tri basis should be constructed from rotating the prev tri basis
+			-- find the rotation from normal 1 to normal 2
+			-- that'll just be the matrix formed from n1 and n2's basis ...
+			local q = quat():vectorRotate(tsrc.normal, t.normal)
+			t.uvbasisT = matrix{
+				q:rotate(tsrc.uvbasisT[1]),
+				q:rotate(tsrc.uvbasisT[2]),
+				n,
+			}
+--print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
+			--]]
+--print('ex = '..t.uvbasisT[1])
+--print('ey = '..t.uvbasisT[2])			
+		end
+
+		for i=1,3 do
+			local d = v[i] - t.uvorigin3D
+			local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
+--print('d = '..d)
+--print('m\n'..m)
+--print('m * d = '..(m * d))
+			t[i].uv = m * d + t.uvorigin2D
+--print('uv = '..t[i].uv)
+			if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
+				error("here")
+			end
+		end
+
 		assert(t[1].uv and t[2].uv and t[3].uv)
+
 --print('tri', t.index)
 		-- for all edges in the t, go to the other faces matching.
 		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
@@ -301,147 +410,12 @@ function WavefrontOBJ:init(filename)
 				local t2, t1 = getEdgeOppositeTri(e, t)
 				assert(t1 == t)
 				assert(t1[1].uv and t1[2].uv and t1[3].uv)
-				if not t2.checked then
-					t2.checked = true
---[[
-t1.v3      t1.v2
-     *-------* t2.v2
-     |   ___/|
-     |__/    |
-t1.v1*-------*
-      t2.v3   t2.v1
---]]
---print('folding from', t1.index, 'to', t2.index)
-					local i11 = findLocalIndex(t1, e[1])	-- where in t1 is the edge's first?
-					local i12 = findLocalIndex(t1, e[2])	-- where in t1 is the edge's second?
-					local i21 = findLocalIndex(t2, e[1])	-- where in t2 is the edge's first?
-					local i22 = findLocalIndex(t2, e[2])	-- where in t2 is the edge's second?
---print('edge local vtx indexes: t1', i11, i12, 't2', i21, i22)					
-					assert(i11 and i12 and i21 and i22)
-					assert(t1[i11].v == t2[i21].v)	-- e[1] matches between t1 and t2
-					assert(t1[i12].v == t2[i22].v)	-- e[2] matches between t1 and t2
-					-- tables are identical
-					assert(t1[i11].v == e[1])
-					assert(t1[i12].v == e[2])
-					assert(t2[i21].v == e[1])
-					assert(t2[i22].v == e[2])
-
-					local v = matrix{3,3}:lambda(function(i,j) return self.vs[t2[i].v][j] end)
---print('v\n'..v)					
-					local d1 = v[2] - v[1]
-					local d2 = v[3] - v[2]
-					local n = d1:cross(d2)
-					local nlen = n:norm()
---print('|d1 x d2| = '..nlen)
-					if nlen < 1e-9 then
-						-- can't fold this because i'ts not a triangle ... it's a line
-					else
-						n = nlen < 1e-9 and matrix{0,0,1} or n:normalize()
---print('n = '..n)
-						local isrc
-						if t1[i11].uv then
-							isrc = i11
-						elseif t1[i12].uv then
-							isrc = i12
-						else
-							error("how can we fold a line when the src tri doesn't have uv coords for it?")
-						end
-						t2.normal = matrix(n)
-						t2.uvorigin2D = matrix(t1[isrc].uv)			-- copy matching uv from edge neighbor
-						t2.uvorigin3D = matrix(self.vs[t1[isrc].v])	-- copy matching 3D position
---print('uv2D = '..t2.uvorigin2D)
---print('uv3D = '..t2.uvorigin3D)
-					
-						--[[ first tri basis
-						local ex = d1:normalize()
-						t2.uvbasisT = matrix{
-							ex,
-							n:cross(ex):normalize(),
-							n,
-						}
-						--]]
-						-- [[ subsequent tri basis should be constructed from rotating the prev tri basis
-						-- find the rotation from normal 1 to normal 2
-						-- that'll just be the matrix formed from n1 and n2's basis ...
-						local q = quat():vectorRotate(t1.normal, t2.normal)
-						t2.uvbasisT = matrix{
-							q:rotate(t1.uvbasisT[1]),
-							q:rotate(t1.uvbasisT[2]),
-							n,
-						}
---print('|ez-n| = '..matrix(q:rotate(t1.uvbasisT[3]) - n):norm())
-						--]]
---print('ex = '..t2.uvbasisT[1])
---print('ey = '..t2.uvbasisT[2])			
-
-						for i=1,3 do
-							local d = v[i] - t2.uvorigin3D
-							local m = matrix{t2.uvbasisT[1], t2.uvbasisT[2]}
---print('d = '..d)
---print('m\n'..m)
---print('m * d = '..(m * d))
-							t2[i].uv = m * d + t2.uvorigin2D
---print('uv = '..t2[i].uv)
-							if not math.isfinite(t2[i].uv[1]) or not math.isfinite(t2[i].uv[2]) then
-								error("here")
-							end
-						end
-						propagateUV(t2)
-					end
-				end
+				propagateUV(t2, t1, e)
 			end
-		end
-	end
-	local function startPropagateUV(t)
-		-- t1 is our origin
-		-- t1->t2 is our x axis with unit length
-		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
---print('v\n'..v)					
-		local d1 = v[2] - v[1]
-		local d2 = v[3] - v[2]
-		local ex = d1:normalize()
-		local n = d1:cross(d2)
-		local nlen = n:norm()
---print('|d1 x d2| = '..nlen)
-		if nlen < 1e-9 then
-			-- can't fold this because i'ts not a triangle ... it's a line
-		else
-			n = n:normalize()
---print('n = '..n)			
---print('ex = '..ex)			
-			t.normal = matrix(n)
-			t.uvorigin2D = matrix{0,0}
-			t.uvorigin3D = matrix(v[1])
---print('uv2D = '..t.uvorigin2D)
---print('uv3D = '..t.uvorigin3D)
-			-- tangent space.  store as row vectors i.e. transpose, hence the T
-			t.uvbasisT = matrix{
-				ex,
-				n:cross(ex):normalize(),
-				n,
-			}
---print('ey = '..t.uvbasisT[2])			
-			for i=1,3 do
-				local d = v[i] - t.uvorigin3D
-				-- horizontal tangent space only:
-				local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
---print('d = '..d)
---print('m\n'..m)
---print('m * d = '..(m * d))
-				t[i].uv = m * d + t.uvorigin2D
---print('uv = '..t[i].uv)
-				if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
-					error("here")
-				end
-			end
-			propagateUV(t)
 		end
 	end
 	for _,t in ipairs(self.tris) do
-		if not t.checked then
-			t.checked = true
-			startPropagateUV(t)
-		end
+		propagateUV(t)
 	end
 	for _,t in ipairs(self.tris) do
 		t.checked = nil
