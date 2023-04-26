@@ -165,6 +165,11 @@ function WavefrontOBJ:init(filename)
 -- should meshes have their own vtx lists?
 -- or should they just index into a master list (like obj files do?)
 
+	-- store tri area
+	for _,t in ipairs(self.tris) do
+		t.area = triArea(self.vs[t[1].v], self.vs[t[2].v], self.vs[t[3].v])
+	end
+
 	-- and just for kicks, track all edges
 	timer('edges', function()
 		self.edges = {}
@@ -227,7 +232,8 @@ function WavefrontOBJ:init(filename)
 --]]
 -- TODO maybe calc bounding radius?
 
---[=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+-- [=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+-- TODO put this all in its own function or its own app
 	local numSharpEdges = 0
 	for a,other in pairs(self.edges) do
 		for b,edge in pairs(other) do
@@ -256,18 +262,43 @@ function WavefrontOBJ:init(filename)
 			if t[i].v == v then return i end
 		end
 	end
+	local function getEdgeOppositeTri(e, t)
+		local t1,t2 = table.unpack(e.tris)
+		if t2 == t then
+			t1, t2 = t2, t1
+		end
+		return t2, t1
+	end
 	local function propagateUV(t)
 		assert(t[1].uv and t[2].uv and t[3].uv)
 --print('tri', t.index)
 		-- for all edges in the t, go to the other faces matching.
 		-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-		for _,e in ipairs(table(t.edges):sort(function(a,b) return a.length > b.length end)) do
+		for _,e in ipairs(table(t.edges):sort(function(a,b)
+			--[[ prioritize longest edge ... cube makes a long straight shape with one bend.
+			return a.length > b.length
+			--]]
+			--[[ prioritize shortest edge ... cube makes a zigzag
+			return a.length < b.length
+			--]]
+			-- [[ prioritize biggest area
+			local ta = getEdgeOppositeTri(a, t)
+			if not ta then return false end
+			local tb = getEdgeOppositeTri(b, t)
+			if not tb then return true end
+			return ta.area > tb.area
+			--]]
+			--[[ prioritize smallest area
+			local ta = getEdgeOppositeTri(a, t)
+			if not ta then return false end
+			local tb = getEdgeOppositeTri(b, t)
+			if not tb then return true end
+			return ta.area > tb.area
+			--]]
+		end)) do
 --print('edge length', e.length)
 			if #e.tris == 2 then
-				local t1,t2 = table.unpack(e.tris)
-				if t2 == t then
-					t1, t2 = t2, t1
-				end
+				local t2, t1 = getEdgeOppositeTri(e, t)
 				assert(t1 == t)
 				assert(t1[1].uv and t1[2].uv and t1[3].uv)
 				if not t2.checked then
@@ -361,52 +392,55 @@ t1.v1*-------*
 			end
 		end
 	end
-	for _,t in ipairs(self.tris) do
-		if not t.checked then
-			t.checked = true
-			-- t1 is our origin
-			-- t1->t2 is our x axis with unit length
-			local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
+	local function startPropagateUV(t)
+		-- t1 is our origin
+		-- t1->t2 is our x axis with unit length
+		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
 --print('v\n'..v)					
-			local d1 = v[2] - v[1]
-			local d2 = v[3] - v[2]
-			local ex = d1:normalize()
-			local n = d1:cross(d2)
-			local nlen = n:norm()
+		local d1 = v[2] - v[1]
+		local d2 = v[3] - v[2]
+		local ex = d1:normalize()
+		local n = d1:cross(d2)
+		local nlen = n:norm()
 --print('|d1 x d2| = '..nlen)
-			if nlen < 1e-9 then
-				-- can't fold this because i'ts not a triangle ... it's a line
-			else
-				n = n:normalize()
+		if nlen < 1e-9 then
+			-- can't fold this because i'ts not a triangle ... it's a line
+		else
+			n = n:normalize()
 --print('n = '..n)			
 --print('ex = '..ex)			
-				t.normal = matrix(n)
-				t.uvorigin2D = matrix{0,0}
-				t.uvorigin3D = matrix(v[1])
+			t.normal = matrix(n)
+			t.uvorigin2D = matrix{0,0}
+			t.uvorigin3D = matrix(v[1])
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
-				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.uvbasisT = matrix{
-					ex,
-					n:cross(ex):normalize(),
-					n,
-				}
+			-- tangent space.  store as row vectors i.e. transpose, hence the T
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
 --print('ey = '..t.uvbasisT[2])			
-				for i=1,3 do
-					local d = v[i] - t.uvorigin3D
-					-- horizontal tangent space only:
-					local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
+			for i=1,3 do
+				local d = v[i] - t.uvorigin3D
+				-- horizontal tangent space only:
+				local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
 --print('d = '..d)
 --print('m\n'..m)
 --print('m * d = '..(m * d))
-					t[i].uv = m * d + t.uvorigin2D
+				t[i].uv = m * d + t.uvorigin2D
 --print('uv = '..t[i].uv)
-					if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
-						error("here")
-					end
+				if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
+					error("here")
 				end
-				propagateUV(t)
 			end
+			propagateUV(t)
+		end
+	end
+	for _,t in ipairs(self.tris) do
+		if not t.checked then
+			t.checked = true
+			startPropagateUV(t)
 		end
 	end
 	for _,t in ipairs(self.tris) do
