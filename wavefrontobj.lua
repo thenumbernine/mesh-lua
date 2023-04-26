@@ -167,7 +167,11 @@ function WavefrontOBJ:init(filename)
 
 	-- store tri area
 	for _,t in ipairs(self.tris) do
-		t.area = triArea(self.vs[t[1].v], self.vs[t[2].v], self.vs[t[3].v])
+		local a = self.vs[t[1].v]
+		local b = self.vs[t[2].v]
+		local c = self.vs[t[3].v]
+		t.area = triArea(a, b, c)
+		t.com = (a + b + c) / 3
 	end
 
 	-- and just for kicks, track all edges
@@ -233,241 +237,8 @@ function WavefrontOBJ:init(filename)
 -- TODO maybe calc bounding radius?
 
 -- [=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
--- TODO put this all in its own function or its own app
-	local numSharpEdges = 0
-	for a,other in pairs(self.edges) do
-		for b,edge in pairs(other) do
-			-- #tris == 0 is an edge construction error
-			-- #tris == 1 is a sharp edge ... which means a non-convex
-			-- #tris == 2 is good
-			-- any more ... we have something weird
-			if #edge.tris == 0 then
-				error'here'
-			elseif #edge.tris == 1 then
-				numSharpEdges = numSharpEdges + 1
-			elseif #edge.tris > 2 then
-				print('found an edge with != 2 tris: ' ..#edge.tris)
-			end
-		end
-	end
-	print('numSharpEdges = '..numSharpEdges)
-
 	timer('unwrapping uvs', function()
-	-- for all faces (not checked)
-	--  traverse neighbors by edge and make sure the normals align
-	--  complain if the normals flip
-	--  or should this be robust enough to determine volume without correct normals / tri order?
-	--  I'll assume ccw polys for now.
-		local function findLocalIndex(t, v)
-			for i=1,3 do
-				if t[i].v == v then return i end
-			end
-		end
-		local function getEdgeOppositeTri(e, t)
-			local t1,t2 = table.unpack(e.tris)
-			if t2 == t then
-				t1, t2 = t2, t1
-			end
-			assert(t1 == t)
-			return t2, t1
-		end
-		local function calcUVBasis(t, tsrc, esrc)
-			-- t[1] is our origin
-			-- t[1]->t[2] is our x axis with unit length
-			local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
-	--print('v\n'..v)					
-			local d1 = v[2] - v[1]
-			local d2 = v[3] - v[2]
-			local n = d1:cross(d2)
-			local nlen = n:norm()
-	--print('|d1 x d2| = '..nlen)
-			if nlen < 1e-9 then
-				return true
-				-- can't fold this because i'ts not a triangle ... it's a line
-			end
-			n = n / nlen
-	--print('n = '..n)
-			t.normal = matrix(n)
-		
-			if not tsrc then	-- first basis
-				t.uvorigin2D = matrix{0,0}
-				t.uvorigin3D = matrix(v[1])
-	--print('uv2D = '..t.uvorigin2D)
-	--print('uv3D = '..t.uvorigin3D)
-				local ex = d1:normalize()
-	--print('ex = '..ex)			
-				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.uvbasisT = matrix{
-					ex,
-					n:cross(ex):normalize(),
-					n,
-				}
-	--print('ey = '..t.uvbasisT[2])			
-			else
-			
-	--[[
-	tsrc.v3      tsrc.v2
-		   *-------* t.v2
-		   |   ___/|
-		   |__/    |
-	tsrc.v1*-------*
-		  t.v3   t.v1
-	--]]
-	--print('folding from', tsrc.index, 'to', t.index)
-				local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
-				local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
-				local i21 = findLocalIndex(t, esrc[1])	-- where in t is the edge's first?
-				local i22 = findLocalIndex(t, esrc[2])	-- where in t is the edge's second?
-	--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
-				assert(i11 and i12 and i21 and i22)
-				assert(tsrc[i11].v == t[i21].v)	-- esrc[1] matches between tsrc and t
-				assert(tsrc[i12].v == t[i22].v)	-- esrc[2] matches between tsrc and t
-				-- tables are identical
-				assert(tsrc[i11].v == esrc[1])
-				assert(tsrc[i12].v == esrc[2])
-				assert(t[i21].v == esrc[1])
-				assert(t[i22].v == esrc[2])
-
-				local isrc
-				if tsrc[i11].uv then
-					isrc = i11
-				elseif tsrc[i12].uv then
-					isrc = i12
-				else
-					error("how can we fold a line when the src tri doesn't have uv coords for it?")
-				end
-				t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
-				t.uvorigin3D = matrix(self.vs[tsrc[isrc].v])	-- copy matching 3D position
-	--print('uv2D = '..t.uvorigin2D)
-	--print('uv3D = '..t.uvorigin3D)
-		
-				--[[ first tri basis
-				local ex = d1:normalize()
-				t.uvbasisT = matrix{
-					ex,
-					n:cross(ex):normalize(),
-					n,
-				}
-				--]]
-				-- [[ subsequent tri basis should be constructed from rotating the prev tri basis
-				-- find the rotation from normal 1 to normal 2
-				-- that'll just be the matrix formed from n1 and n2's basis ...
-				local q = quat():vectorRotate(tsrc.normal, t.normal)
-				t.uvbasisT = matrix{
-					q:rotate(tsrc.uvbasisT[1]),
-					q:rotate(tsrc.uvbasisT[2]),
-					n,
-				}
-	--print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
-				--]]
-	--print('ex = '..t.uvbasisT[1])
-	--print('ey = '..t.uvbasisT[2])			
-			end
-
-			for i=1,3 do
-				local d = v[i] - t.uvorigin3D
-				local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
-	--print('d = '..d)
-	--print('m\n'..m)
-	--print('m * d = '..(m * d))
-				t[i].uv = m * d + t.uvorigin2D
-	--print('uv = '..t[i].uv)
-				if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
-					error("here")
-				end
-			end
-		end
-		local notDoneYet = table(self.tris)
-		while #notDoneYet > 0 do
-			-- TODO heuristic of picking best starting edge
-			print('starting unwrapping process with '..#notDoneYet..' left')
-			local t = notDoneYet:remove(1)
-			local done = table()
-			local todo = table{t}
-			
-			-- TODO maybe instead I should be tracking all live edges?
-			-- so process the first tri as the starting point
-			-- then add its edges into the 'todo' list
-
-			while #todo > 0 do
-				local t, tsrc, e
-				if #todo == 1 and #done == 0 then
-					-- first iteration
-					t = todo:remove(1)
-					assert(not tsrc)
-					assert(not e)
-				else
-					-- pick best edge between any triangle in 'done' and any in 'todo'
-					local edgesToCheck = table()
-					for _,t in ipairs(todo) do
-						for _,e in ipairs(t.edges) do
-							local t2 = getEdgeOppositeTri(e, t)
-							if done:find(t2) then
-								edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
-							end
-						end
-					end
-					
-					-- assert from prevoius iteration that the first is the best
-					-- heuristic for picking best continuing edge
-					-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
-					edgesToCheck:sort(function(a,b)
-						local ta, tb = a.tri, b.tri
-						local ea, eb = a.edge, b.edge
-						-- [[ prioritize longest edge ... cube makes a long straight shape with one bend.
-						-- looks best for cone.  just does two solid pieces for the base and sides
-						-- looks best for cube.  does the cubemap t.
-						return ea.length > eb.length
-						--]]
-						--[[ prioritize shortest edge ... cube makes a zigzag
-						return ea.length < eb.length
-						--]]
-						--[[ prioritize biggest area
-						return ta.area > tb.area
-						--]]
-						--[[ prioritize smallest area
-						return ta.area > tb.area
-						--]]
-					end)
-					local check = edgesToCheck[1]
-					t, e, tsrc = check.tri, check.edge, check.prevtri
-					assert(t)
-					assert(e)
-					assert(tsrc)
-					todo:removeObject(t)
-				end
-				-- calc the basis by rotating it around the edge
-				assert((tsrc == nil) == (e == nil))
-				local foundLine = calcUVBasis(t, tsrc, e)
-				done:insert(t)
-				if not foundLine then
-					assert(t[1].uv and t[2].uv and t[3].uv)
-					-- insert neighbors into a to-be-calcd list
-	--print('tri', t.index)
-					for _,e in ipairs(t.edges) do
-	--print('edge length', e.length)
-						-- for all edges in the t, go to the other faces matching.
-						-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-						if #e.tris == 2 then
-							local t2 = getEdgeOppositeTri(e, t)
--- if our tri 
--- ... isn't in the 'todo' pile either ...
--- ... is still in the notDoneYet pile ...
-							if not todo:find(t2)
-							and not done:find(t2)
-							then
-								local i = notDoneYet:find(t2)
-								if i then
-									assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
-									notDoneYet:remove(i)
-									todo:insert(t2)
-								end
-							end
-						end
-					end
-				end
-			end
-		end
+		self:unwrapUVs()
 	end)
 end
 
@@ -934,6 +705,7 @@ function WavefrontOBJ:draw(args)
 	local gl = require 'gl'
 	
 	self:loadGL()	-- load if not loaded
+	
 	local curtex
 	for mtlname, mtl in pairs(self.mtllib) do
 		local fs = mtl.faces
@@ -1013,10 +785,12 @@ function WavefrontOBJ:draw(args)
 		--]]
 		if args.endMtl then args.endMtl(mtl) end
 	end
+	--[[
 	if curtex then
 		curtex:unbind()
 		curtex:disable()
 	end
+	--]]
 	require 'gl.report''here'
 end
 
@@ -1066,33 +840,379 @@ function WavefrontOBJ:drawUVs(_3D)
 		wrap = {s = gl.GL_REPEAT, t = gl.GL_REPEAT},
 	}
 	gl.glColor3f(1,1,1)
-	for mode=0,1 do
-		if mode == 0 then
-			self.uvMap:enable()
-			self.uvMap:bind()
-		else
-			gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
+	self.uvMap:enable()
+	self.uvMap:bind()
+	gl.glBegin(gl.GL_TRIANGLES)
+	for _,t in ipairs(self.tris) do
+		for _,tv in ipairs(t) do
+			uv = tv.uv or {0,0}
+			gl.glTexCoord2f(uv[1], uv[2])
+			if _3D then
+				gl.glVertex3f(self.vs[tv.v]:unpack())
+			else
+				gl.glVertex2f(uv[1], uv[2])
+			end
 		end
-		gl.glBegin(gl.GL_TRIANGLES)
-		for _,t in ipairs(self.tris) do
-			for _,tv in ipairs(t) do
-				uv = tv.uv or {0,0}
-				gl.glTexCoord2f(uv[1], uv[2])
-				if _3D then
-					gl.glVertex3f(self.vs[tv.v]:unpack())
-				else
-					gl.glVertex2f(uv[1], uv[2])
+	end
+	gl.glEnd()
+	self.uvMap:unbind()
+	self.uvMap:disable()
+	-- [[ draw lines around borders	
+	local eps = 1e-3
+	gl.glBegin(gl.GL_LINES)
+	for _,t in ipairs(self.tris) do
+		for _,i in ipairs{1,2,2,3,3,1} do
+			local tv = t[i]
+			uv = tv.uv or {0,0}
+			if _3D then
+				gl.glVertex3f((self.vs[tv.v] + eps * t.normal):unpack())
+			else
+				gl.glVertex2f(uv[1], uv[2])
+			end
+		end
+	end
+	gl.glEnd()
+	--]]
+	-- [[ show unwrap info
+	gl.glColor3f(0,1,1)
+	gl.glBegin(gl.GL_LINES)
+	for _,info in ipairs(self.unwrapInfo) do
+		for _,t in ipairs{info[1], info[2]} do
+			if _3D then
+				gl.glVertex3f((t.com + eps * t.normal):unpack())
+			else
+				local com = (t[1].uv + t[2].uv + t[3].uv) / 3
+				gl.glVertex2f(com)
+			end
+		end
+	end
+	gl.glEnd()
+	--]]
+end
+
+
+-- this belongs in its own place, outside this project
+
+
+function WavefrontOBJ:unwrapUVs()
+-- TODO put this all in its own function or its own app
+	local numSharpEdges = 0
+	for a,other in pairs(self.edges) do
+		for b,edge in pairs(other) do
+			-- #tris == 0 is an edge construction error
+			-- #tris == 1 is a sharp edge ... which means a non-convex
+			-- #tris == 2 is good
+			-- any more ... we have something weird
+			if #edge.tris == 0 then
+				error'here'
+			elseif #edge.tris == 1 then
+				numSharpEdges = numSharpEdges + 1
+			elseif #edge.tris > 2 then
+				print('found an edge with != 2 tris: ' ..#edge.tris)
+			end
+		end
+	end
+	print('numSharpEdges = '..numSharpEdges)
+
+	-- for all faces (not checked)
+	--  traverse neighbors by edge and make sure the normals align
+	--  complain if the normals flip
+	--  or should this be robust enough to determine volume without correct normals / tri order?
+	--  I'll assume ccw polys for now.
+	local function findLocalIndex(t, v)
+		for i=1,3 do
+			if t[i].v == v then return i end
+		end
+	end
+	local function getEdgeOppositeTri(e, t)
+		assert(#e.tris == 2)
+		local t1,t2 = table.unpack(e.tris)
+		if t2 == t then
+			t1, t2 = t2, t1
+		end
+		assert(t1 == t)
+		return t2, t1
+	end
+	local function calcUVBasis(t, tsrc, esrc)
+		-- t[1] is our origin
+		-- t[1]->t[2] is our x axis with unit length
+		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
+--print('v\n'..v)					
+		local d1 = v[2] - v[1]
+		local d2 = v[3] - v[2]
+		local n = d1:cross(d2)
+		local nlen = n:norm()
+--print('|d1 x d2| = '..nlen)
+		if nlen < 1e-9 then
+			t.normal = d1:normalize()
+			-- can't fold this because i'ts not a triangle ... it's a line
+			-- should I even populate the uv fields?  nah, just toss it in the caller
+			return true
+		end
+		n = n / nlen
+--print('n = '..n)
+		t.normal = matrix(n)
+	
+		--if true then
+		if not tsrc then	-- first basis
+			t.uvorigin2D = matrix{0,0}
+			t.uvorigin3D = matrix(v[1])
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
+			
+			-- TODO modularity for choosing initial basis
+			--[[ use first base of the triangle
+			local ex = d1:normalize()
+			--]]
+			--[[ preference to align the first axis in the xz plane
+			-- first find the best option of the 3 deltas
+			-- close to the same as choosing n cross y+
+			-- but the first set of tris are not so good
+			local d3 = v[1] - v[3]
+			local ex
+			if math.abs(d1[2]) < math.abs(d2[2]) then	-- d1 < d2
+				if math.abs(d1[2]) < math.abs(d3[2]) then	-- d1 < d2 and d1 < d3
+					ex = d1:normalize()
+				else			-- d3 < d1 < d2
+					ex = d3:normalize()
+				end
+			else	-- d2 < d1
+				if math.abs(d2[2]) < math.abs(d3[2]) then	-- d2 < d1 and d2 < d3
+					ex = d2:normalize()
+				else			-- d3 < d2 < d1
+					ex = d3:normalize()
+				end
+			end
+			--]]
+			-- [[ just use n cross y+
+			-- BEST FOR CARTESIAN ALIGNED
+			-- best for top
+			-- crashes for sides
+			local ex = n:cross{0,1,0}:normalize()
+			--]]
+			--[[ just use n cross x+ or z+ ...
+			-- ... gets nans
+			local ex = n:cross{0,0,1}:normalize()
+			--]]
+			--[[ pick whatever is most perpendicular to n and another cartesian basis
+			-- a[i] = 1, i = sup(|n[i]|) gives same as n cross y+, good for tops, but crashes for sides.
+			-- a[i] = 1, i = inf(|n[i]|) doesn't crash for sides but gives bad tops results.
+			-- a[i+1] = 1, i = inf(|n[i]|) crashes on sides, but same as n cross y+ on top
+			local _, i = table.inf(n:map(math.abs))
+			local a = matrix{0,0,0}
+			a[(i%3)+1] = 1
+			local ex = n:cross(a):normalize()
+			for i=1,3 do
+				assert(math.isfinite(ex[i]))
+			end
+			--]]
+
+--print('ex = '..ex)			
+			-- tangent space.  store as row vectors i.e. transpose, hence the T
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+--print('ey = '..t.uvbasisT[2])			
+		else
+			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+		
+--[[
+tsrc.v3      tsrc.v2
+	   *-------* t.v2
+	   |   ___/|
+	   |__/    |
+tsrc.v1*-------*
+	  t.v3   t.v1
+--]]
+--print('folding from', tsrc.index, 'to', t.index)
+			local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
+			local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
+			local i21 = findLocalIndex(t, esrc[1])	-- where in t is the edge's first?
+			local i22 = findLocalIndex(t, esrc[2])	-- where in t is the edge's second?
+--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
+			assert(i11 and i12 and i21 and i22)
+			assert(tsrc[i11].v == t[i21].v)	-- esrc[1] matches between tsrc and t
+			assert(tsrc[i12].v == t[i22].v)	-- esrc[2] matches between tsrc and t
+			-- tables are identical
+			assert(tsrc[i11].v == esrc[1])
+			assert(tsrc[i12].v == esrc[2])
+			assert(t[i21].v == esrc[1])
+			assert(t[i22].v == esrc[2])
+
+			local isrc
+			if tsrc[i11].uv then
+				isrc = i11
+			elseif tsrc[i12].uv then
+				isrc = i12
+			else
+				error("how can we fold a line when the src tri doesn't have uv coords for it?")
+			end
+			t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
+			t.uvorigin3D = matrix(self.vs[tsrc[isrc].v])	-- copy matching 3D position
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
+
+			-- TODO modularity for choosing unwrap rotation
+			--[[ reset basis every time.
+			-- dumb.
+			local ex = d1:normalize()
+			t.uvbasisT = matrix{
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+			--]]
+			--[[ subsequent tri basis should be constructed from rotating the prev tri basis
+			-- find the rotation from normal 1 to normal 2
+			-- that'll just be the matrix formed from n1 and n2's basis ...
+			local q = quat():vectorRotate(tsrc.normal, t.normal)
+			t.uvbasisT = matrix{
+				q:rotate(tsrc.uvbasisT[1]),
+				q:rotate(tsrc.uvbasisT[2]),
+				n,
+			}
+			--]]
+			-- [[ pick the rotation along the cardinal axis that has the greatest change
+			-- BEST FOR CARTESIAN ALIGNED
+			local dn = t.normal - tsrc.normal
+			-- pick biggest changing axis in normal?
+			--local _, i = table.sup(dn:map(math.abs))
+			-- pick smallest changing axis in normal?
+			local _, i = table.inf(dn:map(math.abs))
+			local q
+			if i == 1 then
+				q = quat():fromAngleAxis(1, 0, 0, math.deg(math.atan2(n[3], n[2]) - math.atan2(tsrc.normal[3], tsrc.normal[2])))
+			elseif i == 2 then
+				q = quat():fromAngleAxis(0, 1, 0, math.deg(math.atan2(n[1], n[3]) - math.atan2(tsrc.normal[1], tsrc.normal[3])))
+			elseif i == 3 then
+				q = quat():fromAngleAxis(0, 0, 1, math.deg(math.atan2(n[2], n[1]) - math.atan2(tsrc.normal[2], tsrc.normal[1])))
+			end
+			t.uvbasisT = matrix{
+				q:rotate(tsrc.uvbasisT[1]),
+				q:rotate(tsrc.uvbasisT[2]),
+				n,
+			}		
+			--]]
+			
+--print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
+--print('ex = '..t.uvbasisT[1])
+--print('ey = '..t.uvbasisT[2])			
+		end
+
+		for i=1,3 do
+			local d = v[i] - t.uvorigin3D
+			local m = matrix{t.uvbasisT[1], t.uvbasisT[2]}
+--print('d = '..d)
+--print('m\n'..m)
+--print('m * d = '..(m * d))
+			t[i].uv = m * d + t.uvorigin2D
+--print('uv = '..t[i].uv)
+			if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
+				error("here")
+			end
+		end
+	end
+	self.unwrapInfo = table()	-- keep track of how it's made for visualization's sake ...
+	local notDoneYet = table(self.tris)
+	while #notDoneYet > 0 do
+		-- TODO heuristic of picking best starting edge
+		print('starting unwrapping process with '..#notDoneYet..' left')
+		local t = notDoneYet:remove(1)
+		local done = table()
+		local todo = table{t}
+		
+		-- TODO maybe instead I should be tracking all live edges?
+		-- so process the first tri as the starting point
+		-- then add its edges into the 'todo' list
+
+		while #todo > 0 do
+			local t, tsrc, e
+			if #todo == 1 and #done == 0 then
+				-- first iteration
+				t = todo:remove(1)
+				assert(not tsrc)
+				assert(not e)
+			else
+				-- pick best edge between any triangle in 'done' and any in 'todo'
+				local edgesToCheck = table()
+				for _,t in ipairs(todo) do
+					for _,e in ipairs(t.edges) do
+						if #e.tris == 2 then
+							local t2 = getEdgeOppositeTri(e, t)
+							if done:find(t2) then
+								edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
+							end
+						end
+					end
+				end
+				
+				-- assert from prevoius iteration that the first is the best
+				-- heuristic for picking best continuing edge
+				-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
+				edgesToCheck:sort(function(a,b)
+					local ta, tb = a.tri, b.tri
+					local ea, eb = a.edge, b.edge
+					-- [[ prioritize longest edge ... cube makes a long straight shape with one bend.
+					-- looks best for cone.  just does two solid pieces for the base and sides
+					-- looks best for cube.  does the cubemap t.
+					return ea.length > eb.length
+					--]]
+					--[[ prioritize shortest edge ... cube makes a zigzag
+					return ea.length < eb.length
+					--]]
+					--[[ prioritize biggest area
+					return ta.area > tb.area
+					--]]
+					--[[ prioritize smallest area
+					return ta.area > tb.area
+					--]]
+					-- [[ prioritize ... what ... mesh curvature?
+					--]]
+				end)
+				local check = edgesToCheck[1]
+				t, e, tsrc = check.tri, check.edge, check.prevtri
+				assert(t)
+				assert(e)
+				assert(tsrc)
+				assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+				todo:removeObject(t)
+			end
+			self.unwrapInfo:insert{tsrc, t}
+			-- calc the basis by rotating it around the edge
+			assert((tsrc == nil) == (e == nil))
+			local foundLine = calcUVBasis(t, tsrc, e)
+			if not foundLine then
+				done:insert(t)
+				assert(t[1].uv and t[2].uv and t[3].uv)
+				-- insert neighbors into a to-be-calcd list
+--print('tri', t.index)
+				for _,e in ipairs(t.edges) do
+--print('edge length', e.length)
+					-- for all edges in the t, go to the other faces matching.
+					-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+					if #e.tris == 2 then
+						local t2 = getEdgeOppositeTri(e, t)
+-- if our tri 
+-- ... isn't in the 'todo' pile either ...
+-- ... is still in the notDoneYet pile ...
+						if not todo:find(t2)
+						and not done:find(t2)
+						then
+							local i = notDoneYet:find(t2)
+							if i then
+								assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+								notDoneYet:remove(i)
+								todo:insert(t2)
+							end
+						end
+					end
 				end
 			end
 		end
-		gl.glEnd()
-		if mode == 1 then
-			self.uvMap:unbind()
-			self.uvMap:disable()
-		else
-			gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
-		end
 	end
 end
+
 
 return WavefrontOBJ

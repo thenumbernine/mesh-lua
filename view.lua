@@ -23,6 +23,8 @@ function App:initGL(...)
 	print('volume', self.obj:calcVolume())
 	print('bbox volume', (self.obj.bbox.max - self.obj.bbox.min):volume())
 
+self.view.ortho = true
+self.view.angle:fromAngleAxis(1,0,0,-90)
 	self:setCenter(self.obj.com3)
 	self.displayList = {}
 
@@ -44,7 +46,8 @@ function App:initGL(...)
 	self.useCullFace = true
 	self.useDepthTest = true
 	self.useBlend = true
-	self.explodeDist = 0
+	self.groupExplodeDist = 0
+	self.triExplodeDist = 0
 	self.bgcolor = vec4f(.2, .3, .5, 1)
 
 	self.shader = GLProgram{
@@ -63,7 +66,10 @@ uniform vec4 Ka;
 uniform vec4 Kd;
 uniform vec4 Ks;
 uniform float Ns;
-uniform vec3 offset;	//per-material
+uniform vec3 objCOM;
+uniform vec3 groupCOM;
+uniform float groupExplodeDist;
+uniform float triExplodeDist;
 uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 
@@ -83,7 +89,9 @@ void main() {
 	Kdv = Kd;
 	Ksv = Ks;
 	Nsv = Ns;
-	vec3 vertex = pos + offset;
+	vec3 groupExplodeOffset = (groupCOM - objCOM) * groupExplodeDist;
+	vec3 triExplodeOffset = (com - groupCOM) * triExplodeDist;
+	vec3 vertex = pos + groupExplodeOffset + triExplodeOffset;
 	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
 	fragPosv = fragPos.xyz;
 	gl_Position = projectionMatrix * fragPos;
@@ -128,8 +136,12 @@ void main() {
 }
 ]],
 		uniforms = {
+			objCOM = {0,0,0},
+			groupCOM = {0,0,0},
+			groupExplodeDist = 0,
+			triExplodeDist = 0,
 			map_Kd = 0,
-			Ka = {1,1,1,1},
+			Ka = {0,0,0,0},
 			Kd = {1,1,1,1},
 			Ks = {1,1,1,1},
 			Ns = 1,
@@ -198,7 +210,10 @@ function App:update()
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
 					Ns = mtl.Ns or 1,
-					offset = vec3f(((mtl.com3 - self.obj.com3) * self.explodeDist):unpack()).s,
+					objCOM = self.obj.com3,
+					groupCOM = mtl.com3,
+					groupExplodeDist = self.groupExplodeDist,
+					triExplodeDist = self.triExplodeDist,
 				}
 			end,
 		}
@@ -236,11 +251,31 @@ function App:updateGUI()
 		self:setCenter(self.obj.com3)
 	end
 	ig.luatableCheckbox('ortho view', self.view, 'ortho')
-	if ig.igButton'reset view' then
-		self.view.ortho = false
+	if ig.igButton'reset view z-' then
 		self.view.angle:set(0,0,0,1)
 		self:setCenter(self.obj.com3)
 	end
+	if ig.igButton'reset view z+' then
+		self.view.angle:fromAngleAxis(0,1,0,180)
+		self:setCenter(self.obj.com3)
+	end
+	if ig.igButton'reset view y-' then
+		self.view.angle:fromAngleAxis(1,0,0,-90)
+		self:setCenter(self.obj.com3)
+	end
+	if ig.igButton'reset view y+' then
+		self.view.angle:fromAngleAxis(1,0,0,90)
+		self:setCenter(self.obj.com3)
+	end
+	if ig.igButton'reset view x-' then
+		self.view.angle:fromAngleAxis(0,1,0,90)
+		self:setCenter(self.obj.com3)
+	end
+	if ig.igButton'reset view x+' then
+		self.view.angle:fromAngleAxis(0,1,0,-90)
+		self:setCenter(self.obj.com3)
+	end
+
 
 	ig.luatableCheckbox('use cull face', self, 'useCullFace')
 	ig.luatableCheckbox('use depth test', self, 'useDepthTest')
@@ -261,7 +296,8 @@ function App:updateGUI()
 	
 	-- TODO max dependent on bounding radius of model, same with COM camera positioning
 	-- TODO per-tri exploding as well
-	ig.luatableSliderFloat('explode dist', self, 'explodeDist', 0, 2)
+	ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
+	ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
 	ig.luatableCheckbox('wireframe', self, 'useWireframe')
 	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
 	ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
