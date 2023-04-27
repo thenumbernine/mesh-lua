@@ -1003,22 +1003,6 @@ function WavefrontOBJ:drawUVs(_3D)
 	gl.glEnd()
 	self.uvMap:unbind()
 	self.uvMap:disable()
-	-- [[ draw lines around borders	
-	local eps = 1e-3
-	gl.glBegin(gl.GL_LINES)
-	for _,t in ipairs(self.tris) do
-		for _,i in ipairs{1,2,2,3,3,1} do
-			local tv = t[i]
-			uv = tv.uv or {0,0}
-			if _3D then
-				gl.glVertex3f((self.vs[tv.v] + eps * t.normal):unpack())
-			else
-				gl.glVertex2f(uv[1], uv[2])
-			end
-		end
-	end
-	gl.glEnd()
-	--]]
 end
 function WavefrontOBJ:drawUVUnwrapEdges(_3D)
 	local gl = require 'gl'
@@ -1026,7 +1010,7 @@ function WavefrontOBJ:drawUVUnwrapEdges(_3D)
 	-- [[ show unwrap info
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for _,info in ipairs(self.unwrapInfo) do
+	for _,info in ipairs(self.unwrapUVEdges) do
 		for i,t in ipairs(info) do
 			if i==1 then
 				gl.glColor3f(0,1,0)
@@ -1042,6 +1026,14 @@ function WavefrontOBJ:drawUVUnwrapEdges(_3D)
 		end
 	end
 	gl.glEnd()
+	gl.glPointSize(3)
+	gl.glColor3f(0,1,1)
+	gl.glBegin(gl.GL_POINTS)
+	for _,v in ipairs(self.unwrapUVOrigins) do
+		gl.glVertex3f(v:unpack())
+	end
+	gl.glEnd()
+	gl.glPointSize(1)
 	--]]
 end
 
@@ -1075,19 +1067,33 @@ function WavefrontOBJ:unwrapUVs()
 	for _,t in ipairs(self.tris) do
 		avgNormal = avgNormal + t.normal * t.area
 	end
-	if avgNormal:normSq() > 0 then avgNormal = avgNormal:normalize() end
+	local avgNormalIsZero = avgNormal:normSq() < 1e-7
+	if not avgNormalIsZero then avgNormal = avgNormal:normalize() end
 	print('avg normal = '..avgNormal)
 
 	-- the same idea as the l=1 spherical harmonics
 	local range = require 'ext.range'
-	local areas = matrix{3,2}:zeros()
+	local areas = matrix{6}:zeros()
 	for _,t in ipairs(self.tris) do
 		local _,i = table.sup(t.normal:map(math.abs))
 		assert(i)
 		local dir = t.normal[i] > 0 and 1 or 2
-		areas[i][dir] = areas[i][dir] + t.area
+		local index = dir + 2 * (i-1)
+		areas[index] = areas[index] + t.area
 	end
-	print('per-side plus/minus normal distribution = '..require 'ext.tolua'(areas))
+	print('per-side x plus/minus normal distribution = '..require 'ext.tolua'(areas))
+
+	local bestNormal
+-- TODO snap-to-axis for within epsilon
+--	if not avgNormalIsZero then
+--		bestNormal = matrix(avgNormal)
+do--	else
+		local _, besti = table.sup(areas)
+		local bestdir = math.floor((besti-1)/2)+1
+		bestNormal = matrix{0,0,0}
+		bestNormal[bestdir] = bestdir%2 == 0 and -1 or 1
+	end
+	print('bestNormal', bestNormal)
 
 	-- for all faces (not checked)
 	--  traverse neighbors by edge and make sure the normals align
@@ -1109,6 +1115,7 @@ function WavefrontOBJ:unwrapUVs()
 		return t2, t1
 	end
 	local function calcUVBasis(t, tsrc, esrc)
+		assert(not t[1].uv and not t[2].uv and not t[3].uv)
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
 		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
@@ -1131,7 +1138,15 @@ function WavefrontOBJ:unwrapUVs()
 		--if true then
 		if not tsrc then	-- first basis
 			t.uvorigin2D = matrix{0,0}
+			-- modularity for choosing which point on the tri is the uv origin
+			--[[ use the first point
 			t.uvorigin3D = matrix(v[1])
+			--]]
+			-- [[ use the y-lowest point
+			t.uvorigin3D = matrix(v[select(2, range(3):mapi(function(i) return v[i][2] end):inf())])
+			self.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
+			--]]
+
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
 			
@@ -1163,7 +1178,7 @@ function WavefrontOBJ:unwrapUVs()
 			-- BEST FOR CARTESIAN ALIGNED
 			-- best for top
 			-- crashes for sides
-			local ex = n:cross{0,1,0}:normalize()
+			local ex = n:cross(bestNormal):normalize()
 			--]]
 			--[[ just use n cross x+ or z+ ...
 			-- ... gets nans
@@ -1173,7 +1188,7 @@ function WavefrontOBJ:unwrapUVs()
 			-- a[i] = 1, i = sup(|n[i]|) gives same as n cross y+, good for tops, but crashes for sides.
 			-- a[i] = 1, i = inf(|n[i]|) doesn't crash for sides but gives bad tops results.
 			-- a[i+1] = 1, i = inf(|n[i]|) crashes on sides, but same as n cross y+ on top
-			local _, i = table.inf(n:map(math.abs))
+			local _, i = table.sup(n:map(math.abs))
 			local a = matrix{0,0,0}
 			a[i] = 1
 			local ex = n:cross(a):normalize()
@@ -1303,12 +1318,60 @@ tsrc.v1*-------*
 			end
 		end
 	end
-	self.unwrapInfo = table()	-- keep track of how it's made for visualization's sake ...
+	
+	self.unwrapUVOrigins = table()
+	self.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
+	
 	local notDoneYet = table(self.tris)
+	
+	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
+		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
+		-- calc the basis by rotating it around the edge
+		assert((tsrc == nil) == (e == nil))
+		local gotBadTri = calcUVBasis(t, tsrc, e)
+		-- TODO roof actually looks good with always retarting ... but not best
+		if not gotBadTri then
+			done:insert(t)
+			assert(t[1].uv and t[2].uv and t[3].uv)
+			-- insert neighbors into a to-be-calcd list
+--print('tri', t.index)
+			for _,e in ipairs(t.edges) do
+--print('edge length', e.length)
+				-- for all edges in the t, go to the other faces matching.
+				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+				if #e.tris == 2 then
+					local t2 = getEdgeOppositeTri(e, t)
+-- if our tri 
+-- ... isn't in the 'todo' pile either ...
+-- ... is still in the notDoneYet pile ...
+					if not todo:find(t2)
+					and not done:find(t2)
+					then
+						local i = notDoneYet:find(t2)
+						if i then
+							assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+							notDoneYet:remove(i)
+							todo:insert(t2)
+						end
+					end
+				end
+			end
+		end
+	end
+
 	while #notDoneYet > 0 do
 		print('starting unwrapping process with '..#notDoneYet..' left')
-		-- heuristic of picking best starting edge
+		
+		-- I will be tracking all live edges
+		-- so process the first tri as the starting point
+		-- then add its edges into the 'todo' list
+
+		-- modularity heuristic of picking best starting edge
 		--[[ take the first one regardless 
+		local todo = table{notDoneYet:remove(1)}
+		--]]
+		--[[ largest tri first
+		notDoneYet:sort(function(a,b) return a.area > b.area end)
 		local todo = table{notDoneYet:remove(1)}
 		--]]
 		--[[ choose the first edge that starts closest to the ground (lowest y value)
@@ -1327,7 +1390,7 @@ tsrc.v1*-------*
 		end)
 		local todo = table{notDoneYet:remove(1)}
 		--]]
-		-- [[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom 
+		--[[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom 
 		notDoneYet:sort(function(a,b)
 			local aEdgeYMin = matrix{3}:lambda(function(i)
 				return .5 * (self.vs[a[i].v][2] + self.vs[a[i%3+1].v][2])
@@ -1372,23 +1435,38 @@ tsrc.v1*-------*
 				local t = notDoneYet[i]
 				for j=1,3 do
 					if self.vs[t[j].v][2] < ymin + eps then
-						todo:insert(notDoneYet:remve(i))
+						todo:insert(notDoneYet:remove(i))
 						break
 					end
 				end
 				if #todo > 0 then break end
 			end
 		end
+print('number to initialize with', #todo)
+		-- ... and process them all once first, adding their neigbors to the 'todo' pile
 		--]=]
-		--[[ largest tri first
-		notDoneYet:sort(function(a,b) return a.area > b.area end)
-		local todo = table{notDoneYet:remove(1)}
+		-- [=[ choose tris with any edges that are 90' from the guide normal
+		local todo = table()
+		for i=#notDoneYet,1,-1 do
+			local t = notDoneYet[i]
+			for j=1,3 do
+				if math.abs((self.vs[t[j].v] - self.vs[t[j%3+1].v]):normalize():dot(bestNormal)) < 1e-5 then
+					notDoneYet:remove(i)
+					todo:insert(t)
+					break
+				end
+			end
+		end
+		--]=]
+		
+		local done = table()
+		-- [[ first pass?
+		for i=#todo,1,-1 do
+			local t = todo:remove(i)
+			calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
+		end
 		--]]
 		
-		-- I will be tracking all live edges
-		-- so process the first tri as the starting point
-		-- then add its edges into the 'todo' list
-		local done = table()
 		while #todo > 0 do
 			local t, tsrc, e
 			if #done == 0 then
@@ -1449,7 +1527,6 @@ tsrc.v1*-------*
 						-- next is predominantly y-axis rotations
 						local dn = a.tri.normal - a.prevtri.normal
 						local _, i = table.inf(dn:map(math.abs))
-						
 						--]]
 					end)
 					local check = edgesToCheck[1]
@@ -1461,39 +1538,14 @@ tsrc.v1*-------*
 					todo:removeObject(t)
 				end
 			end
+			for _,t in ipairs(todo) do
+				assert(not t[1].uv and not t[2].uv and not t[3].uv)
+			end
+			for _,t in ipairs(done) do
+				assert(t[1].uv and t[2].uv and t[3].uv)
+			end		
 			if t then
-				self.unwrapInfo:insert{tsrc, t}
-				-- calc the basis by rotating it around the edge
-				assert((tsrc == nil) == (e == nil))
-				local gotBadTri = calcUVBasis(t, tsrc, e)
-				-- TODO roof actually looks good with always retarting ... but not best
-				if not gotBadTri then
-					done:insert(t)
-					assert(t[1].uv and t[2].uv and t[3].uv)
-					-- insert neighbors into a to-be-calcd list
-	--print('tri', t.index)
-					for _,e in ipairs(t.edges) do
-	--print('edge length', e.length)
-						-- for all edges in the t, go to the other faces matching.
-						-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-						if #e.tris == 2 then
-							local t2 = getEdgeOppositeTri(e, t)
-	-- if our tri 
-	-- ... isn't in the 'todo' pile either ...
-	-- ... is still in the notDoneYet pile ...
-							if not todo:find(t2)
-							and not done:find(t2)
-							then
-								local i = notDoneYet:find(t2)
-								if i then
-									assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
-									notDoneYet:remove(i)
-									todo:insert(t2)
-								end
-							end
-						end
-					end
-				end
+				calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
 			end
 		end
 	end
