@@ -32,7 +32,8 @@ typedef struct {
 local function triArea(a,b,c)
 	local ab = b - a
 	local ac = c - a
-	return .5 * ab:cross(ac):length()
+	local n = ab:cross(ac)
+	return .5 * n:norm()
 end
 
 local function pathOfFilename(fn)
@@ -123,10 +124,11 @@ function WavefrontOBJ:init(filename)
 				-- (unlike the other faces in the mtl which do have vt's)
 				--if not foundVT then usingMtl = '' end
 
-				local facesPerPolySize = self.mtllib[usingMtl].faces
+				local mtl = self.mtllib[usingMtl]
+				local facesPerPolySize = mtl.faces
 				if not facesPerPolySize then
 					facesPerPolySize = {}
-					self.mtllib[usingMtl].faces = facesPerPolySize
+					mtl.faces = facesPerPolySize
 				end
 				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 				local nvtx = #words
@@ -135,10 +137,13 @@ function WavefrontOBJ:init(filename)
 				for i=2,nvtx-1 do
 					-- store a copy of the vertex indices per triangle index
 					self.tris:insert{
-						index = #self.tris+1,
+						-- [1..3] are face index structures (with .v .vt .vn)
 						table(vis[1]):setmetatable(nil),
 						table(vis[i]):setmetatable(nil),
 						table(vis[i+1]):setmetatable(nil),
+						-- keys:
+						index = #self.tris+1,
+						mtl = mtl,
 					}
 				end
 			elseif lineType == 's' then
@@ -167,11 +172,19 @@ function WavefrontOBJ:init(filename)
 
 	-- store tri area
 	for _,t in ipairs(self.tris) do
-		local a = self.vs[t[1].v]
-		local b = self.vs[t[2].v]
-		local c = self.vs[t[3].v]
+		local a = matrix(self.vs[t[1].v])
+		local b = matrix(self.vs[t[2].v])
+		local c = matrix(self.vs[t[3].v])
 		t.area = triArea(a, b, c)
 		t.com = (a + b + c) / 3
+		-- TODO what if the tri is degenerate to a line?
+		t.normal = (b - a):cross(c - b):unit()
+		if not math.isfinite(t.normal[1]) then
+			t.normal = (b - a):unit()
+			if not math.isfinite(t.normal[1]) then
+				t.normal = matrix{0,0,1}
+			end
+		end
 	end
 
 	-- and just for kicks, track all edges
@@ -184,7 +197,7 @@ function WavefrontOBJ:init(filename)
 				[1] = a,
 				[2] = b,
 				tris = table(),
-				length = (self.vs[a] - self.vs[b]):length(),
+				length = (self.vs[a] - self.vs[b]):norm(),
 			}
 			local e = self.edges[a][b]
 			e.tris:insert(t)
@@ -258,6 +271,7 @@ function WavefrontOBJ:loadMtl(filename)
 			mtl = {}
 			mtl.name = assert(words[1])
 			mtl.faces = table()
+			-- TODO if a mtllib comes after a face then this'll happen:
 			if self.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			self.mtllib[mtl.name] = mtl
 		-- elseif lineType == 'illum' then
@@ -453,7 +467,7 @@ function WavefrontOBJ:calcCOM1()
 			local v2 = self.vs[b]
 			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
 			-- for 1D, volume = |b-a|
-			local area = (v1 - v2):length()
+			local area = (v1 - v2):norm()
 			local com = (v1 + v2) * .5
 			totalCOM = totalCOM + com * area
 			totalArea = totalArea + area
@@ -795,17 +809,31 @@ function WavefrontOBJ:draw(args)
 end
 
 -- make sure my edges match my faces
-function WavefrontOBJ:drawEdges()
+-- can't handle mtl-group explode dist because edges aren't stored associted with materials ...
+-- they are per-tri, which is per-face, which is per-material, but there can be multiple materials per edge.
+function WavefrontOBJ:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
-	gl.glColor3f(1,1,1)
+	gl.glLineWidth(3)
+	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_LINES)
 	for a,other in pairs(self.edges) do
 		for b,edge in pairs(other) do
-			gl.glVertex3f(self.vs[a]:unpack())
-			gl.glVertex3f(self.vs[b]:unpack())
+			-- avg of explode offsets of all touching tris
+			local offset = matrix{0,0,0}
+			for _,t in ipairs(edge.tris) do
+				-- get mtl for tri, then do groupExplodeDist too
+				-- matches the shader in view.lua
+				local groupExplodeOffset = (t.mtl.com3 - self.com3) * groupExplodeDist
+				local triExplodeOffset = (t.com - t.mtl.com3) * triExplodeDist
+				offset = offset + groupExplodeOffset + triExplodeOffset 
+			end
+			offset = offset / #edge.tris
+			gl.glVertex3f((self.vs[a] + offset):unpack())
+			gl.glVertex3f((self.vs[b] + offset):unpack())
 		end
 	end
 	gl.glEnd()
+	gl.glLineWidth(1)
 end
 
 function WavefrontOBJ:drawNormals(useNormal2)
@@ -882,7 +910,7 @@ function WavefrontOBJ:drawUVs(_3D)
 				gl.glVertex3f((t.com + eps * t.normal):unpack())
 			else
 				local com = (t[1].uv + t[2].uv + t[3].uv) / 3
-				gl.glVertex2f(com)
+				gl.glVertex2f(com:unpack(1,2))
 			end
 		end
 	end
@@ -913,6 +941,26 @@ function WavefrontOBJ:unwrapUVs()
 		end
 	end
 	print('numSharpEdges = '..numSharpEdges)
+
+	-- how about count area per cube sides?
+	-- total vector, l=0 s.h.
+	local avgNormal = matrix{0,0,0}
+	for _,t in ipairs(self.tris) do
+		avgNormal = avgNormal + t.normal * t.area
+	end
+	avgNormal = avgNormal:normalize()
+	print('avg normal = '..avgNormal)
+
+	-- the same idea as the l=1 spherical harmonics
+	local range = require 'ext.range'
+	local areas = matrix{3,2}:zeros()
+	for _,t in ipairs(self.tris) do
+		local _,i = table.sup(t.normal:map(math.abs))
+		assert(i)
+		local dir = t.normal[i] > 0 and 1 or 2
+		areas[i][dir] = areas[i][dir] + t.area
+	end
+	print('per-side plus/minus normal distribution = '..require 'ext.tolua'(areas))
 
 	-- for all faces (not checked)
 	--  traverse neighbors by edge and make sure the normals align
@@ -1000,10 +1048,25 @@ function WavefrontOBJ:unwrapUVs()
 			-- a[i+1] = 1, i = inf(|n[i]|) crashes on sides, but same as n cross y+ on top
 			local _, i = table.inf(n:map(math.abs))
 			local a = matrix{0,0,0}
-			a[(i%3)+1] = 1
+			a[i] = 1
 			local ex = n:cross(a):normalize()
 			for i=1,3 do
 				assert(math.isfinite(ex[i]))
+			end
+			--]]
+			--[[ draw a line between the lowest two points
+			if v[1][2] > v[2][2] then
+				if v[1][2] > v[3][2] then	-- 1 highest
+					ex = (v[3] - v[2]):normalize()
+				else	-- 3 highest
+					ex = (v[2] - v[1]):normalize()
+				end
+			else
+				if v[2][2] > v[3][2] then	-- 2 highest
+					ex = (v[1] - v[3]):normalize()
+				else	-- 3 highest
+					ex = (v[2] - v[1]):normalize()
+				end
 			end
 			--]]
 
@@ -1110,14 +1173,32 @@ tsrc.v1*-------*
 			t[i].uv = m * d + t.uvorigin2D
 --print('uv = '..t[i].uv)
 			if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
-				error("here")
+				print('tri has nans in its basis')
 			end
 		end
 	end
 	self.unwrapInfo = table()	-- keep track of how it's made for visualization's sake ...
 	local notDoneYet = table(self.tris)
 	while #notDoneYet > 0 do
-		-- TODO heuristic of picking best starting edge
+		-- heuristic of picking best starting edge
+		--[[ no heuristic is an option, just reminding myself.
+		--]]
+		--[[ choose the edge that starts closest to the ground (lowest y value)
+		notDoneYet:sort(function(a,b)
+			return math.min(
+				self.vs[a[1].v][2],
+				self.vs[a[2].v][2],
+				self.vs[a[3].v][2]
+			) < math.min(
+				self.vs[b[1].v][2],
+				self.vs[b[2].v][2],
+				self.vs[b[3].v][2]
+			)
+		end)	
+		--]]
+		-- [[ largest tri first
+		notDoneYet:sort(function(a,b) return a.area > b.area end)
+		--]]
 		print('starting unwrapping process with '..#notDoneYet..' left')
 		local t = notDoneYet:remove(1)
 		local done = table()
@@ -1213,6 +1294,5 @@ tsrc.v1*-------*
 		end
 	end
 end
-
 
 return WavefrontOBJ

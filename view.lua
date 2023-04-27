@@ -184,9 +184,6 @@ function App:update()
 	if self.useDrawNormals then
 		self.obj:drawNormals(self.useGeneratedNormals)
 	end
-	if self.useDrawEdges then
-		self.obj:drawEdges()
-	end
 	if self.useDrawPolys then
 		self.shader:use()
 		self.shader:setUniforms{
@@ -221,6 +218,9 @@ function App:update()
 	end
 	if self.drawUVs then
 		self.obj:drawUVs(self.drawUVs3D)
+	end
+	if self.useDrawEdges then
+		self.obj:drawEdges(self.triExplodeDist, self.groupExplodeDist)
 	end
 
 	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
