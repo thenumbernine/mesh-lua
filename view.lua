@@ -37,6 +37,7 @@ self.view.angle:fromAngleAxis(1,0,0,-90)
 	self.useDrawNormals = false
 	self.drawUVs = false
 	self.drawUVs3D = true
+	self.drawUVUnwrapEdges = false
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
@@ -221,6 +222,9 @@ function App:update()
 	if self.drawUVs then
 		self.obj:drawUVs(self.drawUVs3D)
 	end
+	if self.drawUVUnwrapEdges then
+		self.obj:drawUVUnwrapEdges(self.drawUVs3D)
+	end
 	if self.useDrawEdges then
 		self.obj:drawEdges(self.triExplodeDist, self.groupExplodeDist)
 	end
@@ -306,6 +310,7 @@ function App:updateGUI()
 	ig.luatableCheckbox('draw normals', self, 'useDrawNormals')
 	ig.luatableCheckbox('draw uvs', self, 'drawUVs')
 	ig.luatableCheckbox('draw uvs 3D', self, 'drawUVs3D')
+	ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
 end
 
 App():run()

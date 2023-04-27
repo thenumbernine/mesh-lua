@@ -166,7 +166,7 @@ function WavefrontOBJ:init(filename)
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably... 
 
---[[ merge vtxs.  TODO make this an option with specified threshold.
+-- [[ merge vtxs.  TODO make this an option with specified threshold.
 -- do this before detecting edges.
 -- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
@@ -179,9 +179,9 @@ function WavefrontOBJ:init(filename)
 	for i=#self.vs,2,-1 do
 		for j=1,i-1 do
 			local dist = (self.vs[i] - self.vs[j]):norm()
---			print(dist)
+--print(dist)
 			if dist < vtxMergeThreshold then
-				print('merging vtxs '..i..' and '..j)
+--print('merging vtxs '..i..' and '..j)
 				self:mergeVertex(i,j)
 				break
 			end
@@ -397,6 +397,7 @@ end
 
 -- replace all instances of one vertex index with another
 function WavefrontOBJ:replaceVertex(from,to)
+--print('replacing vertex ' ..from..' with '..to)	
 	assert(from > to)
 	assert(from >= 1 and from <= #self.vs)
 	assert(to >= 1 and to <= #self.vs)
@@ -421,19 +422,15 @@ end
 function WavefrontOBJ:removeDegenerateTriangles()
 	for i=#self.tris,1,-1 do
 		local t = self.tris[i]
-		local break2
 		for j=3,2,-1 do
-			for k=1,j do
-				if t[j].v == t[k].v then
-					table.remove(t,j)
-					break
-				end
-			end
-			if #t < 3 then
-				print('removing degenerate tri '..i)
-				self.tris:remove(i)
+			if t[j].v == t[j-1].v then
+				table.remove(t,j)
 				break
 			end
+		end
+		if #t < 3 then
+--print('removing degenerate tri '..i..' with duplicate vertices')
+			self.tris:remove(i)
 		end
 	end
 	-- remove in .mtllib[].faces
@@ -443,16 +440,14 @@ function WavefrontOBJ:removeDegenerateTriangles()
 			for i=#faces,1,-1 do
 				local f = faces[i]
 				for j=n,2,-1 do
-					for k=1,j do
-						if f[j] == f[k] then
-							table.remove(f, j)
-							break
-						end
-					end
-					if #f < 3 then
-						faces:remove(i)
+					if f[j].v == f[j-1].v then
+--print('removing degenerate poly vtx')
+						table.remove(j)
 						break
 					end
+				end
+				if #f < 3 then
+					faces:remove(i)
 				end
 			end
 			if #faces == 0 then
@@ -1024,11 +1019,20 @@ function WavefrontOBJ:drawUVs(_3D)
 	end
 	gl.glEnd()
 	--]]
+end
+function WavefrontOBJ:drawUVUnwrapEdges(_3D)
+	local gl = require 'gl'
+	local eps = 1e-3
 	-- [[ show unwrap info
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
 	for _,info in ipairs(self.unwrapInfo) do
-		for _,t in ipairs{info[1], info[2]} do
+		for i,t in ipairs(info) do
+			if i==1 then
+				gl.glColor3f(0,1,0)
+			else
+				gl.glColor3f(1,0,0)
+			end
 			if _3D then
 				gl.glVertex3f((t.com + eps * t.normal):unpack())
 			else
@@ -1131,7 +1135,7 @@ function WavefrontOBJ:unwrapUVs()
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
 			
-			-- TODO modularity for choosing initial basis
+			-- modularity for choosing initial basis
 			--[[ use first base of the triangle
 			local ex = d1:normalize()
 			--]]
@@ -1240,9 +1244,8 @@ tsrc.v1*-------*
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
 
-			-- TODO modularity for choosing unwrap rotation
-			--[[ reset basis every time.
-			-- dumb.
+			-- modularity for choosing unwrap rotation
+			--[[ reset basis every time. dumb.
 			local ex = d1:normalize()
 			t.uvbasisT = matrix{
 				ex,
@@ -1279,7 +1282,7 @@ tsrc.v1*-------*
 				q:rotate(tsrc.uvbasisT[1]),
 				q:rotate(tsrc.uvbasisT[2]),
 				n,
-			}		
+			}
 			--]]
 			
 --print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
@@ -1303,10 +1306,14 @@ tsrc.v1*-------*
 	self.unwrapInfo = table()	-- keep track of how it's made for visualization's sake ...
 	local notDoneYet = table(self.tris)
 	while #notDoneYet > 0 do
+		print('starting unwrapping process with '..#notDoneYet..' left')
 		-- heuristic of picking best starting edge
-		--[[ no heuristic is an option, just reminding myself.
+		--[[ take the first one regardless 
+		local todo = table{notDoneYet:remove(1)}
 		--]]
-		--[[ choose the edge that starts closest to the ground (lowest y value)
+		--[[ choose the first edge that starts closest to the ground (lowest y value)
+		-- ... but this does some whose sharp edges touches
+		-- i really want only those with flat edges at the base
 		notDoneYet:sort(function(a,b)
 			return math.min(
 				self.vs[a[1].v][2],
@@ -1317,23 +1324,74 @@ tsrc.v1*-------*
 				self.vs[b[2].v][2],
 				self.vs[b[3].v][2]
 			)
-		end)	
+		end)
+		local todo = table{notDoneYet:remove(1)}
 		--]]
-		-- [[ largest tri first
+		-- [[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom 
+		notDoneYet:sort(function(a,b)
+			local aEdgeYMin = matrix{3}:lambda(function(i)
+				return .5 * (self.vs[a[i].v][2] + self.vs[a[i%3+1].v][2])
+			end):min()
+			local bEdgeYMin = matrix{3}:lambda(function(i)
+				return .5 * (self.vs[b[i].v][2] + self.vs[b[i%3+1].v][2])
+			end):min()
+			return aEdgeYMin < bEdgeYMin
+		end)
+		local todo = table{notDoneYet:remove(1)}
+		--]]	
+		--[=[ choose *all* tris whose flat edges are at the minimum y
+		local vtxsNotDoneYet = {}
+		for _,t in ipairs(notDoneYet) do
+			for i=1,3 do
+				vtxsNotDoneYet[t[i].v] = true
+			end
+		end
+		-- convert set of keys to list
+		vtxsNotDoneYet = table.keys(vtxsNotDoneYet):sort(function(a,b)
+			return self.vs[a][2] < self.vs[b][2]	-- sort by y axis
+		end)
+		local eps = (self.bbox.max[2] - self.bbox.min[2]) * 1e-5
+		local ymin = self.vs[vtxsNotDoneYet[1]][2]
+		print('y min', ymin)
+		-- now go thru all tris not done yet
+		-- if any have 2/3 vtxs at the min then add them
+		local todo = table()
+		for i=#notDoneYet,1,-1 do
+			local t = notDoneYet[i]
+			local mincount = 0
+			for j=1,3 do
+				if self.vs[t[j].v][2] < ymin + eps then mincount = mincount + 1 end
+			end
+			if mincount >= 2 then
+				todo:insert(notDoneYet:remove(i))
+			end
+		end
+		-- if none were added then add one with 1/3 vtxs at the min
+		if #todo == 0 then
+			for i=#notDoneYet,1,-1 do
+				local t = notDoneYet[i]
+				for j=1,3 do
+					if self.vs[t[j].v][2] < ymin + eps then
+						todo:insert(notDoneYet:remve(i))
+						break
+					end
+				end
+				if #todo > 0 then break end
+			end
+		end
+		--]=]
+		--[[ largest tri first
 		notDoneYet:sort(function(a,b) return a.area > b.area end)
+		local todo = table{notDoneYet:remove(1)}
 		--]]
-		print('starting unwrapping process with '..#notDoneYet..' left')
-		local t = notDoneYet:remove(1)
-		local done = table()
-		local todo = table{t}
 		
-		-- TODO maybe instead I should be tracking all live edges?
+		-- I will be tracking all live edges
 		-- so process the first tri as the starting point
 		-- then add its edges into the 'todo' list
-
+		local done = table()
 		while #todo > 0 do
 			local t, tsrc, e
-			if #todo == 1 and #done == 0 then
+			if #done == 0 then
 				-- first iteration
 				t = todo:remove(1)
 				assert(not tsrc)
@@ -1351,64 +1409,87 @@ tsrc.v1*-------*
 						end
 					end
 				end
-				
-				-- assert from prevoius iteration that the first is the best
-				-- heuristic for picking best continuing edge
-				-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
-				edgesToCheck:sort(function(a,b)
-					local ta, tb = a.tri, b.tri
-					local ea, eb = a.edge, b.edge
-					-- [[ prioritize longest edge ... cube makes a long straight shape with one bend.
-					-- looks best for cone.  just does two solid pieces for the base and sides
-					-- looks best for cube.  does the cubemap t.
-					return ea.length > eb.length
-					--]]
-					--[[ prioritize shortest edge ... cube makes a zigzag
-					return ea.length < eb.length
-					--]]
-					--[[ prioritize biggest area
-					return ta.area > tb.area
-					--]]
-					--[[ prioritize smallest area
-					return ta.area > tb.area
-					--]]
-					-- [[ prioritize ... what ... mesh curvature?
-					--]]
-				end)
-				local check = edgesToCheck[1]
-				t, e, tsrc = check.tri, check.edge, check.prevtri
-				assert(t)
-				assert(e)
-				assert(tsrc)
-				assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
-				todo:removeObject(t)
+				if #edgesToCheck == 0 then
+					-- same as first iter
+					print("no edges to check ...")
+					t = todo:remove(math.random(#todo))
+				else
+					-- assert from prevoius iteration that the first is the best
+					-- modularity heuristic for picking best continuing edge
+					-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
+					edgesToCheck:sort(function(a,b)
+						local ea, eb = a.edge, b.edge
+						--[[ prioritize longest edge ... cube makes a long straight shape with one bend.
+						-- looks best for cone.  just does two solid pieces for the base and sides
+						-- looks best for cube.  does the cubemap t.
+						return ea.length > eb.length
+						--]]
+						--[[ prioritize shortest edge ... cube makes a zigzag
+						return ea.length < eb.length
+						--]]
+						--[[ prioritize biggest area
+						local atriarea = a.tri.area + a.prevtri.area
+						local btriarea  = b.tri.area + b.prevtri.area
+						return atriarea > btriarea
+						--]]
+						--[[ prioritize smallest area
+						local atriarea = a.tri.area + a.prevtri.area
+						local btriarea  = b.tri.area + b.prevtri.area
+						return atriarea < btriarea
+						--]]
+						-- [[ prioritize rotation angle
+						-- LOOKS THE BEST SO FAR
+						local ra = a.tri.normal:dot(a.prevtri.normal)
+						local rb = b.tri.normal:dot(b.prevtri.normal)
+						return ra > rb
+						--]]
+						-- TODO Try prioritizing discrete curvature (mesh angle & area info combined?)
+						--[[ prioritize by rotation.
+						-- first priority is no-rotation
+						-- next is predominantly y-axis rotations
+						local dn = a.tri.normal - a.prevtri.normal
+						local _, i = table.inf(dn:map(math.abs))
+						
+						--]]
+					end)
+					local check = edgesToCheck[1]
+					t, e, tsrc = check.tri, check.edge, check.prevtri
+					assert(t)
+					assert(e)
+					assert(tsrc)
+					assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+					todo:removeObject(t)
+				end
 			end
-			self.unwrapInfo:insert{tsrc, t}
-			-- calc the basis by rotating it around the edge
-			assert((tsrc == nil) == (e == nil))
-			local foundLine = calcUVBasis(t, tsrc, e)
-			if not foundLine then
-				done:insert(t)
-				assert(t[1].uv and t[2].uv and t[3].uv)
-				-- insert neighbors into a to-be-calcd list
---print('tri', t.index)
-				for _,e in ipairs(t.edges) do
---print('edge length', e.length)
-					-- for all edges in the t, go to the other faces matching.
-					-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-					if #e.tris == 2 then
-						local t2 = getEdgeOppositeTri(e, t)
--- if our tri 
--- ... isn't in the 'todo' pile either ...
--- ... is still in the notDoneYet pile ...
-						if not todo:find(t2)
-						and not done:find(t2)
-						then
-							local i = notDoneYet:find(t2)
-							if i then
-								assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
-								notDoneYet:remove(i)
-								todo:insert(t2)
+			if t then
+				self.unwrapInfo:insert{tsrc, t}
+				-- calc the basis by rotating it around the edge
+				assert((tsrc == nil) == (e == nil))
+				local gotBadTri = calcUVBasis(t, tsrc, e)
+				-- TODO roof actually looks good with always retarting ... but not best
+				if not gotBadTri then
+					done:insert(t)
+					assert(t[1].uv and t[2].uv and t[3].uv)
+					-- insert neighbors into a to-be-calcd list
+	--print('tri', t.index)
+					for _,e in ipairs(t.edges) do
+	--print('edge length', e.length)
+						-- for all edges in the t, go to the other faces matching.
+						-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
+						if #e.tris == 2 then
+							local t2 = getEdgeOppositeTri(e, t)
+	-- if our tri 
+	-- ... isn't in the 'todo' pile either ...
+	-- ... is still in the notDoneYet pile ...
+							if not todo:find(t2)
+							and not done:find(t2)
+							then
+								local i = notDoneYet:find(t2)
+								if i then
+									assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+									notDoneYet:remove(i)
+									todo:insert(t2)
+								end
 							end
 						end
 					end
