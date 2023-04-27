@@ -20,8 +20,10 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.obj = WavefrontObj(fn)
-	print('volume', self.obj:calcVolume())
+	print('triangle bounded volume', self.obj:calcVolume())
+	print('bbox', self.obj.bbox)
 	print('bbox volume', (self.obj.bbox.max - self.obj.bbox.min):volume())
+	print('obj.bbox corner-to-corner distance: '..(self.obj.bbox.max - self.obj.bbox.min):norm())
 
 self.view.ortho = true
 self.view.angle:fromAngleAxis(1,0,0,-90)
@@ -55,7 +57,7 @@ self.view.angle:fromAngleAxis(1,0,0,-90)
 #version 460
 
 in vec3 pos;
-in vec2 texCoord;
+in vec3 texCoord;
 in vec3 normal;		//mesh-provided normal
 in vec3 normal2;	//generated normal
 in vec3 com;
@@ -74,7 +76,7 @@ uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 
 out vec3 fragPosv;	// position in view space
-out vec2 texCoordv;
+out vec3 texCoordv;
 out vec3 normalv;
 out vec4 Kav;
 out vec4 Kdv;
@@ -106,7 +108,7 @@ uniform vec3 lightDir;
 uniform bool useTextures;
 
 in vec3 fragPosv;
-in vec2 texCoordv;
+in vec3 texCoordv;
 in vec3 normalv;
 in vec4 Kav;
 in vec4 Kdv;
@@ -120,7 +122,7 @@ void main() {
 	fragColor = Kav;
 	vec4 diffuseColor = Kdv;
 	if (useTextures) {
-		diffuseColor *= texture(map_Kd, texCoordv);
+		diffuseColor *= texture(map_Kd, texCoordv.xy);
 	}
 	fragColor += diffuseColor;
 	if (useLighting) {
@@ -231,7 +233,7 @@ function App:update()
 end
 
 function App:setCenter(center)
-	local size = self.obj.vs:mapi(function(v) return (v - center):length() end):sup()
+	local size = self.obj.vs:mapi(function(v) return (v - center):norm() end):sup()
 	self.view.orbit:set(center:unpack())
 	self.view.pos = self.view.orbit + self.view.angle:zAxis() * size
 end

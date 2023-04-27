@@ -6,9 +6,6 @@ local string = require 'ext.string'
 local file = require 'ext.file'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
-local vec2 = require 'vec.vec2'
-local vec3 = require 'vec.vec3'
-local vec4 = require 'vec.vec4'
 local quat = require 'vec.quat'
 local matrix = require 'matrix'
 local vector = require 'ffi.cpp.vector'
@@ -21,7 +18,7 @@ typedef struct {
 	vec3f_t pos;
 	vec3f_t normal;		//loaded normal
 	vec3f_t normal2;	//generated normal ... because i want the viewer to toggle between the two
-	vec2f_t texCoord;
+	vec3f_t texCoord;
 	
 	// per-triangle stats (duplicated 3x per-vertex)
 	float area;
@@ -49,16 +46,10 @@ local function pathOfFilename(fn)
 	return fn:sub(1,lastSlashIndex)
 end
 
-local function wordsToNumbers(w)
-	return w:mapi(function(x) return tonumber(x) end):unpack(1, table.maxn(w))
-end
-
-local function wordsToVec2(w)
-	return vec2(wordsToNumbers(w))
-end
-
 local function wordsToVec3(w)
-	return vec3(wordsToNumbers(w))
+	return matrix{3}:lambda(function(i)
+		return tonumber(w[i]) or 0
+	end)
 end
 
 -- used for colors
@@ -69,7 +60,7 @@ local function wordsToColor(w)
 	g = g or 0
 	b = b or 0
 	a = a or 1
-	return vec4(r,g,b,a)
+	return matrix{r,g,b,a}
 end
 
 local WavefrontOBJ = class()
@@ -101,7 +92,7 @@ function WavefrontOBJ:init(filename)
 				vs:insert(wordsToVec3(words))
 			elseif lineType == 'vt' then
 				assert(#words >= 2)
-				vts:insert(wordsToVec2(words))
+				vts:insert(wordsToVec3(words))
 			elseif lineType == 'vn' then
 				assert(#words >= 2)
 				vns:insert(wordsToVec3(words))
@@ -165,6 +156,39 @@ function WavefrontOBJ:init(filename)
 		self.vts = vts
 		self.vns = vns
 	end)
+
+-- [[ calculate bbox.  do this before merging vtxs.
+	local box3 = require 'vec.box3'
+	self.bbox = box3(-math.huge)
+	for _,v in ipairs(self.vs) do
+		self.bbox:stretch(v)
+	end
+--]]
+-- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably... 
+
+--[[ merge vtxs.  TODO make this an option with specified threshold.
+-- do this before detecting edges.
+-- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
+	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
+	-- that's a jump from 1/371 to 1/20,000,000
+	-- so what's the smallest ratio I should allow?  maybe 1/1million?
+	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+	local vtxMergeThreshold = bboxCornerDist * 1e-6
+	print('vtxMergeThreshold', vtxMergeThreshold)	
+	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
+	for i=#self.vs,2,-1 do
+		for j=1,i-1 do
+			local dist = (self.vs[i] - self.vs[j]):norm()
+--			print(dist)
+			if dist < vtxMergeThreshold then
+				print('merging vtxs '..i..' and '..j)
+				self:mergeVertex(i,j)
+				break
+			end
+		end
+	end
+	print('after merge vtx count', #self.vs, 'tri count', #self.tris)
+--]]
 
 -- TODO all this per-material-group
 -- should meshes have their own vtx lists?
@@ -234,20 +258,6 @@ function WavefrontOBJ:init(filename)
 		mtl.com3 = self:calcCOM3(mtlname)
 	end
 --]]
--- [[ calculate bbox
-	local vec3huge = vec3f(math.huge, math.huge, math.huge)
-	self.bbox = {
-		min = vec3f(vec3huge),
-		max = -vec3huge,
-	}
-	for _,v in ipairs(self.vs) do
-		for i=0,2 do
-			self.bbox.min.s[i] = math.min(self.bbox.min.s[i], v[i+1])
-			self.bbox.max.s[i] = math.max(self.bbox.max.s[i], v[i+1])
-		end
-	end
---]]
--- TODO maybe calc bounding radius?
 
 -- [=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 	timer('unwrapping uvs', function()
@@ -385,6 +395,118 @@ function WavefrontOBJ:loadMtl(filename)
 	end
 end
 
+-- replace all instances of one vertex index with another
+function WavefrontOBJ:replaceVertex(from,to)
+	assert(from > to)
+	assert(from >= 1 and from <= #self.vs)
+	assert(to >= 1 and to <= #self.vs)
+	-- replace in .tris
+	for _,t in ipairs(self.tris) do
+		for i=1,3 do
+			if t[i].v == from then t[i].v = to end
+		end
+	end
+	-- replace in .mtllib[].faces
+	for mtlname,mtl in pairs(self.mtllib) do
+		for polySize,faces in pairs(mtl.faces) do
+			for _,f in ipairs(faces) do
+				for i=1,polySize do
+					if f[i].v == from then f[i].v = to end
+				end
+			end
+		end
+	end
+end
+
+function WavefrontOBJ:removeDegenerateTriangles()
+	for i=#self.tris,1,-1 do
+		local t = self.tris[i]
+		local break2
+		for j=3,2,-1 do
+			for k=1,j do
+				if t[j].v == t[k].v then
+					table.remove(t,j)
+					break
+				end
+			end
+			if #t < 3 then
+				print('removing degenerate tri '..i)
+				self.tris:remove(i)
+				break
+			end
+		end
+	end
+	-- remove in .mtllib[].faces
+	for mtlname,mtl in pairs(self.mtllib) do
+		for _,n in ipairs(table.keys(mtl.faces)) do
+			local faces = mtl.faces[n]
+			for i=#faces,1,-1 do
+				local f = faces[i]
+				for j=n,2,-1 do
+					for k=1,j do
+						if f[j] == f[k] then
+							table.remove(f, j)
+							break
+						end
+					end
+					if #f < 3 then
+						faces:remove(i)
+						break
+					end
+				end
+			end
+			if #faces == 0 then
+				mtl.faces[n] = nil
+			end
+		end
+	end
+end
+
+-- remove all instances of a veretx index
+-- remove the vertex from the elf.vs[] list
+-- decrement the indexes greater
+function WavefrontOBJ:removeVertex(vi)
+	assert(vi >= 1 and vi <= #self.vs)
+	self.vs:remove(vi)
+	-- remove in .tris
+	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
+	for _,t in ipairs(self.tris) do
+		for i=1,3 do
+			if t[i].v == vi then
+				error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+			elseif t[i].v > vi then
+				t[i].v = t[i].v - 1
+			end
+		end
+	end
+	-- remove in .mtllib[].faces
+	for mtlname,mtl in pairs(self.mtllib) do
+		for polySize,faces in pairs(mtl.faces) do
+			for _,f in ipairs(faces) do
+				for i=1,polySize do
+					if f[i].v == vi then
+						error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+					elseif f[i].v > vi then
+						f[i].v = f[i].v - 1
+					end			
+				end
+			end
+		end
+	end
+end
+
+--[[
+1) replace the 'from' with the 'to'
+2) remove any degenerate triangles/faces
+3) remove the to vertex from the list
+--]]
+function WavefrontOBJ:mergeVertex(from,to)
+	assert(from > to)
+	self:replaceVertex(from,to)
+	self:removeDegenerateTriangles()
+	self:removeVertex(from)
+end
+
 -- common interface?  for dif 3d format types?
 function WavefrontOBJ:vtxiter()
 	return coroutine.wrap(function()
@@ -459,7 +581,7 @@ end
 -- calculate COM by 1-forms (edges)
 -- depend on self.edges being stored
 function WavefrontOBJ:calcCOM1()
-	local totalCOM = vec3()
+	local totalCOM = matrix{0,0,0}
 	local totalArea = 0
 	for a,bs in pairs(self.edges) do
 		for b in pairs(bs) do
@@ -478,7 +600,7 @@ end
 
 -- calculate COM by 2-forms (triangles)
 function WavefrontOBJ:calcCOM2(mtlname)
-	local totalCOM = vec3()
+	local totalCOM = matrix{0,0,0}
 	local totalArea = 0
 	for i,j,k in self:triiter(mtlname) do
 		local a = self.vs[i.v]
@@ -496,7 +618,7 @@ end
 
 -- calculate COM by 3-forms (enclosed volume)
 function WavefrontOBJ:calcCOM3(mtlname)
-	local totalCOM = vec3()
+	local totalCOM = matrix{0,0,0}
 	local totalVolume = 0
 	for i,j,k in self:triiter(mtlname) do
 		local a = self.vs[i.v]
@@ -522,10 +644,11 @@ function WavefrontOBJ:calcCOM3(mtlname)
 	return totalCOM / totalVolume
 end
 
--- calculates overall volume
+-- calculates volume bounded by triangles
 function WavefrontOBJ:calcVolume()
 	local volume = 0
-	for i,j,k in self:triiter() do
+	for _,t in ipairs(self.tris) do
+		local i,j,k = table.unpack(t)
 		-- volume of parallelogram with vertices at 0, a, b, c
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
@@ -633,7 +756,7 @@ function WavefrontOBJ:loadGL(shader)
 				local vc = self.vs[c.v]
 				local normal = (vb - va):cross(vc - vb):normalize()
 				for _,vi in ipairs{a,b,c} do
-					vtxnormals[vi.v] = (vtxnormals[vi.v] or vec3()) + normal
+					vtxnormals[vi.v] = (vtxnormals[vi.v] or matrix{0,0,0}) + normal
 				end
 			end
 			for _,k in ipairs(table.keys(vtxnormals)) do
@@ -684,7 +807,7 @@ function WavefrontOBJ:loadGL(shader)
 			mtl.vtxAttrs = {}
 			for _,info in ipairs{
 				{name='pos', size=3},
-				{name='texCoord', size=2},
+				{name='texCoord', size=3},
 				{name='normal', size=3},
 				{name='normal2', size=3},
 				{name='com', size=3},
@@ -770,7 +893,7 @@ function WavefrontOBJ:draw(args)
 		--]]
 		--[[ vertex client arrays
 		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glTexCoordPointer(2, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
 		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
@@ -782,7 +905,7 @@ function WavefrontOBJ:draw(args)
 		--]]
 		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
 		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texCoord.loc, 2, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texCoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
 		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.texCoord.loc)
@@ -948,7 +1071,7 @@ function WavefrontOBJ:unwrapUVs()
 	for _,t in ipairs(self.tris) do
 		avgNormal = avgNormal + t.normal * t.area
 	end
-	avgNormal = avgNormal:normalize()
+	if avgNormal:normSq() > 0 then avgNormal = avgNormal:normalize() end
 	print('avg normal = '..avgNormal)
 
 	-- the same idea as the l=1 spherical harmonics
