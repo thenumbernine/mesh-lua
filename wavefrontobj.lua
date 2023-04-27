@@ -1323,8 +1323,9 @@ tsrc.v1*-------*
 	self.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
 	
 	local notDoneYet = table(self.tris)
+	local done = table()
 	
-	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
+	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
 		-- calc the basis by rotating it around the edge
 		assert((tsrc == nil) == (e == nil))
@@ -1352,6 +1353,35 @@ tsrc.v1*-------*
 							assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
 							notDoneYet:remove(i)
 							todo:insert(t2)
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local function floodFillMatchingNormalNeighbors(t, tsrc, e, todo)
+		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
+		assert((tsrc == nil) == (e == nil))
+		if not calcUVBasis(t, tsrc, e) then
+			done:insert(t)
+			assert(t[1].uv and t[2].uv and t[3].uv)
+			for _,e in ipairs(t.edges) do
+				if #e.tris == 2 then
+					local t2 = getEdgeOppositeTri(e, t)
+					if not todo:find(t2)
+					and not done:find(t2)
+					then
+						local i = notDoneYet:find(t2)
+						if i then
+							assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+							notDoneYet:remove(i)
+							--todo:insert(t2)
+							if t.normal:dot(t2.normal) > 1 - 1e-3 then
+								floodFillMatchingNormalNeighbors(t2, t, e, todo)
+							else
+								todo:insert(t2)
+							end
 						end
 					end
 				end
@@ -1446,108 +1476,111 @@ print('number to initialize with', #todo)
 		-- ... and process them all once first, adding their neigbors to the 'todo' pile
 		--]=]
 		-- [=[ choose tris with any edges that are 90' from the guide normal
+		-- but not if the vector from the com to the edges is towards the guide normal
 		local todo = table()
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
 			for j=1,3 do
-				if math.abs((self.vs[t[j].v] - self.vs[t[j%3+1].v]):normalize():dot(bestNormal)) < 1e-5 then
-					notDoneYet:remove(i)
-					todo:insert(t)
-					break
+				local a = self.vs[t[j].v]
+				local b = self.vs[t[j%3+1].v]
+				if math.abs((b - a):normalize():dot(bestNormal)) < 1e-5 then
+					-- exclude tops
+					if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
+						notDoneYet:remove(i)
+						todo:insert(t)
+						break
+					end
 				end
 			end
 		end
 		--]=]
 		
-		local done = table()
-		-- [[ first pass?
+		-- [[ first pass to make sure all the first picked are considered
+print('starting first pass with #todo', #todo)	
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
-			calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
+			-- for 't', flood-fill through anything with matching normal
+			floodFillMatchingNormalNeighbors(t, nil, nil, todo)
+			--calcUVBasisAndAddNeighbors(t, nil, nil, todo)
 		end
+		print('after first pass, #todo', #todo, '#done', #done)
 		--]]
-		
+
 		while #todo > 0 do
 			local t, tsrc, e
-			if #done == 0 then
-				-- first iteration
-				t = todo:remove(1)
-				assert(not tsrc)
-				assert(not e)
-			else
-				-- pick best edge between any triangle in 'done' and any in 'todo'
-				local edgesToCheck = table()
-				for _,t in ipairs(todo) do
-					for _,e in ipairs(t.edges) do
-						if #e.tris == 2 then
-							local t2 = getEdgeOppositeTri(e, t)
-							if done:find(t2) then
-								edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
-							end
+
+			-- pick best edge between any triangle in 'done' and any in 'todo'
+			local edgesToCheck = table()
+			for _,t in ipairs(todo) do
+				for _,e in ipairs(t.edges) do
+					if #e.tris == 2 then
+						local t2 = getEdgeOppositeTri(e, t)
+						if done:find(t2) then
+							edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
 						end
 					end
 				end
-				if #edgesToCheck == 0 then
-					-- same as first iter
-					print("no edges to check ...")
-					t = todo:remove(math.random(#todo))
-				else
-					-- assert from prevoius iteration that the first is the best
-					-- modularity heuristic for picking best continuing edge
-					-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
-					edgesToCheck:sort(function(a,b)
-						local ea, eb = a.edge, b.edge
-						--[[ prioritize longest edge ... cube makes a long straight shape with one bend.
-						-- looks best for cone.  just does two solid pieces for the base and sides
-						-- looks best for cube.  does the cubemap t.
-						return ea.length > eb.length
-						--]]
-						--[[ prioritize shortest edge ... cube makes a zigzag
-						return ea.length < eb.length
-						--]]
-						--[[ prioritize biggest area
-						local atriarea = a.tri.area + a.prevtri.area
-						local btriarea  = b.tri.area + b.prevtri.area
-						return atriarea > btriarea
-						--]]
-						--[[ prioritize smallest area
-						local atriarea = a.tri.area + a.prevtri.area
-						local btriarea  = b.tri.area + b.prevtri.area
-						return atriarea < btriarea
-						--]]
-						-- [[ prioritize rotation angle
-						-- LOOKS THE BEST SO FAR
-						local ra = a.tri.normal:dot(a.prevtri.normal)
-						local rb = b.tri.normal:dot(b.prevtri.normal)
-						return ra > rb
-						--]]
-						-- TODO Try prioritizing discrete curvature (mesh angle & area info combined?)
-						--[[ prioritize by rotation.
-						-- first priority is no-rotation
-						-- next is predominantly y-axis rotations
-						local dn = a.tri.normal - a.prevtri.normal
-						local _, i = table.inf(dn:map(math.abs))
-						--]]
-					end)
-					local check = edgesToCheck[1]
-					t, e, tsrc = check.tri, check.edge, check.prevtri
-					assert(t)
-					assert(e)
-					assert(tsrc)
-					assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
-					todo:removeObject(t)
-				end
+			end
+			if #edgesToCheck == 0 then
+				-- same as first iter
+				print("no edges to check ...")
+				t = todo:remove(math.random(#todo))
+			else
+				-- assert from prevoius iteration that the first is the best
+				-- modularity heuristic for picking best continuing edge
+				-- sort last instead of first, so first iteration and first entry is removed, so I can guarantee that all entries have .prevtri and .edge
+				edgesToCheck:sort(function(a,b)
+					local ea, eb = a.edge, b.edge
+					--[[ prioritize longest edge ... cube makes a long straight shape with one bend.
+					-- looks best for cone.  just does two solid pieces for the base and sides
+					-- looks best for cube.  does the cubemap t.
+					return ea.length > eb.length
+					--]]
+					--[[ prioritize shortest edge ... cube makes a zigzag
+					return ea.length < eb.length
+					--]]
+					--[[ prioritize biggest area
+					local atriarea = a.tri.area + a.prevtri.area
+					local btriarea  = b.tri.area + b.prevtri.area
+					return atriarea > btriarea
+					--]]
+					--[[ prioritize smallest area
+					local atriarea = a.tri.area + a.prevtri.area
+					local btriarea  = b.tri.area + b.prevtri.area
+					return atriarea < btriarea
+					--]]
+					-- [[ prioritize rotation angle
+					-- LOOKS THE BEST SO FAR
+					local ra = a.tri.normal:dot(a.prevtri.normal)
+					local rb = b.tri.normal:dot(b.prevtri.normal)
+					return ra > rb
+					--]]
+					-- TODO Try prioritizing discrete curvature (mesh angle & area info combined?)
+					--[[ prioritize by rotation.
+					-- first priority is no-rotation
+					-- next is predominantly y-axis rotations
+					local dn = a.tri.normal - a.prevtri.normal
+					local _, i = table.inf(dn:map(math.abs))
+					--]]
+				end)
+				local check = edgesToCheck[1]
+				t, e, tsrc = check.tri, check.edge, check.prevtri
+				assert(t)
+				assert(e)
+				assert(tsrc)
+				assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+				todo:removeObject(t)
 			end
 			for _,t in ipairs(todo) do
 				assert(not t[1].uv and not t[2].uv and not t[3].uv)
 			end
-			for _,t in ipairs(done) do
-				assert(t[1].uv and t[2].uv and t[3].uv)
-			end		
 			if t then
-				calcUVBasisAndAddNeighbors(t, tsrc, e, todo, done)
+				calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 			end
 		end
+		for _,t in ipairs(done) do
+			assert(t[1].uv and t[2].uv and t[3].uv)
+		end		
 	end
 end
 
