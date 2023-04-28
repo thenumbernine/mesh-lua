@@ -89,7 +89,8 @@ function WavefrontOBJ:init(filename)
 			-- and assert the tris are in a certain layout (tri fan?) for reconstructing faces?
 			-- since this is only used in saving anymore.  and faceiter().
 			faces = table(),
-			triindexes = table(),	-- indexes into self.tris
+			triFirstIndex = 1,	-- index into first instance of self.tris for this material
+			triCount = 0,	-- number of tris used in this material
 		}
 		assert(file(filename):exists(), "failed to find material file "..filename)
 		for line in io.lines(filename) do
@@ -141,10 +142,11 @@ function WavefrontOBJ:init(filename)
 						table(vis[i]):setmetatable(nil),
 						table(vis[i+1]):setmetatable(nil),
 						-- keys:
-						index = #self.tris+1,
+						index = #self.tris+1,	-- so far only used for debugging
 						mtl = mtl,
 					}
-					mtl.triindexes:insert(#self.tris)
+					if not mtl.triFirstIndex then mtl.triFirstIndex = #self.tris end
+					mtl.triCount = #self.tris - mtl.triFirstIndex + 1
 				end
 			elseif lineType == 's' then
 				-- TODO then smooth is on
@@ -300,7 +302,8 @@ function WavefrontOBJ:loadMtl(filename)
 			mtl = {}
 			mtl.name = assert(words[1])
 			mtl.faces = table()
-			mtl.triindexes = table()
+			mtl.triFirstIndex = 1
+			mtl.triCount = 0
 			-- TODO if a mtllib comes after a face then this'll happen:
 			if self.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			self.mtllib[mtl.name] = mtl
@@ -452,7 +455,11 @@ function WavefrontOBJ:removeDegenerateTriangles()
 --print('removing degenerate tri '..i..' with duplicate vertices')
 			self.tris:remove(i)
 			for mtlname,mtl in pairs(self.mtllib) do
-				mtl.triindexes:removeObject(i)
+				if i < mtl.triFirstIndex then
+					mtl.triFirstIndex = mtl.triFirstIndex - 1
+				elseif i >= mtl.triFirstIndex and i < mtl.triFirstIndex + mtl.triCount then
+					mtl.triCount = mtl.triCount - 1
+				end
 			end
 		end
 	end
@@ -574,9 +581,8 @@ end
 function WavefrontOBJ:triiter(mtlname)
 	return coroutine.wrap(function()
 		for mtl, mtlname in self:mtliter(mtlname) do
-			for _,ti in ipairs(mtl.triindexes) do
-				-- TODO yield the whole tri?
-				coroutine.yield(self.tris[ti], ti)
+			for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
+				coroutine.yield(self.tris[i], i)	-- should all pairs/ipairs yield the value first? my table.map does it.  javascript forEach does it.  hmm...
 			end
 		end
 	end)
@@ -915,10 +921,9 @@ function WavefrontOBJ:draw(args)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
 		--]]
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
-		local n = #mtl.triindexes
-		if n > 0 then
+		if mtl.triCount > 0 then
 			self.vao:use()
-			gl.glDrawArrays(gl.GL_TRIANGLES, (mtl.triindexes[1]-1) * 3, n * 3)
+			gl.glDrawArrays(gl.GL_TRIANGLES, (mtl.triFirstIndex-1) * 3, mtl.triCount * 3)
 			self.vao:useNone()
 		end
 		--]]
