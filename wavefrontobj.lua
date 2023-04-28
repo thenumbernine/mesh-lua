@@ -81,7 +81,12 @@ function WavefrontOBJ:init(filename)
 		local curmtl = ''
 		self.mtllib[curmtl] = {
 			name = curmtl,
+			-- TODO instead of redundantly storing faces,
+			-- how about storing lookups into self.tris per-poly?
+			-- and assert the tris are in a certain layout (tri fan?) for reconstructing faces?
+			-- since this is only used in saving anymore.  and faceiter().
 			faces = table(),
+			triindexes = table(),	-- indexes into self.tris
 		}
 		assert(file(filename):exists(), "failed to find material file "..filename)
 		for line in io.lines(filename) do
@@ -136,6 +141,7 @@ function WavefrontOBJ:init(filename)
 						index = #self.tris+1,
 						mtl = mtl,
 					}
+					mtl.triindexes:insert(#self.tris)
 				end
 			elseif lineType == 's' then
 				-- TODO then smooth is on
@@ -281,6 +287,7 @@ function WavefrontOBJ:loadMtl(filename)
 			mtl = {}
 			mtl.name = assert(words[1])
 			mtl.faces = table()
+			mtl.triindexes = table()
 			-- TODO if a mtllib comes after a face then this'll happen:
 			if self.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			self.mtllib[mtl.name] = mtl
@@ -431,6 +438,9 @@ function WavefrontOBJ:removeDegenerateTriangles()
 		if #t < 3 then
 --print('removing degenerate tri '..i..' with duplicate vertices')
 			self.tris:remove(i)
+			for mtlname,mtl in pairs(self.mtllib) do
+				mtl.triindexes:removeObject(i)
+			end
 		end
 	end
 	-- remove in .mtllib[].faces
@@ -546,12 +556,14 @@ function WavefrontOBJ:faceiter(mtlname)
 	end)
 end
 
--- yields with vi object which has  .v .vt .vn as indexes into .vs[] .vts[] .vns[]
+-- yields with the triangle
+-- triangles have [1][2][3] as vi objects which has  .v .vt .vn as indexes into .vs[] .vts[] .vns[]
 function WavefrontOBJ:triiter(mtlname)
 	return coroutine.wrap(function()
-		for vis in self:faceiter(mtlname) do
-			for j=2,#vis-1 do
-				coroutine.yield(vis[1], vis[j], vis[j+1])
+		for mtl, mtlname in self:mtliter(mtlname) do
+			for _,ti in ipairs(mtl.triindexes) do
+				-- TODO yield the whole tri?
+				coroutine.yield(self.tris[ti], ti)
 			end
 		end
 	end)
@@ -560,10 +572,10 @@ end
 -- same as above, but then yield for each vi individually
 function WavefrontOBJ:triindexiter(mtlname)
 	return coroutine.wrap(function()
-		for i,j,k in self:triiter(mtlname) do
-			coroutine.yield(i)
-			coroutine.yield(j)
-			coroutine.yield(k)
+		for t in self:triiter(mtlname) do
+			for i=1,3 do
+				coroutine.yield(t[i])
+			end
 		end
 	end)
 end
@@ -594,17 +606,14 @@ function WavefrontOBJ:calcCOM1()
 end
 
 -- calculate COM by 2-forms (triangles)
+-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
+-- for 2D, volume = |(b-a)x(c-a)|
 function WavefrontOBJ:calcCOM2(mtlname)
 	local totalCOM = matrix{0,0,0}
 	local totalArea = 0
-	for i,j,k in self:triiter(mtlname) do
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
-		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
-		-- for 2D, volume = |(b-a)x(c-a)|
-		local area = triArea(a, b, c)
-		local com = (a + b + c) * (1/3)
+	for t in self:triiter(mtlname) do
+		local area = t.area
+		local com = t.com
 		totalCOM = totalCOM + com * area
 		totalArea = totalArea + area
 	end
@@ -615,16 +624,17 @@ end
 function WavefrontOBJ:calcCOM3(mtlname)
 	local totalCOM = matrix{0,0,0}
 	local totalVolume = 0
-	for i,j,k in self:triiter(mtlname) do
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
+	for t in self:triiter(mtlname) do
+		local a = self.vs[t[1].v]
+		local b = self.vs[t[2].v]
+		local c = self.vs[t[3].v]
 
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
 		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
 		-- for 3D, volume = det|a b c|
 		local com = (a + b + c) * (1/4)
 
+		-- this should be scaled by 1/6, but since we're weighting the COM by the volume, scale factors don't matter
 		local volume = 0
 		volume = volume + a[1] * b[2] * c[3]
 		volume = volume + a[2] * b[3] * c[1]
@@ -723,51 +733,27 @@ function WavefrontOBJ:loadGL(shader)
 	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
 	for mtlname, mtl in pairs(self.mtllib) do
 		if not mtl.vtxCPUBuf then
-			-- count total number of triangles
-			-- TODO save this #?
-			-- TODO save the triangulation?
-			local i = 0
-			for a,b,c in self:triiter(mtlname) do
-				i = i + 3
-			end
-			
-			--[[ save face normals and face area?
-			for polySize,faces in pairs(self.mtllib[mtlname].faces) do
-				for _,face in ipairs(faces) do
-					for j=2,polySize-1 do
-						local a = face[1]
-						local b = face[j]
-						local c = face[j+1]
+			-- calculate vertex normals
+			local vtxnormals = self.vs:mapi(function(v)
+				return matrix{0,0,0}
+			end)
+			for t in self:triiter(mtlname) do
+				if math.isfinite(t.normal[1]) and math.isfinite(t.normal[2]) and math.isfinite(t.normal[3]) then
+					for _,vi in ipairs(t) do
+						vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
 					end
 				end
 			end
-			--]]
-
-			-- calculate vertex normals
-			local vtxnormals = {}
-			for a,b,c in self:triiter(mtlname) do
-				local va = self.vs[a.v]
-				local vb = self.vs[b.v]
-				local vc = self.vs[c.v]
-				local normal = (vb - va):cross(vc - vb):normalize()
-				for _,vi in ipairs{a,b,c} do
-					vtxnormals[vi.v] = (vtxnormals[vi.v] or matrix{0,0,0}) + normal
+			for k=1,#vtxnormals do
+				if vtxnormals[k]:normSq() > 1e-3 then
+					vtxnormals[k] = vtxnormals[k]:normalize()
 				end
 			end
-			for _,k in ipairs(table.keys(vtxnormals)) do
-				vtxnormals[k] = vtxnormals[k]:normalize()
-			end
 			
-			local vtxCPUBuf = vector('obj_vertex_t', i)
-			i = 0
-			for a,b,c in self:triiter(mtlname) do
-				local va = self.vs[a.v]
-				local vb = self.vs[b.v]
-				local vc = self.vs[c.v]
-				local com = (va + vb + vc) / 3
-				local area = triArea(va, vb, vc)
-				for _,vi in ipairs{a,b,c} do
-					local v = vtxCPUBuf.v + i
+			local vtxCPUBuf = vector('obj_vertex_t', #mtl.triindexes * 3)
+			for t,i in self:triiter(mtlname) do
+				for j,vi in ipairs(t) do
+					local v = vtxCPUBuf.v + (j-1) + 3 * (i-1)
 					v.pos:set(self.vs[vi.v]:unpack())
 					if vi.vt then
 						if vi.vt < 1 or vi.vt > #self.vts then
@@ -784,9 +770,8 @@ function WavefrontOBJ:loadGL(shader)
 						end
 					end
 					v.normal2:set(vtxnormals[vi.v]:unpack())
-					v.area = area
-					v.com:set(com:unpack())
-					i = i + 1
+					v.area = t.area
+					v.com:set(t.com:unpack())
 				end
 			end
 			mtl.vtxCPUBuf = vtxCPUBuf
@@ -840,7 +825,6 @@ function WavefrontOBJ:draw(args)
 	
 	local curtex
 	for mtlname, mtl in pairs(self.mtllib) do
-		local fs = mtl.faces
 		--[[
 		if mtl.Kd then
 			gl.glColor4f(mtl.Kd:unpack())
@@ -1493,15 +1477,21 @@ print('number to initialize with', #todo)
 				end
 			end
 		end
+		-- if finding a y-perpendicular downward-pointing edge was too much to ask,
+		-- ... then pick one at random?
+		if #todo == 0 then
+print("couldn't find any perp-to-bestNormal edges to initialize with...")
+			todo:insert(notDoneYet:remove(1))
+		end
 		--]=]
 		
 		-- [[ first pass to make sure all the first picked are considered
-print('starting first pass with #todo', #todo)	
+		-- during this first pass, immediately fold across any identical normals
+		print('starting first pass with #todo', #todo)
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
 			floodFillMatchingNormalNeighbors(t, nil, nil, todo)
-			--calcUVBasisAndAddNeighbors(t, nil, nil, todo)
 		end
 		print('after first pass, #todo', #todo, '#done', #done)
 		--]]

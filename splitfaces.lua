@@ -6,12 +6,12 @@ assert(infn and outfn, "expected "..arg[0].." input-filename output-filename")
 
 local obj = WavefrontObj(infn)
 
-for mtlname in pairs(obj.mtllib) do
+for mtlname, mtl in pairs(obj.mtllib) do
 	local tris = table()
-	for a,b,c in obj:triiter(mtlname) do
-		tris:insert{a,b,c}
+	for _,t in ipairs(mtl.triindexes) do
+		tris:insert{table.unpack(t)}
 	end
-	obj.mtllib[mtlname].faces = #tris > 0 and {[3] = tris} or nil
+	obj.mtllib[mtlname].faces = #tris > 0 and {[3] = tris} or table()
 end
 
 obj:save(outfn)
