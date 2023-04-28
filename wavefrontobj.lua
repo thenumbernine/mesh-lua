@@ -13,6 +13,9 @@ local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local Image = require 'image'
 
+local mergeVertexesOnLoad = false
+local unwrapUVsOnLoad = false
+
 ffi.cdef[[
 typedef struct {
 	vec3f_t pos;
@@ -175,25 +178,27 @@ function WavefrontOBJ:init(filename)
 -- [[ merge vtxs.  TODO make this an option with specified threshold.
 -- do this before detecting edges.
 -- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
-	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
-	-- that's a jump from 1/371 to 1/20,000,000
-	-- so what's the smallest ratio I should allow?  maybe 1/1million?
-	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
-	local vtxMergeThreshold = bboxCornerDist * 1e-6
-	print('vtxMergeThreshold', vtxMergeThreshold)	
-	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
-	for i=#self.vs,2,-1 do
-		for j=1,i-1 do
-			local dist = (self.vs[i] - self.vs[j]):norm()
---print(dist)
-			if dist < vtxMergeThreshold then
---print('merging vtxs '..i..' and '..j)
-				self:mergeVertex(i,j)
-				break
+	if mergeVertexesOnLoad then
+		-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
+		-- that's a jump from 1/371 to 1/20,000,000
+		-- so what's the smallest ratio I should allow?  maybe 1/1million?
+		local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+		local vtxMergeThreshold = bboxCornerDist * 1e-6
+		print('vtxMergeThreshold', vtxMergeThreshold)	
+		print('before merge vtx count', #self.vs, 'tri count', #self.tris)
+		for i=#self.vs,2,-1 do
+			for j=1,i-1 do
+				local dist = (self.vs[i] - self.vs[j]):norm()
+	--print(dist)
+				if dist < vtxMergeThreshold then
+	--print('merging vtxs '..i..' and '..j)
+					self:mergeVertex(i,j)
+					break
+				end
 			end
 		end
+		print('after merge vtx count', #self.vs, 'tri count', #self.tris)
 	end
-	print('after merge vtx count', #self.vs, 'tri count', #self.tris)
 --]]
 
 -- TODO all this per-material-group
@@ -270,10 +275,13 @@ function WavefrontOBJ:init(filename)
 	end
 --]]
 
--- [=[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
-	timer('unwrapping uvs', function()
-		self:unwrapUVs()
-	end)
+-- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+	if unwrapUVsOnLoad then
+		timer('unwrapping uvs', function()
+			self:unwrapUVs()
+		end)
+	end
+--]]
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -716,16 +724,19 @@ end
 -- upon ctor the images are loaded (in case the caller isn't using GL)
 -- so upon first draw - or upon manual call - load the gl textures
 function WavefrontOBJ:loadGL(shader)
+	if self.loadedGL then return end
+	self.loadedGL = true
+	
 	local gl = require 'gl'
 	local glreport = require 'gl.report'
 	local GLTex2D = require 'gl.tex2d'
 	local GLArrayBuffer = require 'gl.arraybuffer'
 	local GLAttribute = require 'gl.attribute'
 	local GLVertexArray = require 'gl.vertexarray'
-	
+
 	-- load textures
 	for mtlname, mtl in pairs(self.mtllib) do
-		if mtl.image_Kd and not mtl.tex_Kd then
+		if mtl.image_Kd then
 			mtl.tex_Kd = GLTex2D{
 				image = mtl.image_Kd,
 				minFilter = gl.GL_NEAREST,
@@ -734,93 +745,97 @@ function WavefrontOBJ:loadGL(shader)
 		end
 	end
 
-	-- now for performance I can either store everything in a packed array
-	-- or I can put unique index sets' data in a packed array and store the unique # in an index array (more complex but more space efficient)
-	for mtlname, mtl in pairs(self.mtllib) do
-		if not mtl.vtxCPUBuf then
-			-- calculate vertex normals
-			local vtxnormals = self.vs:mapi(function(v)
-				return matrix{0,0,0}
-			end)
-			for t in self:triiter(mtlname) do
-				if math.isfinite(t.normal:normSq()) then
-					for _,vi in ipairs(t) do
-						vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
-					end
-				end
+	-- calculate vertex normals
+	-- TODO store this?  in its own self.vn2s[] or something?
+--print('zeroing vertex normals')				
+	local vtxnormals = self.vs:mapi(function(v)
+		return matrix{0,0,0}
+	end)
+--print('accumulating triangle normals into vertex normals')				
+	for t in self:triiter(mtlname) do
+		if math.isfinite(t.normal:normSq()) then
+			for _,vi in ipairs(t) do
+				vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
 			end
-			for k=1,#vtxnormals do
-				if vtxnormals[k]:normSq() > 1e-3 then
-					vtxnormals[k] = vtxnormals[k]:normalize()
-				end
-			end
-			
-			local vtxCPUBuf = vector('obj_vertex_t', #mtl.triindexes * 3)
-			for t,i in self:triiter(mtlname) do
-				for j,vi in ipairs(t) do
-					local v = vtxCPUBuf.v + (j-1) + 3 * (i-1)
-					v.pos:set(self.vs[vi.v]:unpack())
-					if vi.vt then
-						if vi.vt < 1 or vi.vt > #self.vts then
-							print("found an oob vt "..vi.vt)
-						else
-							v.texCoord:set(self.vts[vi.vt]:unpack())
-						end
-					end
-					if vi.vn then
-						if vi.vn < 1 or vi.vn > #self.vns then
-							print("found an oob fn "..vi.vn)
-						else
-							v.normal:set(self.vns[vi.vn]:unpack())
-						end
-					end
-					v.normal2:set(vtxnormals[vi.v]:unpack())
-					v.area = t.area
-					v.com:set(t.com:unpack())
-				end
-			end
-			mtl.vtxCPUBuf = vtxCPUBuf
-		
-			-- [=[
-			mtl.vtxBuf = GLArrayBuffer{
-				size = mtl.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
-				data = mtl.vtxCPUBuf.v,
-				usage = gl.GL_STATIC_DRAW,
-			}
-			assert(glreport'here')
-
-			mtl.vtxAttrs = {}
-			for _,info in ipairs{
-				{name='pos', size=3},
-				{name='texCoord', size=3},
-				{name='normal', size=3},
-				{name='normal2', size=3},
-				{name='com', size=3},
-			} do
-				local srcAttr = shader.attrs[info.name]
-				if srcAttr then
-					mtl.vtxAttrs[info.name] = GLAttribute{
-						buffer = mtl.vtxBuf,
-						size = info.size,
-						type = gl.GL_FLOAT,
-						stride = ffi.sizeof'obj_vertex_t',
-						offset = ffi.offsetof('obj_vertex_t', info.name),
-					}
-					assert(glreport'here')
-				end
-			end
-			shader:use()
-			assert(glreport'here')
-			mtl.vao = GLVertexArray{
-				program = shader,
-				attrs = mtl.vtxAttrs,
-			}
-			shader:setAttrs(mtl.vtxAttrs)
-			shader:useNone()
-			assert(glreport'here')
-			--]=]
 		end
 	end
+--print('normals vertex normals')				
+	for k=1,#vtxnormals do
+		if vtxnormals[k]:normSq() > 1e-3 then
+			vtxnormals[k] = vtxnormals[k]:normalize()
+		end
+--print(k, vtxnormals[k])
+	end
+
+	-- mtl will just index into this.
+	-- why does mtl store a list of tri indexes?  it should just store an offset
+print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
+	local vtxCPUBuf = vector('obj_vertex_t', #self.tris * 3)
+	self.vtxCPUBuf = vtxCPUBuf
+		
+	for i,t in ipairs(self.tris) do
+		for j,vi in ipairs(t) do
+			local dst = vtxCPUBuf.v + (j-1) + 3 * (i-1)
+			dst.pos:set(self.vs[vi.v]:unpack())
+			if vi.vt then
+				if vi.vt < 1 or vi.vt > #self.vts then
+					print("found an oob vt "..vi.vt)
+					dst.texCoord:set(0,0,0)
+				else
+					dst.texCoord:set(self.vts[vi.vt]:unpack())
+				end
+			end
+			if vi.vn then
+				if vi.vn < 1 or vi.vn > #self.vns then
+					print("found an oob fn "..vi.vn)
+					dst.normal:set(0,0,0)
+				else
+					dst.normal:set(self.vns[vi.vn]:unpack())
+				end
+			end
+			dst.normal2:set(vtxnormals[vi.v]:unpack())
+			dst.area = t.area
+			dst.com:set(t.com:unpack())
+		end
+	end
+	
+print('creating array buffer of size', self.vtxCPUBuf.size)
+	self.vtxBuf = GLArrayBuffer{
+		size = self.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
+		data = self.vtxCPUBuf.v,
+		usage = gl.GL_STATIC_DRAW,
+	}
+	assert(glreport'here')
+
+	self.vtxAttrs = {}
+	for _,info in ipairs{
+		{name='pos', size=3},
+		{name='texCoord', size=3},
+		{name='normal', size=3},
+		{name='normal2', size=3},
+		{name='com', size=3},
+	} do
+		local srcAttr = shader.attrs[info.name]
+		if srcAttr then
+			self.vtxAttrs[info.name] = GLAttribute{
+				buffer = self.vtxBuf,
+				size = info.size,
+				type = gl.GL_FLOAT,
+				stride = ffi.sizeof'obj_vertex_t',
+				offset = ffi.offsetof('obj_vertex_t', info.name),
+			}
+			assert(glreport'here')
+		end
+	end
+	shader:use()
+	assert(glreport'here')
+	self.vao = GLVertexArray{
+		program = shader,
+		attrs = self.vtxAttrs,
+	}
+	shader:setAttrs(self.vtxAttrs)
+	shader:useNone()
+	assert(glreport'here')
 end
 
 function WavefrontOBJ:draw(args)
@@ -900,9 +915,12 @@ function WavefrontOBJ:draw(args)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
 		--]]
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
-		mtl.vao:use()
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
-		mtl.vao:useNone()
+		local n = #mtl.triindexes
+		if n > 0 then
+			self.vao:use()
+			gl.glDrawArrays(gl.GL_TRIANGLES, (mtl.triindexes[1]-1) * 3, n * 3)
+			self.vao:useNone()
+		end
 		--]]
 		if args.endMtl then args.endMtl(mtl) end
 	end
@@ -1024,12 +1042,16 @@ function WavefrontOBJ:drawUVUnwrapEdges(_3D)
 	-- [[ show unwrap info
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for _,info in ipairs(self.unwrapUVEdges) do
+	for _,info in ipairs(self.unwrapUVEdges or {}) do
 		for i,t in ipairs(info) do
-			if i==1 then
-				gl.glColor3f(0,1,0)
+			if info.floodFill == true then
+				gl.glColor3f(0,0,1)
 			else
-				gl.glColor3f(1,0,0)
+				if i==1 then
+					gl.glColor3f(0,1,0)
+				else
+					gl.glColor3f(1,0,0)
+				end
 			end
 			if _3D then
 				gl.glVertex3f((t.com + eps * t.normal):unpack())
@@ -1043,7 +1065,7 @@ function WavefrontOBJ:drawUVUnwrapEdges(_3D)
 	gl.glPointSize(3)
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_POINTS)
-	for _,v in ipairs(self.unwrapUVOrigins) do
+	for _,v in ipairs(self.unwrapUVOrigins or {}) do
 		gl.glVertex3f(v:unpack())
 	end
 	gl.glEnd()
@@ -1148,7 +1170,7 @@ do--	else
 			return true
 		end
 		n = n / nlen
-print('n = '..n)
+--print('n = '..n)
 		t.normal = matrix(n)
 	
 		--if true then
@@ -1239,22 +1261,22 @@ print('failed to find u vector based on bestNormal, picked ex='..ex..' from best
 					a[i] = 1
 					return n:cross(a)
 				end)
-print('choices\n'..ns)				
+--print('choices\n'..ns)				
 				local lens = matrix{3}:lambda(function(i) return ns[i]:normSq() end)
 				local _, i = table.sup(lens)	-- best normal
-print('biggest cross '..i)
+--print('biggest cross '..i)
 				ex = ns[i]:unit()
-print('picking fallback ', ex)				
+--print('picking fallback ', ex)				
 			end
 
-print('ex = '..ex)			
+--print('ex = '..ex)			
 			-- tangent space.  store as row vectors i.e. transpose, hence the T
 			t.uvbasisT = matrix{
 				ex,
 				n:cross(ex):normalize(),
 				n,
 			}
-print('ey = '..t.uvbasisT[2])			
+--print('ey = '..t.uvbasisT[2])			
 		else
 			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
 		
@@ -1320,6 +1342,7 @@ tsrc.v1*-------*
 			--local _, i = table.sup(dn:map(math.abs))
 			-- pick smallest changing axis in normal?
 			local _, i = table.inf(dn:map(math.abs))
+print('rotating on axis', i)			
 			local q
 			if i == 1 then
 				q = quat():fromAngleAxis(1, 0, 0, math.deg(math.atan2(n[3], n[2]) - math.atan2(tsrc.normal[3], tsrc.normal[2])))
@@ -1401,11 +1424,9 @@ tsrc.v1*-------*
 
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
-		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
+		if t[1].uv then return end
+		if tsrc then self.unwrapUVEdges:insert{tsrc, t, floodFill=true} end
 		assert((tsrc == nil) == (e == nil))
-		t[1].uv = nil
-		t[2].uv = nil
-		t[3].uv = nil
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
