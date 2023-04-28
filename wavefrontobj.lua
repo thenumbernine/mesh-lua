@@ -1381,7 +1381,7 @@ tsrc.v1*-------*
 	end
 
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
-		alreadyFilled:insert(t)
+		alreadyFilled:insertUnique(t)
 		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
 		assert((tsrc == nil) == (e == nil))
 		t[1].uv = nil
@@ -1393,11 +1393,11 @@ tsrc.v1*-------*
 			for _,e in ipairs(t.edges) do
 				if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
-					if not alreadyFilled:find(t2)
-					then
-						--assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+					if not alreadyFilled:find(t2) then
 						if t.normal:dot(t2.normal) > 1 - 1e-3 then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
+						else
+							alreadyFilled:insertUnique(t)
 						end
 					end
 				end
@@ -1524,9 +1524,9 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
 			-- while flood-filling, continue adding neighbors to 'todo'
-			local nbhs = table()
-			floodFillMatchingNormalNeighbors(t, nil, nil, nbhs)
-			for _,t in ipairs(nbhs) do
+			local filled = table()
+			floodFillMatchingNormalNeighbors(t, nil, nil, filled)
+			for _,t in ipairs(filled) do
 				if not t[1].uv then
 					todo:insertUnique(t)
 				end
