@@ -209,7 +209,7 @@ function WavefrontOBJ:init(filename)
 -- [[ we also have to merge ..... edges .... smh.
 	if mergeEdgesOnLoad then
 		timer("finding edges that should've been merged by whoever made the model", function()
-			self.edgesThatShouldveBeenMerged = table()
+			self.allOverlappingEdges = table()
 			for i1=#self.tris,2,-1 do
 				local t1 = self.tris[i1]
 				for j1=1,3 do
@@ -245,7 +245,7 @@ function WavefrontOBJ:init(filename)
 										-- since these aren't, they have to be sorted
 										if s21 > s22 then s21, s22 = s22, s21 end
 										if s11 < s22 and s12 > s21 then
-											self.edgesThatShouldveBeenMerged:insert{
+											self.allOverlappingEdges:insert{
 												triIndexes = {i1, i2},
 												edgeIndexes = {j1, j2},
 												dist = dist, 
@@ -259,10 +259,10 @@ function WavefrontOBJ:init(filename)
 					end
 				end
 			end
-			self.edgesThatShouldveBeenMerged:sort(function(a,b)
+			self.allOverlappingEdges:sort(function(a,b)
 				return a.dist < b.dist
 			end)
-			for _,info in ipairs(self.edgesThatShouldveBeenMerged) do
+			for _,info in ipairs(self.allOverlappingEdges) do
 				print(
 					'edges', info.triIndexes[1], info.edgeIndexes[1],
 					'and', info.triIndexes[2], info.edgeIndexes[2],
