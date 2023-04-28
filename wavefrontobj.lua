@@ -213,15 +213,9 @@ function WavefrontOBJ:init(filename)
 			t.normal = matrix{0,0,0}
 		else
 			t.normal = t.normal:unit()
-			if not math.isfinite(t.normal[1])
-			or not math.isfinite(t.normal[2])
-			or not math.isfinite(t.normal[3])
-			then
+			if not math.isfinite(t.normal:normSq()) then
 				t.normal = (b - a):unit()
-				if not math.isfinite(t.normal[1])
-				or not math.isfinite(t.normal[2])
-				or not math.isfinite(t.normal[3])
-				then
+				if not math.isfinite(t.normal:normSq()) then
 					t.normal = matrix{0,0,0}
 				end
 			end
@@ -749,7 +743,7 @@ function WavefrontOBJ:loadGL(shader)
 				return matrix{0,0,0}
 			end)
 			for t in self:triiter(mtlname) do
-				if math.isfinite(t.normal[1]) and math.isfinite(t.normal[2]) and math.isfinite(t.normal[3]) then
+				if math.isfinite(t.normal:normSq()) then
 					for _,vi in ipairs(t) do
 						vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
 					end
@@ -1145,14 +1139,16 @@ do--	else
 		local n = d1:cross(d2)
 		local nlen = n:norm()
 --print('|d1 x d2| = '..nlen)
-		if nlen < 1e-9 then
+		if not math.isfinite(nlen)
+		or nlen < 1e-9
+		then
 			t.normal = d1:normalize()
 			-- can't fold this because i'ts not a triangle ... it's a line
 			-- should I even populate the uv fields?  nah, just toss it in the caller
 			return true
 		end
 		n = n / nlen
---print('n = '..n)
+print('n = '..n)
 		t.normal = matrix(n)
 	
 		--if true then
@@ -1212,9 +1208,7 @@ do--	else
 			local a = matrix{0,0,0}
 			a[i] = 1
 			local ex = n:cross(a):normalize()
-			for i=1,3 do
-				assert(math.isfinite(ex[i]))
-			end
+			assert(math.isfinite(ex:normSq()))
 			--]]
 			--[[ draw a line between the lowest two points
 			if v[1][2] > v[2][2] then
@@ -1232,14 +1226,35 @@ do--	else
 			end
 			--]]
 
---print('ex = '..ex)			
+			-- fallback, if n is nan or zero
+			local exNormSq = ex:normSq()
+			if exNormSq < 1e-3						-- can't use zero
+			or not math.isfinite(exNormSq)			-- can't use nan
+			or math.abs(ex:dot(n)) > 1 - 1e-3	-- can't use ex perp to n
+			then
+print('failed to find u vector based on bestNormal, picked ex='..ex..' from bestNormal '..bestNormal)
+				-- pick any basis perpendicular to 'n'
+				local ns = matrix{3}:lambda(function(i)
+					local a = matrix{0,0,0}
+					a[i] = 1
+					return n:cross(a)
+				end)
+print('choices\n'..ns)				
+				local lens = matrix{3}:lambda(function(i) return ns[i]:normSq() end)
+				local _, i = table.sup(lens)	-- best normal
+print('biggest cross '..i)
+				ex = ns[i]:unit()
+print('picking fallback ', ex)				
+			end
+
+print('ex = '..ex)			
 			-- tangent space.  store as row vectors i.e. transpose, hence the T
 			t.uvbasisT = matrix{
 				ex,
 				n:cross(ex):normalize(),
 				n,
 			}
---print('ey = '..t.uvbasisT[2])			
+print('ey = '..t.uvbasisT[2])			
 		else
 			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
 		
@@ -1313,6 +1328,10 @@ tsrc.v1*-------*
 			elseif i == 3 then
 				q = quat():fromAngleAxis(0, 0, 1, math.deg(math.atan2(n[2], n[1]) - math.atan2(tsrc.normal[2], tsrc.normal[1])))
 			end
+--print('q', q)
+--print('n', n)
+--print('tsrc ex = '..tsrc.uvbasisT[1])
+--print('tsrc ey = '..tsrc.uvbasisT[2])			
 			t.uvbasisT = matrix{
 				q:rotate(tsrc.uvbasisT[1]),
 				q:rotate(tsrc.uvbasisT[2]),
@@ -1333,7 +1352,7 @@ tsrc.v1*-------*
 --print('m * d = '..(m * d))
 			t[i].uv = m * d + t.uvorigin2D
 --print('uv = '..t[i].uv)
-			if not math.isfinite(t[i].uv[1]) or not math.isfinite(t[i].uv[2]) then
+			if not math.isfinite(t[i].uv:normSq()) then
 				print('tri has nans in its basis')
 			end
 		end
