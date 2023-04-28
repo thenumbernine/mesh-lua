@@ -13,8 +13,9 @@ local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local Image = require 'image'
 
-local mergeVertexesOnLoad = false
-local unwrapUVsOnLoad = false
+local mergeVertexesOnLoad = true
+local mergeEdgesOnLoad = true
+local unwrapUVsOnLoad = true
 
 ffi.cdef[[
 typedef struct {
@@ -181,25 +182,95 @@ function WavefrontOBJ:init(filename)
 -- do this before detecting edges.
 -- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
 	if mergeVertexesOnLoad then
-		-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
-		-- that's a jump from 1/371 to 1/20,000,000
-		-- so what's the smallest ratio I should allow?  maybe 1/1million?
-		local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
-		local vtxMergeThreshold = bboxCornerDist * 1e-6
-		print('vtxMergeThreshold', vtxMergeThreshold)	
-		print('before merge vtx count', #self.vs, 'tri count', #self.tris)
-		for i=#self.vs,2,-1 do
-			for j=1,i-1 do
-				local dist = (self.vs[i] - self.vs[j]):norm()
-	--print(dist)
-				if dist < vtxMergeThreshold then
-	--print('merging vtxs '..i..' and '..j)
-					self:mergeVertex(i,j)
-					break
+		timer('merging vertexes', function()
+			-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
+			-- that's a jump from 1/371 to 1/20,000,000
+			-- so what's the smallest ratio I should allow?  maybe 1/1million?
+			local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+			local vtxMergeThreshold = bboxCornerDist * 1e-6
+			print('vtxMergeThreshold', vtxMergeThreshold)	
+			print('before merge vtx count', #self.vs, 'tri count', #self.tris)
+			for i=#self.vs,2,-1 do
+				for j=1,i-1 do
+					local dist = (self.vs[i] - self.vs[j]):norm()
+		--print(dist)
+					if dist < vtxMergeThreshold then
+		--print('merging vtxs '..i..' and '..j)
+						self:mergeVertex(i,j)
+						break
+					end
 				end
 			end
-		end
-		print('after merge vtx count', #self.vs, 'tri count', #self.tris)
+			print('after merge vtx count', #self.vs, 'tri count', #self.tris)
+		end)
+	end
+--]]
+
+-- [[ we also have to merge ..... edges .... smh.
+	if mergeEdgesOnLoad then
+		timer("finding edges that should've been merged by whoever made the model", function()
+			self.edgesThatShouldveBeenMerged = table()
+			for i1=#self.tris,2,-1 do
+				local t1 = self.tris[i1]
+				for j1=1,3 do
+					-- t1's j1'th edge
+					local v11 = self.vs[t1[j1].v]
+					local v12 = self.vs[t1[j1%3+1].v]
+					local n1 = v12 - v11
+					local n1NormSq = n1:normSq()
+					if n1NormSq  > 1e-3 then
+						n1 = n1 / math.sqrt(n1NormSq)
+						for i2=i1-1,1,-1 do
+							local t2 = self.tris[i2]
+							for j2=1,3 do
+								local v21 = self.vs[t2[j2].v]
+								local v22 = self.vs[t2[j2%3+1].v]
+								local n2 = v22 - v21
+								local n2NormSq = n2:normSq()
+								if n2NormSq  > 1e-3 then
+									n2 = n2 / math.sqrt(n2NormSq)
+									if math.abs(n1:dot(n2)) > 1 - 1e-3 then
+										-- normals align, calculate distance 
+										local planeOrigin = v11	-- pick any point on line v1: v11 or v12
+										local planeNormal = n1
+										local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
+										dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
+										local dist = dv:norm()
+										-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
+										local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
+										local s12 = (v12 - planeOrigin):dot(planeNormal)
+										-- based on n1 being the plane normal, s11 and s12 are already sorted 
+										local s21 = (v21 - planeOrigin):dot(planeNormal)
+										local s22 = (v22 - planeOrigin):dot(planeNormal)
+										-- since these aren't, they have to be sorted
+										if s21 > s22 then s21, s22 = s22, s21 end
+										if s11 < s22 and s12 > s21 then
+											self.edgesThatShouldveBeenMerged:insert{
+												triIndexes = {i1, i2},
+												edgeIndexes = {j1, j2},
+												dist = dist, 
+												intervals = {{s11,s12},{s21,s22}},
+											}
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+			self.edgesThatShouldveBeenMerged:sort(function(a,b)
+				return a.dist < b.dist
+			end)
+			for _,info in ipairs(self.edgesThatShouldveBeenMerged) do
+				print(
+					'edges', info.triIndexes[1], info.edgeIndexes[1],
+					'and', info.triIndexes[2], info.edgeIndexes[2],
+					'align with dist', info.dist,
+					'with projected intervals', table.concat(info.intervals[1], ', '),
+					'and', table.concat(info.intervals[2], ', '))
+			end
+		end)
 	end
 --]]
 
