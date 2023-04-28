@@ -271,10 +271,12 @@ function WavefrontOBJ:init(filename)
 	end)
 	-- can only do this with com2 and com3 since they use tris, which are stored per-material
 	-- ig i could with edges and vtxs too if I flag them per-material
-	for mtlname,mtl in pairs(self.mtllib) do
-		mtl.com2 = self:calcCOM2(mtlname)
-		mtl.com3 = self:calcCOM3(mtlname)
-	end
+	timer('mtl com2/3', function()
+		for mtlname,mtl in pairs(self.mtllib) do
+			mtl.com2 = self:calcCOM2(mtlname)
+			mtl.com3 = self:calcCOM3(mtlname)
+		end
+	end)
 --]]
 
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
@@ -541,6 +543,19 @@ function WavefrontOBJ:vtxiter()
 	end)
 end
 
+function WavefrontOBJ:getTriIndexesForMaterial(mtlname)
+	if mtlname then
+		local mtl = self.mtllib[mtlname]
+		if mtl then
+			return mtl.triFirstIndex, mtl.triFirstIndex + mtl.triCount - 1
+		else
+			return 1, 0
+		end
+	else
+		return 1, #self.tris
+	end
+end
+
 -- yields with each material collection for a particular material name
 -- default = no name = iterates over all materials
 function WavefrontOBJ:mtliter(mtlname)
@@ -630,11 +645,11 @@ end
 function WavefrontOBJ:calcCOM2(mtlname)
 	local totalCOM = matrix{0,0,0}
 	local totalArea = 0
-	for t in self:triiter(mtlname) do
-		local area = t.area
-		local com = t.com
-		totalCOM = totalCOM + com * area
-		totalArea = totalArea + area
+	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
+	for i=i1,i2 do
+		local t = self.tris[i]
+		totalCOM = totalCOM + t.com * t.area
+		totalArea = totalArea + t.area
 	end
 	return totalCOM / totalArea
 end
@@ -643,7 +658,9 @@ end
 function WavefrontOBJ:calcCOM3(mtlname)
 	local totalCOM = matrix{0,0,0}
 	local totalVolume = 0
-	for t in self:triiter(mtlname) do
+	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
+	for i=i1,i2 do
+		local t = self.tris[i]
 		local a = self.vs[t[1].v]
 		local b = self.vs[t[2].v]
 		local c = self.vs[t[3].v]
