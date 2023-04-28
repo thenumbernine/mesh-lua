@@ -208,11 +208,22 @@ function WavefrontOBJ:init(filename)
 		t.area = triArea(a, b, c)
 		t.com = (a + b + c) / 3
 		-- TODO what if the tri is degenerate to a line?
-		t.normal = (b - a):cross(c - b):unit()
-		if not math.isfinite(t.normal[1]) then
-			t.normal = (b - a):unit()
-			if not math.isfinite(t.normal[1]) then
-				t.normal = matrix{0,0,1}
+		t.normal = (b - a):cross(c - b)
+		if t.normal:normSq() < 1e-3 then
+			t.normal = matrix{0,0,0}
+		else
+			t.normal = t.normal:unit()
+			if not math.isfinite(t.normal[1])
+			or not math.isfinite(t.normal[2])
+			or not math.isfinite(t.normal[3])
+			then
+				t.normal = (b - a):unit()
+				if not math.isfinite(t.normal[1])
+				or not math.isfinite(t.normal[2])
+				or not math.isfinite(t.normal[3])
+				then
+					t.normal = matrix{0,0,0}
+				end
 			end
 		end
 	end
@@ -938,22 +949,47 @@ function WavefrontOBJ:drawEdges(triExplodeDist, groupExplodeDist)
 	gl.glLineWidth(1)
 end
 
-function WavefrontOBJ:drawNormals(useNormal2)
+function WavefrontOBJ:drawStoredNormals()
+	local gl = require 'gl'
+	gl.glColor3f(0,1,1)
+	gl.glBegin(gl.GL_LINES)
+	for _,t in ipairs(self.tris) do
+		for _,vi in ipairs(t) do
+			if vi.vn then
+				local v = self.vs[vi.v]
+				local vn = self.vns[vi.vn]
+				gl.glVertex3f(t.com:unpack())
+				gl.glVertex3f((t.com + vn):unpack())
+				--gl.glVertex3f((v.com + v.normal2):unpack())
+			end
+		end
+	end
+	gl.glEnd()
+end
+
+function WavefrontOBJ:drawVertexNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
 	for mtlname,mtl in pairs(self.mtllib) do
-		if mtl.vtxCPUBuf then	-- default mtl '' can be empty...
+		if mtl.vtxCPUBuf then
 			for i=0,mtl.vtxCPUBuf.size-1,3 do
 				local v = mtl.vtxCPUBuf.v[i]
-				gl.glVertex3f(v.com:unpack())
-				if not useNormal2 then
-					gl.glVertex3f((v.com + v.normal):unpack())
-				else
-					gl.glVertex3f((v.com + v.normal2):unpack())
-				end
+				gl.glVertex3f(v.pos:unpack())
+				gl.glVertex3f((v.pos + v.normal2):unpack())
 			end
 		end
+	end
+	gl.glEnd()
+end
+
+function WavefrontOBJ:drawTriNormals()
+	local gl = require 'gl'
+	gl.glColor3f(0,1,1)
+	gl.glBegin(gl.GL_LINES)
+	for _,t in ipairs(self.tris) do
+		gl.glVertex3f(t.com:unpack())
+		gl.glVertex3f((t.com + t.normal):unpack())
 	end
 	gl.glEnd()
 end
@@ -1344,28 +1380,24 @@ tsrc.v1*-------*
 		end
 	end
 
-	local function floodFillMatchingNormalNeighbors(t, tsrc, e, todo)
+	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
+		alreadyFilled:insert(t)
 		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
 		assert((tsrc == nil) == (e == nil))
+		t[1].uv = nil
+		t[2].uv = nil
+		t[3].uv = nil
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
 			for _,e in ipairs(t.edges) do
 				if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
-					if not todo:find(t2)
-					and not done:find(t2)
+					if not alreadyFilled:find(t2)
 					then
-						local i = notDoneYet:find(t2)
-						if i then
-							assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
-							notDoneYet:remove(i)
-							--todo:insert(t2)
-							if t.normal:dot(t2.normal) > 1 - 1e-3 then
-								floodFillMatchingNormalNeighbors(t2, t, e, todo)
-							else
-								todo:insert(t2)
-							end
+						--assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+						if t.normal:dot(t2.normal) > 1 - 1e-3 then
+							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						end
 					end
 				end
@@ -1491,7 +1523,14 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
-			floodFillMatchingNormalNeighbors(t, nil, nil, todo)
+			-- while flood-filling, continue adding neighbors to 'todo'
+			local nbhs = table()
+			floodFillMatchingNormalNeighbors(t, nil, nil, nbhs)
+			for _,t in ipairs(nbhs) do
+				if not t[1].uv then
+					todo:insertUnique(t)
+				end
+			end
 		end
 		print('after first pass, #todo', #todo, '#done', #done)
 		--]]

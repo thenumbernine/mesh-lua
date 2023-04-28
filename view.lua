@@ -34,7 +34,9 @@ self.view.angle:fromAngleAxis(1,0,0,-90)
 	self.useWireframe = false
 	self.useDrawEdges = false
 	self.useDrawPolys = true
-	self.useDrawNormals = false
+	self.drawStoredNormals = false
+	self.drawVertexNormals = false
+	self.drawTriNormals = false
 	self.drawUVs = false
 	self.drawUVs3D = true
 	self.drawUVUnwrapEdges = false
@@ -43,7 +45,7 @@ self.view.angle:fromAngleAxis(1,0,0,-90)
 	self.useTexFilterNearest = false
 	
 	self.useLighting = false
-	self.useGeneratedNormals = false
+	self.useGeneratedNormalsForLighting = false
 	self.lightDir = vec3f(1,1,1)
 
 	self.useCullFace = true
@@ -184,14 +186,20 @@ function App:update()
 
 	self.obj:loadGL(self.shader)
 
-	if self.useDrawNormals then
-		self.obj:drawNormals(self.useGeneratedNormals)
+	if self.drawStoredNormals then
+		self.obj:drawStoredNormals()
+	end
+	if self.drawVertexNormals then
+		self.obj:drawVertexNormals()
+	end
+	if self.drawTriNormals then
+		self.obj:drawTriNormals()
 	end
 	if self.useDrawPolys then
 		self.shader:use()
 		self.shader:setUniforms{
 			useFlipTexture = self.useFlipTexture,
-			useNormal2 = self.useGeneratedNormals,
+			useNormal2 = self.useGeneratedNormalsForLighting,
 			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
 			modelViewMatrix = self.modelViewMatrix.ptr,
@@ -298,7 +306,7 @@ function App:updateGUI()
 		end
 	end
 	ig.luatableCheckbox('use lighting', self, 'useLighting')
-	ig.luatableCheckbox('use generated normals', self, 'useGeneratedNormals')
+	ig.luatableCheckbox('use generated normals for lighting', self, 'useGeneratedNormalsForLighting')
 	
 	-- TODO max dependent on bounding radius of model, same with COM camera positioning
 	-- TODO per-tri exploding as well
@@ -307,7 +315,9 @@ function App:updateGUI()
 	ig.luatableCheckbox('wireframe', self, 'useWireframe')
 	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
 	ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
-	ig.luatableCheckbox('draw normals', self, 'useDrawNormals')
+	ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
+	ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
+	ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 	ig.luatableCheckbox('draw uvs', self, 'drawUVs')
 	ig.luatableCheckbox('draw uvs 3D', self, 'drawUVs3D')
 	ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
