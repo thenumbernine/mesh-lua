@@ -14,7 +14,7 @@ typedef struct {
 	vec3f_t normal;		//loaded normal
 	vec3f_t normal2;	//generated normal ... because i want the viewer to toggle between the two
 	vec3f_t texCoord;
-	
+
 	// per-triangle stats (duplicated 3x per-vertex)
 	float area;
 	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
@@ -81,7 +81,7 @@ function Mesh:mergeMatchingVertexes()
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
-	print('vtxMergeThreshold', vtxMergeThreshold)	
+	print('vtxMergeThreshold', vtxMergeThreshold)
 	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
 	for i=#self.vs,2,-1 do
 		for j=1,i-1 do
@@ -151,18 +151,18 @@ function Mesh:calcAllOverlappingEdges()
 						if n2NormSq  > 1e-3 then
 							n2 = n2 / math.sqrt(n2NormSq)
 							if math.abs(n1:dot(n2)) > 1 - 1e-3 then
-								-- normals align, calculate distance 
+								-- normals align, calculate distance
 								local planeOrigin = v11	-- pick any point on line v1: v11 or v12
 								local planeNormal = n1
 								local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
 								dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
 								local dist = dv:norm()
 								if dist < 1e-3 then
-									
+
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
 									local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
 									local s12 = (v12 - planeOrigin):dot(planeNormal)
-									-- based on n1 being the plane normal, s11 and s12 are already sorted 
+									-- based on n1 being the plane normal, s11 and s12 are already sorted
 									local s21 = (v21 - planeOrigin):dot(planeNormal)
 									local s22 = (v22 - planeOrigin):dot(planeNormal)
 									-- since these aren't, they have to be sorted
@@ -260,7 +260,7 @@ end
 
 -- replace all instances of one vertex index with another
 function Mesh:replaceVertex(from,to)
---print('replacing vertex ' ..from..' with '..to)	
+--print('replacing vertex ' ..from..' with '..to)
 	assert(from > to)
 	assert(from >= 1 and from <= #self.vs)
 	assert(to >= 1 and to <= #self.vs)
@@ -268,16 +268,6 @@ function Mesh:replaceVertex(from,to)
 	for _,t in ipairs(self.tris) do
 		for i=1,3 do
 			if t[i].v == from then t[i].v = to end
-		end
-	end
-	-- replace in .mtllib[].faces
-	for mtlname,mtl in pairs(self.mtllib) do
-		for polySize,faces in pairs(mtl.faces) do
-			for _,f in ipairs(faces) do
-				for i=1,polySize do
-					if f[i].v == from then f[i].v = to end
-				end
-			end
 		end
 	end
 end
@@ -294,28 +284,6 @@ function Mesh:removeDegenerateTriangles()
 		if #t < 3 then
 --print('removing degenerate tri '..i..' with duplicate vertices')
 			self:removeTri(i)
-		end
-	end
-	-- remove in .mtllib[].faces
-	for mtlname,mtl in pairs(self.mtllib) do
-		for _,n in ipairs(table.keys(mtl.faces)) do
-			local faces = mtl.faces[n]
-			for i=#faces,1,-1 do
-				local f = faces[i]
-				for j=n,2,-1 do
-					if f[j].v == f[j-1].v then
---print('removing degenerate poly vtx')
-						table.remove(j)
-						break
-					end
-				end
-				if #f < 3 then
-					faces:remove(i)
-				end
-			end
-			if #faces == 0 then
-				mtl.faces[n] = nil
-			end
 		end
 	end
 end
@@ -349,23 +317,6 @@ function Mesh:removeVertex(vi)
 				break
 			elseif t[i].v > vi then
 				t[i].v = t[i].v - 1
-			end
-		end
-	end
-	-- remove in .mtllib[].faces
-	for mtlname,mtl in pairs(self.mtllib) do
-		for polySize,faces in pairs(mtl.faces) do
-			for j=#faces,1,-1 do
-				local f = faces[j]
-				for i=1,polySize do
-					if f[i].v == vi then
-						--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
-						faces:remove(j)
-						break
-					elseif f[i].v > vi then
-						f[i].v = f[i].v - 1
-					end			
-				end
 			end
 		end
 	end
@@ -415,26 +366,6 @@ function Mesh:mtliter(mtlname)
 		else
 			for mtlname, mtl in pairs(self.mtllib) do
 				coroutine.yield(mtl, mtlname)
-			end
-		end
-	end)
-end
-
--- yields with each face in a particular material or in all materials
-function Mesh:faceiter(mtlname)
-	return coroutine.wrap(function()
-		for mtl in self:mtliter(mtlname) do
-			local facesPerPolySize = assert(mtl.faces)
-			-- order not guaranteed:
-			--for polySize,faces in pairs(facesPerPolySize) do
-			-- order guaranteed, but fails for no-triangles
-			--for polySize=3,table.maxn(facesPerPolySize) do
-			-- involves a sort so ..
-			for _,polySize in ipairs(table.keys(facesPerPolySize):sort()) do
-				local faces = facesPerPolySize[polySize]
-				for _,vis in ipairs(faces) do
-					coroutine.yield(vis)	-- has [1].v [2].v [3].v for vtx indexes
-				end
 			end
 		end
 	end)
@@ -575,7 +506,7 @@ function Mesh:calcVolume()
 end
 
 
--- all the draw functionality is tied tightly with view.lua so ... 
+-- all the draw functionality is tied tightly with view.lua so ...
 -- idk if i should move it from one or the other
 
 
@@ -584,7 +515,7 @@ end
 function Mesh:loadGL(shader)
 	if self.loadedGL then return end
 	self.loadedGL = true
-	
+
 	local gl = require 'gl'
 	local glreport = require 'gl.report'
 	local GLTex2D = require 'gl.tex2d'
@@ -605,11 +536,11 @@ function Mesh:loadGL(shader)
 
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
---print('zeroing vertex normals')				
+--print('zeroing vertex normals')
 	local vtxnormals = self.vs:mapi(function(v)
 		return matrix{0,0,0}
 	end)
---print('accumulating triangle normals into vertex normals')				
+--print('accumulating triangle normals into vertex normals')
 	for t in self:triiter(mtlname) do
 		if math.isfinite(t.normal:normSq()) then
 			for _,vi in ipairs(t) do
@@ -617,7 +548,7 @@ function Mesh:loadGL(shader)
 			end
 		end
 	end
---print('normals vertex normals')				
+--print('normals vertex normals')
 	for k=1,#vtxnormals do
 		if vtxnormals[k]:normSq() > 1e-3 then
 			vtxnormals[k] = vtxnormals[k]:normalize()
@@ -630,7 +561,7 @@ function Mesh:loadGL(shader)
 print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
 	local vtxCPUBuf = vector('obj_vertex_t', #self.tris * 3)
 	self.vtxCPUBuf = vtxCPUBuf
-	
+
 	for i,t in ipairs(self.tris) do
 		for j,vi in ipairs(t) do
 			local dst = vtxCPUBuf.v + (j-1) + 3 * (i-1)
@@ -656,7 +587,7 @@ print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
 			dst.com:set(t.com:unpack())
 		end
 	end
-	
+
 print('creating array buffer of size', self.vtxCPUBuf.size)
 	self.vtxBuf = GLArrayBuffer{
 		size = self.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
@@ -698,9 +629,9 @@ end
 
 function Mesh:draw(args)
 	local gl = require 'gl'
-	
+
 	self:loadGL()	-- load if not loaded
-	
+
 	local curtex
 	for mtlname, mtl in pairs(self.mtllib) do
 		--[[
@@ -731,7 +662,7 @@ function Mesh:draw(args)
 		end
 		--]]
 		if args.beginMtl then args.beginMtl(mtl) end
-		
+
 		--[[ immediate mode
 		gl.glBegin(gl.GL_TRIANGLES)
 		for vi in self:triindexiter(mtlname) do
@@ -807,7 +738,7 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 				-- matches the shader in view.lua
 				local groupExplodeOffset = (t.mtl.com3 - self.com3) * groupExplodeDist
 				local triExplodeOffset = (t.com - t.mtl.com3) * triExplodeDist
-				offset = offset + groupExplodeOffset + triExplodeOffset 
+				offset = offset + groupExplodeOffset + triExplodeOffset
 			end
 			offset = offset / #edge.tris
 			gl.glVertex3f((self.vs[a] + offset):unpack())
@@ -1015,7 +946,7 @@ do--	else
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
 		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
---print('v\n'..v)					
+--print('v\n'..v)
 		local d1 = v[2] - v[1]
 		local d2 = v[3] - v[2]
 		local n = d1:cross(d2)
@@ -1032,7 +963,7 @@ do--	else
 		n = n / nlen
 --print('n = '..n)
 		t.normal = matrix(n)
-	
+
 		--if true then
 		if not tsrc then	-- first basis
 			t.uvorigin2D = matrix{0,0}
@@ -1047,7 +978,7 @@ do--	else
 
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
-			
+
 			-- modularity for choosing initial basis
 			--[[ use first base of the triangle
 			local ex = d1:normalize()
@@ -1121,25 +1052,25 @@ print('failed to find u vector based on bestNormal, picked ex='..ex..' from best
 					a[i] = 1
 					return n:cross(a)
 				end)
---print('choices\n'..ns)				
+--print('choices\n'..ns)
 				local lens = matrix{3}:lambda(function(i) return ns[i]:normSq() end)
 				local _, i = table.sup(lens)	-- best normal
 --print('biggest cross '..i)
 				ex = ns[i]:unit()
---print('picking fallback ', ex)				
+--print('picking fallback ', ex)
 			end
 
---print('ex = '..ex)			
+--print('ex = '..ex)
 			-- tangent space.  store as row vectors i.e. transpose, hence the T
 			t.uvbasisT = matrix{
 				ex,
 				n:cross(ex):normalize(),
 				n,
 			}
---print('ey = '..t.uvbasisT[2])			
+--print('ey = '..t.uvbasisT[2])
 		else
 			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
-		
+
 --[[
 tsrc.v3      tsrc.v2
 	   *-------* t.v2
@@ -1169,7 +1100,7 @@ tsrc.v1*-------*
 			local i22 = i21 % 3 + 1
 			assert(i11 and i12 and i21 and i22)
 			--]]
---print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
+--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
 			-- tables are identical
 
 			local isrc
@@ -1230,17 +1161,17 @@ tsrc.v1*-------*
 --print('q', q)
 --print('n', n)
 --print('tsrc ex = '..tsrc.uvbasisT[1])
---print('tsrc ey = '..tsrc.uvbasisT[2])			
+--print('tsrc ey = '..tsrc.uvbasisT[2])
 			t.uvbasisT = matrix{
 				q:rotate(tsrc.uvbasisT[1]),
 				q:rotate(tsrc.uvbasisT[2]),
 				n,
 			}
 			--]]
-			
+
 --print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
 --print('ex = '..t.uvbasisT[1])
---print('ey = '..t.uvbasisT[2])			
+--print('ey = '..t.uvbasisT[2])
 		end
 
 		for i=1,3 do
@@ -1256,13 +1187,13 @@ tsrc.v1*-------*
 			end
 		end
 	end
-	
+
 	self.unwrapUVOrigins = table()
 	self.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
-	
+
 	local notDoneYet = table(self.tris)
 	local done = table()
-	
+
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
 		-- calc the basis by rotating it around the edge
@@ -1280,7 +1211,7 @@ tsrc.v1*-------*
 				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
 				do--if #e.tris == 2 then	-- if we're using any overlapping edge then this guarantee goes out the window
 					local t2 = getEdgeOppositeTri(e, t)
--- if our tri 
+-- if our tri
 -- ... isn't in the 'todo' pile either ...
 -- ... is still in the notDoneYet pile ...
 					if not todo:find(t2)
@@ -1323,13 +1254,13 @@ tsrc.v1*-------*
 
 	while #notDoneYet > 0 do
 		print('starting unwrapping process with '..#notDoneYet..' left')
-		
+
 		-- I will be tracking all live edges
 		-- so process the first tri as the starting point
 		-- then add its edges into the 'todo' list
 
 		-- modularity heuristic of picking best starting edge
-		--[[ take the first one regardless 
+		--[[ take the first one regardless
 		local todo = table{notDoneYet:remove(1)}
 		--]]
 		--[[ largest tri first
@@ -1352,7 +1283,7 @@ tsrc.v1*-------*
 		end)
 		local todo = table{notDoneYet:remove(1)}
 		--]]
-		--[[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom 
+		--[[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom
 		notDoneYet:sort(function(a,b)
 			local aEdgeYMin = matrix{3}:lambda(function(i)
 				return .5 * (self.vs[a[i].v][2] + self.vs[a[i%3+1].v][2])
@@ -1363,7 +1294,7 @@ tsrc.v1*-------*
 			return aEdgeYMin < bEdgeYMin
 		end)
 		local todo = table{notDoneYet:remove(1)}
-		--]]	
+		--]]
 		--[=[ choose *all* tris whose flat edges are at the minimum y
 		local vtxsNotDoneYet = {}
 		for _,t in ipairs(notDoneYet) do
@@ -1432,7 +1363,7 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 			todo:insert(notDoneYet:remove(1))
 		end
 		--]=]
-		
+
 		-- [[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
 		print('starting first pass with #todo', #todo)
@@ -1525,7 +1456,7 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 		end
 		for _,t in ipairs(done) do
 			assert(t[1].uv and t[2].uv and t[3].uv)
-		end		
+		end
 	end
 
 	-- replace?
@@ -1534,10 +1465,9 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 		local t = self.tris[i]
 		for j=1,3 do
 			local src = t[j].uv or {0,0}
-			assert(src[1] and src[2])
 			self.vts:insert(matrix{src[1], src[2], 0})
 			t[j].vt = #self.vts
-			--t[j].uv = nil
+			t[j].uv = nil
 		end
 	end
 end

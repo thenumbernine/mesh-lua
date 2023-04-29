@@ -46,7 +46,7 @@ function App:initGL(...)
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
-	
+
 	self.useLighting = false
 	self.useGeneratedNormalsForLighting = false
 	self.lightDir = vec3f(1,1,1)
@@ -168,7 +168,7 @@ function App:update()
 
 	gl.glDepthFunc(gl.GL_LEQUAL)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-	
+
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
 	end
@@ -310,7 +310,7 @@ function App:updateGUI()
 	end
 	ig.luatableCheckbox('use lighting', self, 'useLighting')
 	ig.luatableCheckbox('use generated normals for lighting', self, 'useGeneratedNormalsForLighting')
-	
+
 	-- TODO max dependent on bounding radius of model, same with COM camera positioning
 	-- TODO per-tri exploding as well
 	ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)

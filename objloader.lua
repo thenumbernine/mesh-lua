@@ -9,9 +9,9 @@ local matrix = require 'matrix'
 local Image = require 'image'
 local Mesh = require 'wavefrontobj.mesh'	-- TODO call this library 'Mesh' or something?
 
-local mergeVertexesOnLoad = true
-local mergeEdgesOnLoad = true
-local unwrapUVsOnLoad = true
+local mergeVertexesOnLoad = false
+local mergeEdgesOnLoad = false
+local unwrapUVsOnLoad = false
 
 local function wordsToVec3(w)
 	return matrix{3}:lambda(function(i)
@@ -43,17 +43,12 @@ function OBJLoader:load(filename)
 	mesh.mtlFilenames = table()
 
 	timer('loading', function()
-		
+
 		-- map of materials
 		mesh.mtllib = {}
 		local curmtl = ''
 		mesh.mtllib[curmtl] = {
 			name = curmtl,
-			-- TODO instead of redundantly storing faces,
-			-- how about storing lookups into mesh.tris per-poly?
-			-- and assert the tris are in a certain layout (tri fan?) for reconstructing faces?
-			-- since this is only used in saving anymore.  and faceiter().
-			faces = table(),
 			triFirstIndex = 1,	-- index into first instance of mesh.tris for this material
 			triCount = 0,	-- number of tris used in this material
 		}
@@ -90,16 +85,8 @@ function OBJLoader:load(filename)
 				--if not foundVT then usingMtl = '' end
 
 				local mtl = mesh.mtllib[usingMtl]
-				local facesPerPolySize = mtl.faces
-				if not facesPerPolySize then
-					facesPerPolySize = {}
-					mtl.faces = facesPerPolySize
-				end
 				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
-				local nvtx = #words
-				facesPerPolySize[nvtx] = facesPerPolySize[nvtx] or table()
-				facesPerPolySize[nvtx]:insert(vis)
-				for i=2,nvtx-1 do
+				for i=2,#words-1 do
 					-- store a copy of the vertex indices per triangle index
 					local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
 					mesh.tris:insert(t)
@@ -130,7 +117,7 @@ function OBJLoader:load(filename)
 -- [[ calculate bbox.  do this before merging vtxs.
 	mesh:calcBBox()
 --]]
--- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably... 
+-- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
 
 -- [[ merge vtxs.  TODO make this an option with specified threshold.
 -- do this before detecting edges.
@@ -176,7 +163,6 @@ function OBJLoader:loadMtl(filename, mesh)
 		if lineType == 'newmtl' then
 			mtl = {}
 			mtl.name = assert(words[1])
-			mtl.faces = table()
 			mtl.triFirstIndex = 1
 			mtl.triCount = 0
 			-- TODO if a mtllib comes after a face then this'll happen:
@@ -205,7 +191,7 @@ function OBJLoader:loadMtl(filename, mesh)
 		elseif lineType == 'ks' then	-- specular color
 			assert(mtl)
 			mtl.Ks = wordsToColor(words)
-		elseif lineType == 'ns' then	-- specular exponent 
+		elseif lineType == 'ns' then	-- specular exponent
 			assert(mtl)
 			mtl.Ns = tonumber(words[1]) or 1
 		-- 'd' = alpha
@@ -309,22 +295,44 @@ function OBJLoader:save(filename, mesh)
 		o:write('vn ', table.concat(vn, ' '), '\n')
 	end
 	local mtlnames = table.keys(mesh.mtllib):sort()
-	assert(mtlnames[1] == '')	-- should always be there 
+	assert(mtlnames[1] == '')	-- should always be there
 	for _,mtlname in ipairs(mtlnames) do
 		local mtl = mesh.mtllib[mtlname]
 		if mtlname ~= '' then
 			o:write('usemtl ', mtlname, '\n')
 		end
-		local fs = mtl.faces
-		for k=3,table.maxn(fs) do
-			for _,vis in ipairs(fs[k]) do
-				o:write('f ', table.mapi(vis, function(vi)
-					local vs = table{vi.v, vi.vt, vi.vn}
-					for i=1,vs:maxn() do vs[i] = vs[i] or '' end
-					return vs:concat'/'
-				end):concat' ', '\n')
+		local lastt
+		local vis
+		local function writeFaceSoFar()
+			if not vis then return end
+			o:write('f ', table.mapi(vis, function(vi)
+				local vs = table{vi.v, vi.vt, vi.vn}
+				for i=1,vs:maxn() do vs[i] = vs[i] or '' end
+				return vs:concat'/'
+			end):concat' ', '\n')	
+			vis = nil
+		end
+		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
+			local t = mesh.tris[i]
+			-- exclude empty triangles here, or elsewhere?
+			if t.area > 0 then
+				if lastt
+				and t[1].v == lastt[1].v
+				and t[2].v == lastt[3].v
+				-- same plane
+				and t.normal:dot(lastt.normal) > 1 - 1e-3
+				and math.abs((mesh.vs[t[3].v] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
+				then
+					-- continuation of the last face
+					vis:insert(t[3])
+				else
+					writeFaceSoFar()
+					vis = table{t[1], t[2], t[3]}
+				end
+				lastt = t
 			end
 		end
+		writeFaceSoFar()
 	end
 	o:close()
 end
