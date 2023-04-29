@@ -60,7 +60,7 @@ function Triangle:calcAux(mesh)
 	if self.normal:normSq() < 1e-3 then
 		self.normal = matrix{0,0,0}
 	else
-		self.normal = self.normal:unit()
+		self.normal = self.normal:normalize()
 		if not math.isfinite(self.normal:normSq()) then
 			self.normal = matrix{0,0,0}
 		end
@@ -931,7 +931,12 @@ do--	else
 			t.uvorigin3D = matrix(v[1])
 			--]]
 			-- [[ use the y-lowest point
-			t.uvorigin3D = matrix(v[select(2, range(3):mapi(function(i) return v[i][2] end):inf())])
+			-- good for roofs ... not for walls ...
+			t.uvorigin3D = matrix(v[
+				select(2, range(3):mapi(function(i)
+					return v[i][2]
+				end):inf())
+			])
 			self.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
 			--]]
 
@@ -962,7 +967,19 @@ do--	else
 				end
 			end
 			--]]
-			-- [[ just use n cross y+
+			--[[ instead of choosing lowest delta in xz plane ...
+			-- first prioritize dy=0
+			-- then prioritize dx=0 or dz = 0
+			local d3 = v[1] - v[3]
+			local ex = table{d1:normalize(),d2:normalize(),d3:normalize()}:sort(function(a,b)
+				if not math.isfinite(a:normSq()) then return false end
+				if not math.isfinite(b:normSq()) then return true end
+				return range(3):mapi(function(i) return a[i] == 0 and 1 or 0 end):sum()
+					> range(3):mapi(function(i) return b[i] == 0 and 1 or 0 end):sum()
+			end)[1]:normalize()
+			print('ex', ex)
+			--]]
+			--[[ just use n cross y+
 			-- BEST FOR CARTESIAN ALIGNED
 			-- best for top
 			-- crashes for sides
@@ -997,6 +1014,14 @@ do--	else
 				end
 			end
 			--]]
+			-- [[ most orthogonal to bestNormal take 2
+			local d3 = v[1] - v[3]
+			local ds = table{d1:normalize(), d2:normalize(), d3:normalize()}
+			local dots = ds:mapi(function(d) return math.abs(d:dot(bestNormal)) end)
+			local i = range(3):sort(function(a,b) return dots[a] < dots[b] end)[1]
+			local ex = ds[i]
+			ex = n:cross(ex):normalize()
+			--]]
 
 			-- fallback, if n is nan or zero
 			local exNormSq = ex:normSq()
@@ -1015,8 +1040,8 @@ print('failed to find u vector based on bestNormal, picked ex='..ex..' from best
 				local lens = matrix{3}:lambda(function(i) return ns[i]:normSq() end)
 				local _, i = table.sup(lens)	-- best normal
 --print('biggest cross '..i)
-				ex = ns[i]:unit()
---print('picking fallback ', ex)
+				ex = ns[i]:normalize()
+print('picking fallback ', ex)
 			end
 
 --print('ex = '..ex)
@@ -1212,7 +1237,7 @@ tsrc.v1*-------*
 	end
 
 	while #notDoneYet > 0 do
-		print('starting unwrapping process with '..#notDoneYet..' left')
+--print('starting unwrapping process with '..#notDoneYet..' left')
 
 		-- I will be tracking all live edges
 		-- so process the first tri as the starting point
@@ -1318,14 +1343,14 @@ print('number to initialize with', #todo)
 		-- if finding a y-perpendicular downward-pointing edge was too much to ask,
 		-- ... then pick one at random?
 		if #todo == 0 then
-print("couldn't find any perp-to-bestNormal edges to initialize with...")
+--print("couldn't find any perp-to-bestNormal edges to initialize with...")
 			todo:insert(notDoneYet:remove(1))
 		end
 		--]=]
 
 		-- [[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
-		print('starting first pass with #todo', #todo)
+--print('starting first pass with #todo', #todo)
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
@@ -1338,7 +1363,7 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 				end
 			end
 		end
-		print('after first pass, #todo', #todo, '#done', #done)
+--print('after first pass, #todo', #todo, '#done', #done)
 		--]]
 
 		while #todo > 0 do
@@ -1432,7 +1457,7 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 end
 
 function Mesh:findClosestVertexToMouseRay(pos, dir)
-	dir = dir:unit()
+	dir = dir:normalize()
 	local bestdot, besti, bestdist
 	local eps = 1e-1
 	for i,v in ipairs(self.vs) do
