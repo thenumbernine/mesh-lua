@@ -171,6 +171,14 @@ function WavefrontOBJ:init(filename)
 
 	print('#tris', #self.tris)
 
+--[[ testing ... remove everything with x > 1
+	for i=#self.vs,1,-1 do
+		if self.vs[i][1] > 1 then
+			self:removeVertex(i)
+		end
+	end
+--]]
+
 -- [[ calculate bbox.  do this before merging vtxs.
 	local box3 = require 'vec.box3'
 	self.bbox = box3(-math.huge)
@@ -391,6 +399,8 @@ function WavefrontOBJ:init(filename)
 		end)
 	end
 --]]
+
+	--self:save('asdf.obj')
 end
 
 function WavefrontOBJ:loadMtl(filename)
@@ -560,14 +570,7 @@ function WavefrontOBJ:removeDegenerateTriangles()
 		end
 		if #t < 3 then
 --print('removing degenerate tri '..i..' with duplicate vertices')
-			self.tris:remove(i)
-			for mtlname,mtl in pairs(self.mtllib) do
-				if i < mtl.triFirstIndex then
-					mtl.triFirstIndex = mtl.triFirstIndex - 1
-				elseif i >= mtl.triFirstIndex and i < mtl.triFirstIndex + mtl.triCount then
-					mtl.triCount = mtl.triCount - 1
-				end
-			end
+			self:removeTri(i)
 		end
 	end
 	-- remove in .mtllib[].faces
@@ -594,6 +597,17 @@ function WavefrontOBJ:removeDegenerateTriangles()
 	end
 end
 
+function WavefrontOBJ:removeTri(i)
+	self.tris:remove(i)
+	for mtlname,mtl in pairs(self.mtllib) do
+		if i < mtl.triFirstIndex then
+			mtl.triFirstIndex = mtl.triFirstIndex - 1
+		elseif i >= mtl.triFirstIndex and i < mtl.triFirstIndex + mtl.triCount then
+			mtl.triCount = mtl.triCount - 1
+		end
+	end
+end
+
 -- remove all instances of a veretx index
 -- remove the vertex from the elf.vs[] list
 -- decrement the indexes greater
@@ -602,10 +616,14 @@ function WavefrontOBJ:removeVertex(vi)
 	self.vs:remove(vi)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
-	for _,t in ipairs(self.tris) do
+	-- if you just straight up remove a vertex then the tris and faces might go out of sync
+	for j=#self.tris,1,-1 do
+		local t = self.tris[j]
 		for i=1,3 do
 			if t[i].v == vi then
-				error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+				--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+				self:removeTri(j)
+				break
 			elseif t[i].v > vi then
 				t[i].v = t[i].v - 1
 			end
@@ -614,10 +632,13 @@ function WavefrontOBJ:removeVertex(vi)
 	-- remove in .mtllib[].faces
 	for mtlname,mtl in pairs(self.mtllib) do
 		for polySize,faces in pairs(mtl.faces) do
-			for _,f in ipairs(faces) do
+			for j=#faces,1,-1 do
+				local f = faces[j]
 				for i=1,polySize do
 					if f[i].v == vi then
-						error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+						--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
+						faces:remove(j)
+						break
 					elseif f[i].v > vi then
 						f[i].v = f[i].v - 1
 					end			
@@ -845,9 +866,13 @@ function WavefrontOBJ:save(filename)
 	for _,vn in ipairs(self.vns) do
 		o:write('vn ', table.concat(vn, ' '), '\n')
 	end
-	for _,mtlname in ipairs(table.keys(self.mtllib):sort()) do
+	local mtlnames = table.keys(self.mtllib):sort()
+	assert(mtlnames[1] == '')	-- should always be there 
+	for _,mtlname in ipairs(mtlnames) do
 		local mtl = self.mtllib[mtlname]
-		o:write('usemtl ', mtlname, '\n')
+		if mtlname ~= '' then
+			o:write('usemtl ', mtlname, '\n')
+		end
 		local fs = mtl.faces
 		for k=3,table.maxn(fs) do
 			for _,vis in ipairs(fs[k]) do
@@ -1492,18 +1517,25 @@ tsrc.v1*-------*
 			-- [[ pick the rotation along the cardinal axis that has the greatest change
 			-- BEST FOR CARTESIAN ALIGNED
 			local dn = t.normal - tsrc.normal
-			-- pick biggest changing axis in normal?
-			--local _, i = table.sup(dn:map(math.abs))
-			-- pick smallest changing axis in normal?
-			local _, i = table.inf(dn:map(math.abs))
-print('rotating on axis', i)			
 			local q
-			if i == 1 then
-				q = quat():fromAngleAxis(1, 0, 0, math.deg(math.atan2(n[3], n[2]) - math.atan2(tsrc.normal[3], tsrc.normal[2])))
-			elseif i == 2 then
-				q = quat():fromAngleAxis(0, 1, 0, math.deg(math.atan2(n[1], n[3]) - math.atan2(tsrc.normal[1], tsrc.normal[3])))
-			elseif i == 3 then
-				q = quat():fromAngleAxis(0, 0, 1, math.deg(math.atan2(n[2], n[1]) - math.atan2(tsrc.normal[2], tsrc.normal[1])))
+			if dn:normSq() < 1e-3 then
+				q = quat(0,0,0,1)
+			else
+				-- pick smallest changing axis in normal?
+				local _, i = table.inf(dn:map(math.abs))
+				if i == 1 then
+					local degrees = math.deg(math.atan2(n[3], n[2]) - math.atan2(tsrc.normal[3], tsrc.normal[2]))
+--print(t.normal, tsrc.normal, dn, 'rot on x-axis by', degrees)
+					q = quat():fromAngleAxis(1, 0, 0, degrees)
+				elseif i == 2 then
+					local degrees = math.deg(math.atan2(n[1], n[3]) - math.atan2(tsrc.normal[1], tsrc.normal[3]))
+--print(t.normal, tsrc.normal, dn, 'rot on y-axis by', degrees)
+					q = quat():fromAngleAxis(0, 1, 0, degrees)
+				elseif i == 3 then
+					local degrees = math.deg(math.atan2(n[2], n[1]) - math.atan2(tsrc.normal[2], tsrc.normal[1]))
+--print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
+					q = quat():fromAngleAxis(0, 0, 1, degrees)
+				end
 			end
 --print('q', q)
 --print('n', n)
