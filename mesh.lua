@@ -67,6 +67,129 @@ function Mesh:init(filename)
 	self.tris = table() -- triangulation of all faces
 end
 
+function Mesh:calcBBox()
+	local box3 = require 'vec.box3'
+	self.bbox = box3(-math.huge)
+	for _,v in ipairs(self.vs) do
+		self.bbox:stretch(v)
+	end
+end
+
+function Mesh:mergeMatchingVertexes()
+	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
+	-- that's a jump from 1/371 to 1/20,000,000
+	-- so what's the smallest ratio I should allow?  maybe 1/1million?
+	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+	local vtxMergeThreshold = bboxCornerDist * 1e-6
+	print('vtxMergeThreshold', vtxMergeThreshold)	
+	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
+	for i=#self.vs,2,-1 do
+		for j=1,i-1 do
+			local dist = (self.vs[i] - self.vs[j]):norm()
+--print(dist)
+			if dist < vtxMergeThreshold then
+--print('merging vtxs '..i..' and '..j)
+				self:mergeVertex(i,j)
+				break
+			end
+		end
+	end
+	print('after merge vtx count', #self.vs, 'tri count', #self.tris)
+end
+
+-- fill the allOverlappingEdges table
+function Mesh:calcAllOverlappingEdges()
+	--[[
+	these are whatever mesh edges are partially overlapping one another.
+	they are a result of a shitty artist.
+	because of which, there is no guarantee with this table that each tri has 3 edges, and each edge has only 2 tris.
+	instead it's a shitfest shitstorm.
+	--]]
+	self.allOverlappingEdges = {}
+	for _,t in ipairs(self.tris) do
+		t.allOverlappingEdges = table()
+	end
+	local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+		-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
+		assert(i2 < i1)
+		self.allOverlappingEdges[i2] = self.allOverlappingEdges[i2] or {}
+		self.allOverlappingEdges[i2][i1] = self.allOverlappingEdges[i2][i1] or {
+			[1] = i2,
+			[2] = i1,
+			triVtxIndexes = {j2, j1},
+			intervals = {{s21,s22}, {s11,s12}},
+			tris = table(),
+			dist = dist,
+			planeOrigin = planeOrigin,
+			planeNormal = planeNormal
+		}
+		local e = self.allOverlappingEdges[i2][i1]
+		local t1 = self.tris[i1]
+		local t2 = self.tris[i2]
+		e.tris:insertUnique(t2)
+		e.tris:insertUnique(t1)
+		t1.allOverlappingEdges:insertUnique(e)
+		t2.allOverlappingEdges:insertUnique(e)
+	end
+	for i1=#self.tris,2,-1 do
+		local t1 = self.tris[i1]
+		for j1=1,3 do
+			-- t1's j1'th edge
+			local v11 = self.vs[t1[j1].v]
+			local v12 = self.vs[t1[j1%3+1].v]
+			local n1 = v12 - v11
+			local n1NormSq = n1:normSq()
+			if n1NormSq  > 1e-3 then
+				n1 = n1 / math.sqrt(n1NormSq)
+				for i2=i1-1,1,-1 do
+					local t2 = self.tris[i2]
+					for j2=1,3 do
+						local v21 = self.vs[t2[j2].v]
+						local v22 = self.vs[t2[j2%3+1].v]
+						local n2 = v22 - v21
+						local n2NormSq = n2:normSq()
+						if n2NormSq  > 1e-3 then
+							n2 = n2 / math.sqrt(n2NormSq)
+							if math.abs(n1:dot(n2)) > 1 - 1e-3 then
+								-- normals align, calculate distance 
+								local planeOrigin = v11	-- pick any point on line v1: v11 or v12
+								local planeNormal = n1
+								local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
+								dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
+								local dist = dv:norm()
+								if dist < 1e-3 then
+									
+									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
+									local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
+									local s12 = (v12 - planeOrigin):dot(planeNormal)
+									-- based on n1 being the plane normal, s11 and s12 are already sorted 
+									local s21 = (v21 - planeOrigin):dot(planeNormal)
+									local s22 = (v22 - planeOrigin):dot(planeNormal)
+									-- since these aren't, they have to be sorted
+									if s21 > s22 then s21, s22 = s22, s21 end
+									if s11 < s22 and s12 > s21 then
+										addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	for a,o in pairs(self.allOverlappingEdges) do
+		for b,e in pairs(o) do
+			print(
+				'edges', e[1], e.triVtxIndexes[1],
+				'and', e[2], e.triVtxIndexes[2],
+				'align with dist', e.dist,
+				'with projected intervals', table.concat(e.intervals[1], ', '),
+				'and', table.concat(e.intervals[2], ', '))
+		end
+	end
+end
+
 function Mesh:calcTriAux()
 	-- store tri area
 	for _,t in ipairs(self.tris) do
@@ -507,7 +630,7 @@ function Mesh:loadGL(shader)
 print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
 	local vtxCPUBuf = vector('obj_vertex_t', #self.tris * 3)
 	self.vtxCPUBuf = vtxCPUBuf
-		
+	
 	for i,t in ipairs(self.tris) do
 		for j,vi in ipairs(t) do
 			local dst = vtxCPUBuf.v + (j-1) + 3 * (i-1)
@@ -1403,6 +1526,19 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 		for _,t in ipairs(done) do
 			assert(t[1].uv and t[2].uv and t[3].uv)
 		end		
+	end
+
+	-- replace?
+	self.vts = table()
+	for i=1,#self.tris do
+		local t = self.tris[i]
+		for j=1,3 do
+			local src = t[j].uv or {0,0}
+			assert(src[1] and src[2])
+			self.vts:insert(matrix{src[1], src[2], 0})
+			t[j].vt = #self.vts
+			--t[j].uv = nil
+		end
 	end
 end
 

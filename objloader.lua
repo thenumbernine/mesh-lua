@@ -128,11 +128,7 @@ function OBJLoader:load(filename)
 	print('#tris', #mesh.tris)
 
 -- [[ calculate bbox.  do this before merging vtxs.
-	local box3 = require 'vec.box3'
-	mesh.bbox = box3(-math.huge)
-	for _,v in ipairs(mesh.vs) do
-		mesh.bbox:stretch(v)
-	end
+	mesh:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably... 
 
@@ -141,129 +137,15 @@ function OBJLoader:load(filename)
 -- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
 	if mergeVertexesOnLoad then
 		timer('merging vertexes', function()
-			-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
-			-- that's a jump from 1/371 to 1/20,000,000
-			-- so what's the smallest ratio I should allow?  maybe 1/1million?
-			local bboxCornerDist = (mesh.bbox.max - mesh.bbox.min):norm()
-			local vtxMergeThreshold = bboxCornerDist * 1e-6
-			print('vtxMergeThreshold', vtxMergeThreshold)	
-			print('before merge vtx count', #mesh.vs, 'tri count', #mesh.tris)
-			for i=#mesh.vs,2,-1 do
-				for j=1,i-1 do
-					local dist = (mesh.vs[i] - mesh.vs[j]):norm()
-		--print(dist)
-					if dist < vtxMergeThreshold then
-		--print('merging vtxs '..i..' and '..j)
-						mesh:mergeVertex(i,j)
-						break
-					end
-				end
-			end
-			print('after merge vtx count', #mesh.vs, 'tri count', #mesh.tris)
+			mesh:mergeMatchingVertexes()
 		end)
 	end
 --]]
-
--- [[ we also have to merge ..... edges .... smh.
 	if mergeEdgesOnLoad then
 		timer("finding edges that should've been merged by whoever made the model", function()
-			--[[
-			these are whatever mesh edges are partially overlapping one another.
-			they are a result of a shitty artist.
-			because of which, there is no guarantee with this table that each tri has 3 edges, and each edge has only 2 tris.
-			instead it's a shitfest shitstorm.
-			--]]
-			mesh.allOverlappingEdges = {}
-			for _,t in ipairs(mesh.tris) do
-				t.allOverlappingEdges = table()
-			end
-			local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
-				-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
-				assert(i2 < i1)
-				mesh.allOverlappingEdges[i2] = mesh.allOverlappingEdges[i2] or {}
-				mesh.allOverlappingEdges[i2][i1] = mesh.allOverlappingEdges[i2][i1] or {
-					[1] = i2,
-					[2] = i1,
-					triVtxIndexes = {j2, j1},
-					intervals = {{s21,s22}, {s11,s12}},
-					tris = table(),
-					dist = dist,
-					planeOrigin = planeOrigin,
-					planeNormal = planeNormal
-				}
-				local e = mesh.allOverlappingEdges[i2][i1]
-				local t1 = mesh.tris[i1]
-				local t2 = mesh.tris[i2]
-				e.tris:insertUnique(t2)
-				e.tris:insertUnique(t1)
-				t1.allOverlappingEdges:insertUnique(e)
-				t2.allOverlappingEdges:insertUnique(e)
-			end
-			for i1=#mesh.tris,2,-1 do
-				local t1 = mesh.tris[i1]
-				for j1=1,3 do
-					-- t1's j1'th edge
-					local v11 = mesh.vs[t1[j1].v]
-					local v12 = mesh.vs[t1[j1%3+1].v]
-					local n1 = v12 - v11
-					local n1NormSq = n1:normSq()
-					if n1NormSq  > 1e-3 then
-						n1 = n1 / math.sqrt(n1NormSq)
-						for i2=i1-1,1,-1 do
-							local t2 = mesh.tris[i2]
-							for j2=1,3 do
-								local v21 = mesh.vs[t2[j2].v]
-								local v22 = mesh.vs[t2[j2%3+1].v]
-								local n2 = v22 - v21
-								local n2NormSq = n2:normSq()
-								if n2NormSq  > 1e-3 then
-									n2 = n2 / math.sqrt(n2NormSq)
-									if math.abs(n1:dot(n2)) > 1 - 1e-3 then
-										-- normals align, calculate distance 
-										local planeOrigin = v11	-- pick any point on line v1: v11 or v12
-										local planeNormal = n1
-										local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
-										dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
-										local dist = dv:norm()
-										if dist < 1e-3 then
-											
-											-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-											local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
-											local s12 = (v12 - planeOrigin):dot(planeNormal)
-											-- based on n1 being the plane normal, s11 and s12 are already sorted 
-											local s21 = (v21 - planeOrigin):dot(planeNormal)
-											local s22 = (v22 - planeOrigin):dot(planeNormal)
-											-- since these aren't, they have to be sorted
-											if s21 > s22 then s21, s22 = s22, s21 end
-											if s11 < s22 and s12 > s21 then
-												addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
-											end
-										end
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-			for a,o in pairs(mesh.allOverlappingEdges) do
-				for b,e in pairs(o) do
-					print(
-						'edges', e[1], e.triVtxIndexes[1],
-						'and', e[2], e.triVtxIndexes[2],
-						'align with dist', e.dist,
-						'with projected intervals', table.concat(e.intervals[1], ', '),
-						'and', table.concat(e.intervals[2], ', '))
-				end
-			end
+			mesh:calcAllOverlappingEdges()
 		end)
 	end
---]]
-
--- TODO all this per-material-group
--- should meshes have their own vtx lists?
--- or should they just index into a master list (like obj files do?)
-
 	mesh:calcTriAux()
 	mesh:findEdges()
 	mesh:calcCOMs()
