@@ -209,7 +209,38 @@ function WavefrontOBJ:init(filename)
 -- [[ we also have to merge ..... edges .... smh.
 	if mergeEdgesOnLoad then
 		timer("finding edges that should've been merged by whoever made the model", function()
-			self.allOverlappingEdges = table()
+			--[[
+			these are whatever mesh edges are partially overlapping one another.
+			they are a result of a shitty artist.
+			because of which, there is no guarantee with this table that each tri has 3 edges, and each edge has only 2 tris.
+			instead it's a shitfest shitstorm.
+			--]]
+			self.allOverlappingEdges = {}
+			for _,t in ipairs(self.tris) do
+				t.allOverlappingEdges = table()
+			end
+			local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+				-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
+				assert(i2 < i1)
+				self.allOverlappingEdges[i2] = self.allOverlappingEdges[i2] or {}
+				self.allOverlappingEdges[i2][i1] = self.allOverlappingEdges[i2][i1] or {
+					[1] = i2,
+					[2] = i1,
+					triVtxIndexes = {j2, j1},
+					intervals = {{s21,s22}, {s11,s12}},
+					tris = table(),
+					dist = dist,
+					planeOrigin = planeOrigin,
+					planeNormal = planeNormal
+				}
+				local e = self.allOverlappingEdges[i2][i1]
+				local t1 = self.tris[i1]
+				local t2 = self.tris[i2]
+				e.tris:insertUnique(t2)
+				e.tris:insertUnique(t1)
+				t1.allOverlappingEdges:insertUnique(e)
+				t2.allOverlappingEdges:insertUnique(e)
+			end
 			for i1=#self.tris,2,-1 do
 				local t1 = self.tris[i1]
 				for j1=1,3 do
@@ -236,21 +267,19 @@ function WavefrontOBJ:init(filename)
 										local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
 										dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
 										local dist = dv:norm()
-										-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-										local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
-										local s12 = (v12 - planeOrigin):dot(planeNormal)
-										-- based on n1 being the plane normal, s11 and s12 are already sorted 
-										local s21 = (v21 - planeOrigin):dot(planeNormal)
-										local s22 = (v22 - planeOrigin):dot(planeNormal)
-										-- since these aren't, they have to be sorted
-										if s21 > s22 then s21, s22 = s22, s21 end
-										if s11 < s22 and s12 > s21 then
-											self.allOverlappingEdges:insert{
-												triIndexes = {i1, i2},
-												edgeIndexes = {j1, j2},
-												dist = dist, 
-												intervals = {{s11,s12},{s21,s22}},
-											}
+										if dist < 1e-3 then
+											
+											-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
+											local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
+											local s12 = (v12 - planeOrigin):dot(planeNormal)
+											-- based on n1 being the plane normal, s11 and s12 are already sorted 
+											local s21 = (v21 - planeOrigin):dot(planeNormal)
+											local s22 = (v22 - planeOrigin):dot(planeNormal)
+											-- since these aren't, they have to be sorted
+											if s21 > s22 then s21, s22 = s22, s21 end
+											if s11 < s22 and s12 > s21 then
+												addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+											end
 										end
 									end
 								end
@@ -259,16 +288,15 @@ function WavefrontOBJ:init(filename)
 					end
 				end
 			end
-			self.allOverlappingEdges:sort(function(a,b)
-				return a.dist < b.dist
-			end)
-			for _,info in ipairs(self.allOverlappingEdges) do
-				print(
-					'edges', info.triIndexes[1], info.edgeIndexes[1],
-					'and', info.triIndexes[2], info.edgeIndexes[2],
-					'align with dist', info.dist,
-					'with projected intervals', table.concat(info.intervals[1], ', '),
-					'and', table.concat(info.intervals[2], ', '))
+			for a,o in pairs(self.allOverlappingEdges) do
+				for b,e in pairs(o) do
+					print(
+						'edges', e[1], e.triVtxIndexes[1],
+						'and', e[2], e.triVtxIndexes[2],
+						'align with dist', e.dist,
+						'with projected intervals', table.concat(e.intervals[1], ', '),
+						'and', table.concat(e.intervals[2], ', '))
+				end
 			end
 		end)
 	end
@@ -1173,7 +1201,7 @@ end
 function WavefrontOBJ:unwrapUVs()
 -- TODO put this all in its own function or its own app
 	local numSharpEdges = 0
-	for a,other in pairs(self.edges) do
+	for a,other in pairs(self.allOverlappingEdges) do
 		for b,edge in pairs(other) do
 			-- #tris == 0 is an edge construction error
 			-- #tris == 1 is a sharp edge ... which means a non-convex
@@ -1382,19 +1410,28 @@ tsrc.v1*-------*
 	  t.v3   t.v1
 --]]
 --print('folding from', tsrc.index, 'to', t.index)
+			--[[ using .edges
 			local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
 			local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
 			local i21 = findLocalIndex(t, esrc[1])	-- where in t is the edge's first?
 			local i22 = findLocalIndex(t, esrc[2])	-- where in t is the edge's second?
---print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
 			assert(i11 and i12 and i21 and i22)
 			assert(tsrc[i11].v == t[i21].v)	-- esrc[1] matches between tsrc and t
 			assert(tsrc[i12].v == t[i22].v)	-- esrc[2] matches between tsrc and t
-			-- tables are identical
 			assert(tsrc[i11].v == esrc[1])
 			assert(tsrc[i12].v == esrc[2])
 			assert(t[i21].v == esrc[1])
 			assert(t[i22].v == esrc[2])
+			--]]
+			-- [[ using .allOverlappingEdges
+			local i11 = esrc.triVtxIndexes[1]
+			local i12 = i11 % 3 + 1
+			local i21 = esrc.triVtxIndexes[2]
+			local i22 = i21 % 3 + 1
+			assert(i11 and i12 and i21 and i22)
+			--]]
+--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)					
+			-- tables are identical
 
 			local isrc
 			if tsrc[i11].uv then
@@ -1491,11 +1528,11 @@ print('rotating on axis', i)
 			assert(t[1].uv and t[2].uv and t[3].uv)
 			-- insert neighbors into a to-be-calcd list
 --print('tri', t.index)
-			for _,e in ipairs(t.edges) do
+			for _,e in ipairs(t.allOverlappingEdges) do
 --print('edge length', e.length)
 				-- for all edges in the t, go to the other faces matching.
 				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
-				if #e.tris == 2 then
+				do--if #e.tris == 2 then	-- if we're using any overlapping edge then this guarantee goes out the window
 					local t2 = getEdgeOppositeTri(e, t)
 -- if our tri 
 -- ... isn't in the 'todo' pile either ...
@@ -1523,7 +1560,7 @@ print('rotating on axis', i)
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
-			for _,e in ipairs(t.edges) do
+			for _,e in ipairs(t.allOverlappingEdges) do
 				if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
 					if not alreadyFilled:find(t2) then
@@ -1674,7 +1711,7 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 			-- pick best edge between any triangle in 'done' and any in 'todo'
 			local edgesToCheck = table()
 			for _,t in ipairs(todo) do
-				for _,e in ipairs(t.edges) do
+				for _,e in ipairs(t.allOverlappingEdges) do
 					if #e.tris == 2 then
 						local t2 = getEdgeOppositeTri(e, t)
 						if done:find(t2) then
