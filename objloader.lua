@@ -9,9 +9,9 @@ local matrix = require 'matrix'
 local Image = require 'image'
 local Mesh = require 'wavefrontobj.mesh'	-- TODO call this library 'Mesh' or something?
 
-local mergeVertexesOnLoad = false
-local mergeEdgesOnLoad = false
-local unwrapUVsOnLoad = false
+local mergeVertexesOnLoad = true
+local mergeEdgesOnLoad = true
+local unwrapUVsOnLoad = true
 
 local function wordsToVec3(w)
 	return matrix{3}:lambda(function(i)

@@ -43,8 +43,6 @@ function App:initGL(...)
 	self.drawStoredNormals = false
 	self.drawVertexNormals = false
 	self.drawTriNormals = false
-	self.drawUVs = false
-	self.drawUVs3D = true
 	self.drawUVUnwrapEdges = false
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
@@ -235,11 +233,8 @@ function App:update()
 		}
 		self.shader:useNone()
 	end
-	if self.drawUVs then
-		self.mesh:drawUVs(self.drawUVs3D)
-	end
 	if self.drawUVUnwrapEdges then
-		self.mesh:drawUVUnwrapEdges(self.drawUVs3D)
+		self.mesh:drawUVUnwrapEdges()
 	end
 	if self.useDrawEdges then
 		self.mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -271,6 +266,7 @@ end
 function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 	local mesh = self.mesh
 	if self.editMode == 1 then
+		-- orbit behavior
 		App.super.mouseDownEvent(self, dx, dy, shiftDown, guiDown, altDown)
 	elseif self.editMode == 2 then
 		local i, dist = mesh:findClosestVertexToMouseRay(matrix{self.view.pos:unpack()}, matrix{self:mouseDir():unpack()})
@@ -377,8 +373,6 @@ function App:updateGUI()
 	ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
 	ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 	ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
-	ig.luatableCheckbox('draw uvs', self, 'drawUVs')
-	ig.luatableCheckbox('draw uvs 3D', self, 'drawUVs3D')
 	ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
 end
 

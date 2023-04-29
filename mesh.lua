@@ -38,6 +38,16 @@ local function triArea(a,b,c)
 	return .5 * n:norm()
 end
 
+-- the 4th pt in the tetrad is zero.  adjust a,b,c accordingly
+local function tetradVolume(a,b,c)
+	return (a[1] * b[2] * c[3]
+		+ a[2] * b[3] * c[1]
+		+ a[3] * b[1] * c[2]
+		- c[1] * b[2] * a[3]
+		- c[2] * b[3] * a[1]
+		- c[3] * b[1] * a[2]) / 6
+end
+
 -- calculate .normal and .area
 function Triangle:calcAux(mesh)
 	local a = matrix(mesh.vs[self[1].v])
@@ -464,15 +474,7 @@ function Mesh:calcCOM3(mtlname)
 		-- for 3D, volume = det|a b c|
 		local com = (a + b + c) * (1/4)
 
-		-- this should be scaled by 1/6, but since we're weighting the COM by the volume, scale factors don't matter
-		local volume = 0
-		volume = volume + a[1] * b[2] * c[3]
-		volume = volume + a[2] * b[3] * c[1]
-		volume = volume + a[3] * b[1] * c[2]
-		volume = volume - c[1] * b[2] * a[3]
-		volume = volume - c[2] * b[3] * a[1]
-		volume = volume - c[3] * b[1] * a[2]
-
+		local volume = tetradVolume(a,b,c)
 		totalCOM = totalCOM + com * volume
 		totalVolume = totalVolume + volume
 	end
@@ -487,24 +489,17 @@ end
 
 -- calculates volume bounded by triangles
 function Mesh:calcVolume()
-	local volume = 0
+	local totalVolume = 0
 	for _,t in ipairs(self.tris) do
 		local i,j,k = table.unpack(t)
 		-- volume of parallelogram with vertices at 0, a, b, c
 		local a = self.vs[i.v]
 		local b = self.vs[j.v]
 		local c = self.vs[k.v]
-
-		volume = volume + a[1] * b[2] * c[3]
-		volume = volume + a[2] * b[3] * c[1]
-		volume = volume + a[3] * b[1] * c[2]
-		volume = volume - c[1] * b[2] * a[3]
-		volume = volume - c[2] * b[3] * a[1]
-		volume = volume - c[3] * b[1] * a[2]
+		totalVolume = totalVolume + tetradVolume(a,b,c)
 	end
-	if volume < 0 then volume = -volume end
-	volume = volume / 6
-	return volume
+	if totalVolume < 0 then totalVolume = -totalVolume end
+	return totalVolume
 end
 
 
@@ -796,39 +791,6 @@ function Mesh:drawTriNormals()
 	gl.glEnd()
 end
 
-function Mesh:drawUVs(_3D)
-	local gl = require 'gl'
-	self.uvMap = self.uvMap or (function()
-		local GLTex2D = require 'gl.tex2d'
-		local Image = require 'image'
-		return GLTex2D{
-			image = Image(64, 64, 3, 'unsigned char', function(u,v)
-				return (u+.5)/64*255, (v+.5)/64*255, 127
-			end),
-			minFilter = gl.GL_NEAREST,
-			magFilter = gl.GL_LINEAR,
-			wrap = {s = gl.GL_REPEAT, t = gl.GL_REPEAT},
-		}
-	end)()
-	gl.glColor3f(1,1,1)
-	self.uvMap:enable()
-	self.uvMap:bind()
-	gl.glBegin(gl.GL_TRIANGLES)
-	for _,t in ipairs(self.tris) do
-		for _,tv in ipairs(t) do
-			uv = tv.uv or {0,0}
-			gl.glTexCoord2f(uv[1], uv[2])
-			if _3D then
-				gl.glVertex3f(self.vs[tv.v]:unpack())
-			else
-				gl.glVertex2f(uv[1], uv[2])
-			end
-		end
-	end
-	gl.glEnd()
-	self.uvMap:unbind()
-	self.uvMap:disable()
-end
 function Mesh:drawUVUnwrapEdges(_3D)
 	local gl = require 'gl'
 	local eps = 1e-3
@@ -846,12 +808,7 @@ function Mesh:drawUVUnwrapEdges(_3D)
 					gl.glColor3f(1,0,0)
 				end
 			end
-			if _3D then
-				gl.glVertex3f((t.com + eps * t.normal):unpack())
-			else
-				local com = (t[1].uv + t[2].uv + t[3].uv) / 3
-				gl.glVertex2f(com:unpack(1,2))
-			end
+			gl.glVertex3f((t.com + eps * t.normal):unpack())
 		end
 	end
 	gl.glEnd()
