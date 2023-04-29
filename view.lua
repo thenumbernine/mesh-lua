@@ -4,7 +4,7 @@ local gl = require 'gl'
 local GLProgram = require 'gl.program'
 local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
-local WavefrontObj = require 'wavefrontobj.wavefrontobj'
+local OBJLoader = require 'wavefrontobj.objloader'
 local vec3f = require 'vec-ffi.vec3f'
 local vec4f = require 'vec-ffi.vec4f'
 local matrix_ffi = require 'matrix.ffi'
@@ -19,14 +19,17 @@ App.title = 'WavefrontOBJ preview'
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
-	self.obj = WavefrontObj(fn)
+	self.obj = OBJLoader():load(fn)
 	print('triangle bounded volume', self.obj:calcVolume())
 	print('bbox', self.obj.bbox)
 	print('bbox volume', (self.obj.bbox.max - self.obj.bbox.min):volume())
 	print('obj.bbox corner-to-corner distance: '..(self.obj.bbox.max - self.obj.bbox.min):norm())
 
-self.view.ortho = true
-self.view.angle:fromAngleAxis(1,0,0,-90)
+	-- [[ default camera to ortho looking down y-
+	self.view.ortho = true
+	self.view.angle:fromAngleAxis(1,0,0,-90)
+	--]]
+
 	self:setCenter(self.obj.com3)
 	self.displayList = {}
 
