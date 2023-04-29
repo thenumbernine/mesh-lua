@@ -2,6 +2,7 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local math = require 'ext.math'
+local timer = require 'ext.timer'
 local quat = require 'vec.quat'
 local matrix = require 'matrix'
 local vector = require 'ffi.cpp.vector'
@@ -22,11 +23,116 @@ typedef struct {
 
 local Mesh = class()
 
+local Triangle = class()
+
+-- a,b,c are face index structures (with .v .vt .vn indexes into mesh.vs .vts .vns)
+function Triangle:init(a,b,c)
+	self[1] = table(a):setmetatable(nil)
+	self[2] = table(b):setmetatable(nil)
+	self[3] = table(c):setmetatable(nil)
+end
+
+local function triArea(a,b,c)
+	local ab = b - a
+	local ac = c - a
+	local n = ab:cross(ac)
+	return .5 * n:norm()
+end
+
+-- calculate .normal and .area
+function Triangle:calcAux(mesh)
+	local a = matrix(mesh.vs[self[1].v])
+	local b = matrix(mesh.vs[self[2].v])
+	local c = matrix(mesh.vs[self[3].v])
+	self.area = triArea(a, b, c)
+	self.com = (a + b + c) / 3
+	-- TODO what if the tri is degenerate to a line?
+	self.normal = (b - a):cross(c - b)
+	if self.normal:normSq() < 1e-3 then
+		self.normal = matrix{0,0,0}
+	else
+		self.normal = self.normal:unit()
+		if not math.isfinite(self.normal:normSq()) then
+			self.normal = matrix{0,0,0}
+		end
+	end
+end
+
+Mesh.Triangle = Triangle
+
 function Mesh:init(filename)
 	self.vs = table()
 	self.vts = table()
 	self.vns = table()
 	self.tris = table() -- triangulation of all faces
+end
+
+function Mesh:calcTriAux()
+	-- store tri area
+	for _,t in ipairs(self.tris) do
+		t:calcAux(self)
+	end
+end
+
+function Mesh:findEdges()
+	-- and just for kicks, track all edges
+	timer('edges', function()
+		self.edges = {}
+		local function addEdge(a,b,t)
+			if a > b then return addEdge(b,a,t) end
+			self.edges[a] = self.edges[a] or {}
+			self.edges[a][b] = self.edges[a][b] or {
+				[1] = a,
+				[2] = b,
+				tris = table(),
+				length = (self.vs[a] - self.vs[b]):norm(),
+			}
+			local e = self.edges[a][b]
+			e.tris:insert(t)
+			t.edges:insert(e)
+		end
+		for _,t in ipairs(self.tris) do
+			assert(not t.edges)
+			t.edges = table()
+			local a,b,c = table.unpack(t)
+			addEdge(a.v, b.v, t)
+			addEdge(a.v, c.v, t)
+			addEdge(b.v, c.v, t)
+		end
+	end)
+end
+
+--[[
+calculate and store COMs
+TODO store these?  or only calculate upon demand?
+this will have to be recalculated every time the mesh changes
+a prereq for calcCOM1 is findEdges()
+--]]
+function Mesh:calcCOMs()
+	timer('com0', function()
+		self.com0 = self:calcCOM0()
+	end)
+	print('com0 = '..self.com0)
+	timer('com1', function()
+		self.com1 = self:calcCOM1()
+	end)
+	print('com1 = '..self.com1)
+	timer('com2', function()
+		self.com2 = self:calcCOM2()
+	end)
+	print('com2 = '..self.com2)
+	timer('com3', function()
+		self.com3 = self:calcCOM3()
+	end)
+	print('com3 = '..self.com3)
+	-- can only do this with com2 and com3 since they use tris, which are stored per-material
+	-- ig i could with edges and vtxs too if I flag them per-material
+	timer('mtl com2/3', function()
+		for mtlname,mtl in pairs(self.mtllib) do
+			mtl.com2 = self:calcCOM2(mtlname)
+			mtl.com3 = self:calcCOM3(mtlname)
+		end
+	end)
 end
 
 -- replace all instances of one vertex index with another

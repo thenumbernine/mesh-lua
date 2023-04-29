@@ -13,15 +13,6 @@ local mergeVertexesOnLoad = true
 local mergeEdgesOnLoad = true
 local unwrapUVsOnLoad = true
 
-
-local function triArea(a,b,c)
-	local ab = b - a
-	local ac = c - a
-	local n = ab:cross(ac)
-	return .5 * n:norm()
-end
-
-
 local function wordsToVec3(w)
 	return matrix{3}:lambda(function(i)
 		return tonumber(w[i]) or 0
@@ -110,15 +101,11 @@ function OBJLoader:load(filename)
 				facesPerPolySize[nvtx]:insert(vis)
 				for i=2,nvtx-1 do
 					-- store a copy of the vertex indices per triangle index
-					mesh.tris:insert{
-						-- [1..3] are face index structures (with .v .vt .vn)
-						table(vis[1]):setmetatable(nil),
-						table(vis[i]):setmetatable(nil),
-						table(vis[i+1]):setmetatable(nil),
-						-- keys:
-						index = #mesh.tris+1,	-- so far only used for debugging
-						mtl = mtl,
-					}
+					local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
+					mesh.tris:insert(t)
+					-- keys:
+					t.index = #mesh.tris+1	-- so far only used for debugging
+					t.mtl = mtl
 					if not mtl.triFirstIndex then mtl.triFirstIndex = #mesh.tris end
 					mtl.triCount = #mesh.tris - mtl.triFirstIndex + 1
 				end
@@ -277,81 +264,9 @@ function OBJLoader:load(filename)
 -- should meshes have their own vtx lists?
 -- or should they just index into a master list (like obj files do?)
 
-	-- store tri area
-	for _,t in ipairs(mesh.tris) do
-		local a = matrix(mesh.vs[t[1].v])
-		local b = matrix(mesh.vs[t[2].v])
-		local c = matrix(mesh.vs[t[3].v])
-		t.area = triArea(a, b, c)
-		t.com = (a + b + c) / 3
-		-- TODO what if the tri is degenerate to a line?
-		t.normal = (b - a):cross(c - b)
-		if t.normal:normSq() < 1e-3 then
-			t.normal = matrix{0,0,0}
-		else
-			t.normal = t.normal:unit()
-			if not math.isfinite(t.normal:normSq()) then
-				t.normal = (b - a):unit()
-				if not math.isfinite(t.normal:normSq()) then
-					t.normal = matrix{0,0,0}
-				end
-			end
-		end
-	end
-
-	-- and just for kicks, track all edges
-	timer('edges', function()
-		mesh.edges = {}
-		local function addEdge(a,b,t)
-			if a > b then return addEdge(b,a,t) end
-			mesh.edges[a] = mesh.edges[a] or {}
-			mesh.edges[a][b] = mesh.edges[a][b] or {
-				[1] = a,
-				[2] = b,
-				tris = table(),
-				length = (mesh.vs[a] - mesh.vs[b]):norm(),
-			}
-			local e = mesh.edges[a][b]
-			e.tris:insert(t)
-			t.edges:insert(e)
-		end
-		for _,t in ipairs(mesh.tris) do
-			assert(not t.edges)
-			t.edges = table()
-			local a,b,c = table.unpack(t)
-			addEdge(a.v, b.v, t)
-			addEdge(a.v, c.v, t)
-			addEdge(b.v, c.v, t)
-		end
-	end)
-
--- [[ TODO all this can go in a superclass for all 3d obj file formats
--- TODO store these?  or only calculate upon demand?
-	timer('com0', function()
-		mesh.com0 = mesh:calcCOM0()
-	end)
-	print('com0 = '..mesh.com0)
-	timer('com1', function()
-		mesh.com1 = mesh:calcCOM1()
-	end)
-	print('com1 = '..mesh.com1)
-	timer('com2', function()
-		mesh.com2 = mesh:calcCOM2()
-	end)
-	print('com2 = '..mesh.com2)
-	timer('com3', function()
-		mesh.com3 = mesh:calcCOM3()
-	end)
-	print('com3 = '..mesh.com3)
-	-- can only do this with com2 and com3 since they use tris, which are stored per-material
-	-- ig i could with edges and vtxs too if I flag them per-material
-	timer('mtl com2/3', function()
-		for mtlname,mtl in pairs(mesh.mtllib) do
-			mtl.com2 = mesh:calcCOM2(mtlname)
-			mtl.com3 = mesh:calcCOM3(mtlname)
-		end
-	end)
---]]
+	mesh:calcTriAux()
+	mesh:findEdges()
+	mesh:calcCOMs()
 
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 	if unwrapUVsOnLoad then
