@@ -169,6 +169,8 @@ function WavefrontOBJ:init(filename)
 		self.vns = vns
 	end)
 
+	print('#tris', #self.tris)
+
 -- [[ calculate bbox.  do this before merging vtxs.
 	local box3 = require 'vec.box3'
 	self.bbox = box3(-math.huge)
@@ -359,15 +361,19 @@ function WavefrontOBJ:init(filename)
 	timer('com0', function()
 		self.com0 = self:calcCOM0()
 	end)
+	print('com0 = '..self.com0)
 	timer('com1', function()
 		self.com1 = self:calcCOM1()
 	end)
+	print('com1 = '..self.com1)
 	timer('com2', function()
 		self.com2 = self:calcCOM2()
 	end)
+	print('com2 = '..self.com2)
 	timer('com3', function()
 		self.com3 = self:calcCOM3()
 	end)
+	print('com3 = '..self.com3)
 	-- can only do this with com2 and com3 since they use tris, which are stored per-material
 	-- ig i could with edges and vtxs too if I flag them per-material
 	timer('mtl com2/3', function()
@@ -715,27 +721,34 @@ end
 
 -- calculate COM by 0-forms (vertexes)
 function WavefrontOBJ:calcCOM0()
-	return self.vs:sum() / #self.vs
+	local result = self.vs:sum() / #self.vs
+	assert(math.isfinite(result:normSq()))
+	return result
 end
 
 -- calculate COM by 1-forms (edges)
 -- depend on self.edges being stored
 function WavefrontOBJ:calcCOM1()
 	local totalCOM = matrix{0,0,0}
-	local totalArea = 0
+	local totalLen = 0
 	for a,bs in pairs(self.edges) do
 		for b in pairs(bs) do
 			local v1 = self.vs[a]
 			local v2 = self.vs[b]
 			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
 			-- for 1D, volume = |b-a|
-			local area = (v1 - v2):norm()
+			local length = (v1 - v2):norm()
 			local com = (v1 + v2) * .5
-			totalCOM = totalCOM + com * area
-			totalArea = totalArea + area
+			totalCOM = totalCOM + com * length
+			totalLen = totalLen + length
 		end
 	end
-	return totalCOM / totalArea
+	if totalLen == 0 then
+		return self:calcCOM0()
+	end
+	local result = totalCOM / totalLen
+	assert(math.isfinite(result:normSq()))
+	return result
 end
 
 -- calculate COM by 2-forms (triangles)
@@ -750,7 +763,12 @@ function WavefrontOBJ:calcCOM2(mtlname)
 		totalCOM = totalCOM + t.com * t.area
 		totalArea = totalArea + t.area
 	end
-	return totalCOM / totalArea
+	if totalArea == 0 then
+		return self:calcCOM1(mtlname)
+	end
+	local result = totalCOM / totalArea
+	assert(math.isfinite(result:normSq()))
+	return result
 end
 
 -- calculate COM by 3-forms (enclosed volume)
@@ -781,7 +799,13 @@ function WavefrontOBJ:calcCOM3(mtlname)
 		totalCOM = totalCOM + com * volume
 		totalVolume = totalVolume + volume
 	end
-	return totalCOM / totalVolume
+	-- if there's no volume then technically this can't exist ... but just fallback
+	if totalVolume == 0 then
+		return self:calcCOM2(mtlname)
+	end
+	local result = totalCOM / totalVolume
+	assert(math.isfinite(result:normSq()))
+	return result
 end
 
 -- calculates volume bounded by triangles
