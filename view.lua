@@ -1,4 +1,5 @@
 #!/usr/bin/env luajit
+local ffi = require 'ffi'
 local class = require 'ext.class'
 local gl = require 'gl'
 local GLProgram = require 'gl.program'
@@ -6,7 +7,9 @@ local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
 local OBJLoader = require 'wavefrontobj.objloader'
 local vec3f = require 'vec-ffi.vec3f'
+local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
+local matrix = require 'matrix'
 local matrix_ffi = require 'matrix.ffi'
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
@@ -19,18 +22,18 @@ App.title = 'WavefrontOBJ preview'
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
-	self.obj = OBJLoader():load(fn)
-	print('triangle bounded volume', self.obj:calcVolume())
-	print('bbox', self.obj.bbox)
-	print('bbox volume', (self.obj.bbox.max - self.obj.bbox.min):volume())
-	print('obj.bbox corner-to-corner distance: '..(self.obj.bbox.max - self.obj.bbox.min):norm())
+	self.mesh = OBJLoader():load(fn)
+	print('triangle bounded volume', self.mesh:calcVolume())
+	print('bbox', self.mesh.bbox)
+	print('bbox volume', (self.mesh.bbox.max - self.mesh.bbox.min):volume())
+	print('mesh.bbox corner-to-corner distance: '..(self.mesh.bbox.max - self.mesh.bbox.min):norm())
 
 	-- [[ default camera to ortho looking down y-
 	self.view.ortho = true
 	self.view.angle:fromAngleAxis(1,0,0,-90)
 	--]]
 
-	self:setCenter(self.obj.com3)
+	self:setCenter(self.mesh.com3)
 	self.displayList = {}
 
 	-- gui options
@@ -46,6 +49,8 @@ function App:initGL(...)
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
+
+	self.editMode = 1
 
 	self.useLighting = false
 	self.useGeneratedNormalsForLighting = false
@@ -156,7 +161,7 @@ void main() {
 		},
 	}
 
-	self.obj:loadGL(self.shader)
+	self.mesh:loadGL(self.shader)
 end
 
 App.modelViewMatrix = matrix_ffi.zeros{4,4}
@@ -187,16 +192,16 @@ function App:update()
 	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.modelViewMatrix.ptr)
 	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
 
-	self.obj:loadGL(self.shader)
+	self.mesh:loadGL(self.shader)
 
 	if self.drawStoredNormals then
-		self.obj:drawStoredNormals()
+		self.mesh:drawStoredNormals()
 	end
 	if self.drawVertexNormals then
-		self.obj:drawVertexNormals()
+		self.mesh:drawVertexNormals()
 	end
 	if self.drawTriNormals then
-		self.obj:drawTriNormals()
+		self.mesh:drawTriNormals()
 	end
 	if self.useDrawPolys then
 		self.shader:use()
@@ -208,7 +213,7 @@ function App:update()
 			modelViewMatrix = self.modelViewMatrix.ptr,
 			projectionMatrix = self.projectionMatrix.ptr,
 		}
-		self.obj:draw{
+		self.mesh:draw{
 			-- TODO option for calculated normals?
 			-- TODO shader options?
 			shader = self.shader,
@@ -216,12 +221,12 @@ function App:update()
 				if mtl.tex_Kd then mtl.tex_Kd:bind() end
 				self.shader:setUniforms{
 					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
-					--Ka = mtl.Ka or {0,0,0,0},	-- why are most obj files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
+					--Ka = mtl.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
 					Ka = {0,0,0,0},
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
 					Ns = mtl.Ns or 1,
-					objCOM = self.obj.com3,
+					objCOM = self.mesh.com3,
 					groupCOM = mtl.com3,
 					groupExplodeDist = self.groupExplodeDist,
 					triExplodeDist = self.triExplodeDist,
@@ -231,66 +236,117 @@ function App:update()
 		self.shader:useNone()
 	end
 	if self.drawUVs then
-		self.obj:drawUVs(self.drawUVs3D)
+		self.mesh:drawUVs(self.drawUVs3D)
 	end
 	if self.drawUVUnwrapEdges then
-		self.obj:drawUVUnwrapEdges(self.drawUVs3D)
+		self.mesh:drawUVUnwrapEdges(self.drawUVs3D)
 	end
 	if self.useDrawEdges then
-		self.obj:drawEdges(self.triExplodeDist, self.groupExplodeDist)
+		self.mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
 	end
 
 	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
 	gl.glDisable(gl.GL_BLEND)
 	gl.glDisable(gl.GL_CULL_FACE)
+
+	gl.glColor3f(1,1,0)
+	gl.glBegin(gl.GL_POINTS)
+	gl.glVertex3f((self.view.pos + self:mouseDir() * 10):unpack())
+	gl.glEnd()
+
 	App.super.update(self)
+	
 	require 'gl.report''here'
 end
 
+function App:mouseDir()
+	local tanFovY = math.tan(math.rad(self.view.fovY / 2))
+	return self.view.angle:rotate(vec3d(
+		(self.mouse.pos.x*2 - 1) * self.width / self.height * tanFovY,
+		(self.mouse.pos.y*2 - 1) * tanFovY,
+		-1
+	))
+end
+
+function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
+	local mesh = self.mesh
+	if self.editMode == 1 then
+		App.super.mouseDownEvent(self, dx, dy, shiftDown, guiDown, altDown)
+	elseif self.editMode == 2 then
+		local i, dist = mesh:findClosestVertexToMouseRay(matrix{self.view.pos:unpack()}, matrix{self:mouseDir():unpack()})
+		if i then
+			if not shiftDown then
+				local tanFovY = math.tan(math.rad(self.view.fovY / 2))
+				local screenDelta = vec3d(
+					(dx / self.width * 2) * self.width / self.height * tanFovY,
+					(-dy / self.height * 2) * tanFovY,
+					0
+				)
+				print('dist', dist)
+				print('dx dy', dx, dy)
+				print('screenDelta', screenDelta)
+				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
+				print('vtxDelta', vtxDelta)
+				mesh.vs[i] = mesh.vs[i] + matrix{vtxDelta:unpack()}
+			else
+				mesh.vs[i] = mesh.vs[i] + matrix{self.view.angle:rotate(vec3d(0, 0, dy)):unpack()}
+			end
+			-- update in the cpu buffer if it's been generated
+			if mesh.loadedGL then
+				mesh.vtxCPUBuf.v[i-1].pos:set(mesh.vs[i]:unpack())
+				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * (i-1) + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[i-1].pos.s)
+			end
+		end
+	end
+end
+
 function App:setCenter(center)
-	local size = self.obj.vs:mapi(function(v) return (v - center):norm() end):sup()
+	local size = self.mesh.vs:mapi(function(v) return (v - center):norm() end):sup()
 	self.view.orbit:set(center:unpack())
 	self.view.pos = self.view.orbit + self.view.angle:zAxis() * size
 end
 
 function App:updateGUI()
+	ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
+	ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
+
 	ig.igColorPicker3('background color', self.bgcolor.s, 0)
 	if ig.igButton'set to vtx center' then
-		self:setCenter(self.obj.com0)
+		self:setCenter(self.mesh.com0)
 	end
 	if ig.igButton'set to line center' then
-		self:setCenter(self.obj.com1)
+		self:setCenter(self.mesh.com1)
 	end
 	if ig.igButton'set to face center' then
-		self:setCenter(self.obj.com2)
+		self:setCenter(self.mesh.com2)
 	end
 	if ig.igButton'set to volume center' then
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	ig.luatableCheckbox('ortho view', self.view, 'ortho')
 	if ig.igButton'reset view z-' then
 		self.view.angle:set(0,0,0,1)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view z+' then
 		self.view.angle:fromAngleAxis(0,1,0,180)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view y-' then
 		self.view.angle:fromAngleAxis(1,0,0,-90)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view y+' then
 		self.view.angle:fromAngleAxis(1,0,0,90)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view x-' then
 		self.view.angle:fromAngleAxis(0,1,0,90)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view x+' then
 		self.view.angle:fromAngleAxis(0,1,0,-90)
-		self:setCenter(self.obj.com3)
+		self:setCenter(self.mesh.com3)
 	end
 
 
@@ -300,7 +356,7 @@ function App:updateGUI()
 	ig.luatableCheckbox('use textures', self, 'useTextures')
 	ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
 	if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
-		for mtlname, mtl in pairs(self.obj.mtllib) do
+		for mtlname, mtl in pairs(self.mesh.mtllib) do
 			if mtl.tex_Kd then
 				mtl.tex_Kd:bind()
 				mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)

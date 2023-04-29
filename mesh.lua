@@ -21,7 +21,6 @@ typedef struct {
 } obj_vertex_t;
 ]]
 
-local Mesh = class()
 
 local Triangle = class()
 
@@ -57,6 +56,9 @@ function Triangle:calcAux(mesh)
 		end
 	end
 end
+
+
+local Mesh = class()
 
 Mesh.Triangle = Triangle
 
@@ -1470,6 +1472,27 @@ print("couldn't find any perp-to-bestNormal edges to initialize with...")
 			t[j].uv = nil
 		end
 	end
+end
+
+function Mesh:findClosestVertexToMouseRay(pos, dir)
+	dir = dir:unit()
+	local bestdot, besti, bestdist
+	local eps = 1e-1
+	for i,v in ipairs(self.vs) do
+		local delta = v - pos
+		local dist = delta:dot(dir)
+		local dot = dist / delta:norm()
+		if dot > 1 - eps then
+			if not bestdot
+			or (dot >= bestdot and dist < bestdist)
+			then
+				bestdot = dot
+				bestdist = dist
+				besti = i
+			end
+		end
+	end
+	return besti, bestdist
 end
 
 return Mesh

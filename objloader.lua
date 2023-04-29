@@ -114,7 +114,8 @@ function OBJLoader:load(filename)
 
 	print('#tris', #mesh.tris)
 
--- [[ calculate bbox.  do this before merging vtxs.
+-- [[ calculate bbox.
+-- do this before merging vtxs.
 	mesh:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
@@ -134,7 +135,13 @@ function OBJLoader:load(filename)
 		end)
 	end
 	mesh:calcTriAux()
+	
+	-- store all edges of all triangles
+	-- ... why?
 	mesh:findEdges()
+	
+	-- calculate coms ...
+	-- ... meh?
 	mesh:calcCOMs()
 
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
