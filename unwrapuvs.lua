@@ -1,10 +1,10 @@
 -- this belongs in its own place, outside this project
 
 
-local function unwrapUVs()
+local function unwrapUVs(mesh)
 -- TODO put this all in its own function or its own app
 	local numSharpEdges = 0
-	for a,other in pairs(self.allOverlappingEdges) do
+	for a,other in pairs(mesh.allOverlappingEdges) do
 		for b,edge in pairs(other) do
 			-- #tris == 0 is an edge construction error
 			-- #tris == 1 is a sharp edge ... which means a non-convex
@@ -24,7 +24,7 @@ local function unwrapUVs()
 	-- how about count area per cube sides?
 	-- total vector, l=0 s.h.
 	local avgNormal = matrix{0,0,0}
-	for _,t in ipairs(self.tris) do
+	for _,t in ipairs(mesh.tris) do
 		avgNormal = avgNormal + t.normal * t.area
 	end
 	local avgNormalIsZero = avgNormal:normSq() < 1e-7
@@ -34,7 +34,7 @@ local function unwrapUVs()
 	-- the same idea as the l=1 spherical harmonics
 	local range = require 'ext.range'
 	local areas = matrix{6}:zeros()
-	for _,t in ipairs(self.tris) do
+	for _,t in ipairs(mesh.tris) do
 		local _,i = table.sup(t.normal:map(math.abs))
 		assert(i)
 		local dir = t.normal[i] > 0 and 1 or 2
@@ -78,7 +78,7 @@ do--	else
 		assert(not t[1].uv and not t[2].uv and not t[3].uv)
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
-		local v = matrix{3,3}:lambda(function(i,j) return self.vs[t[i].v][j] end)
+		local v = matrix{3,3}:lambda(function(i,j) return mesh.vs[t[i].v][j] end)
 --print('v\n'..v)
 		local d1 = v[2] - v[1]
 		local d2 = v[3] - v[2]
@@ -111,7 +111,7 @@ do--	else
 					return v[i][2]
 				end):inf())
 			])
-			self.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
+			mesh.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
 			--]]
 
 --print('uv2D = '..t.uvorigin2D)
@@ -270,7 +270,7 @@ tsrc.v1*-------*
 				error("how can we fold a line when the src tri doesn't have uv coords for it?")
 			end
 			t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
-			t.uvorigin3D = matrix(self.vs[tsrc[isrc].v])	-- copy matching 3D position
+			t.uvorigin3D = matrix(mesh.vs[tsrc[isrc].v])	-- copy matching 3D position
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
 
@@ -346,14 +346,14 @@ tsrc.v1*-------*
 		end
 	end
 
-	self.unwrapUVOrigins = table()
-	self.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
+	mesh.unwrapUVOrigins = table()
+	mesh.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
 
-	local notDoneYet = table(self.tris)
+	local notDoneYet = table(mesh.tris)
 	local done = table()
 
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
-		if tsrc then self.unwrapUVEdges:insert{tsrc, t} end
+		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t} end
 		-- calc the basis by rotating it around the edge
 		assert((tsrc == nil) == (e == nil))
 		local gotBadTri = calcUVBasis(t, tsrc, e)
@@ -390,7 +390,7 @@ tsrc.v1*-------*
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
 		if t[1].uv then return end
-		if tsrc then self.unwrapUVEdges:insert{tsrc, t, floodFill=true} end
+		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, floodFill=true} end
 		assert((tsrc == nil) == (e == nil))
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
@@ -430,13 +430,13 @@ tsrc.v1*-------*
 		-- i really want only those with flat edges at the base
 		notDoneYet:sort(function(a,b)
 			return math.min(
-				self.vs[a[1].v][2],
-				self.vs[a[2].v][2],
-				self.vs[a[3].v][2]
+				mesh.vs[a[1].v][2],
+				mesh.vs[a[2].v][2],
+				mesh.vs[a[3].v][2]
 			) < math.min(
-				self.vs[b[1].v][2],
-				self.vs[b[2].v][2],
-				self.vs[b[3].v][2]
+				mesh.vs[b[1].v][2],
+				mesh.vs[b[2].v][2],
+				mesh.vs[b[3].v][2]
 			)
 		end)
 		local todo = table{notDoneYet:remove(1)}
@@ -444,10 +444,10 @@ tsrc.v1*-------*
 		--[[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom
 		notDoneYet:sort(function(a,b)
 			local aEdgeYMin = matrix{3}:lambda(function(i)
-				return .5 * (self.vs[a[i].v][2] + self.vs[a[i%3+1].v][2])
+				return .5 * (mesh.vs[a[i].v][2] + mesh.vs[a[i%3+1].v][2])
 			end):min()
 			local bEdgeYMin = matrix{3}:lambda(function(i)
-				return .5 * (self.vs[b[i].v][2] + self.vs[b[i%3+1].v][2])
+				return .5 * (mesh.vs[b[i].v][2] + mesh.vs[b[i%3+1].v][2])
 			end):min()
 			return aEdgeYMin < bEdgeYMin
 		end)
@@ -462,10 +462,10 @@ tsrc.v1*-------*
 		end
 		-- convert set of keys to list
 		vtxsNotDoneYet = table.keys(vtxsNotDoneYet):sort(function(a,b)
-			return self.vs[a][2] < self.vs[b][2]	-- sort by y axis
+			return mesh.vs[a][2] < mesh.vs[b][2]	-- sort by y axis
 		end)
-		local eps = (self.bbox.max[2] - self.bbox.min[2]) * 1e-5
-		local ymin = self.vs[vtxsNotDoneYet[1]][2]
+		local eps = (mesh.bbox.max[2] - mesh.bbox.min[2]) * 1e-5
+		local ymin = mesh.vs[vtxsNotDoneYet[1]][2]
 		print('y min', ymin)
 		-- now go thru all tris not done yet
 		-- if any have 2/3 vtxs at the min then add them
@@ -474,7 +474,7 @@ tsrc.v1*-------*
 			local t = notDoneYet[i]
 			local mincount = 0
 			for j=1,3 do
-				if self.vs[t[j].v][2] < ymin + eps then mincount = mincount + 1 end
+				if mesh.vs[t[j].v][2] < ymin + eps then mincount = mincount + 1 end
 			end
 			if mincount >= 2 then
 				todo:insert(notDoneYet:remove(i))
@@ -485,7 +485,7 @@ tsrc.v1*-------*
 			for i=#notDoneYet,1,-1 do
 				local t = notDoneYet[i]
 				for j=1,3 do
-					if self.vs[t[j].v][2] < ymin + eps then
+					if mesh.vs[t[j].v][2] < ymin + eps then
 						todo:insert(notDoneYet:remove(i))
 						break
 					end
@@ -502,8 +502,8 @@ print('number to initialize with', #todo)
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
 			for j=1,3 do
-				local a = self.vs[t[j].v]
-				local b = self.vs[t[j%3+1].v]
+				local a = mesh.vs[t[j].v]
+				local b = mesh.vs[t[j%3+1].v]
 				if math.abs((b - a):normalize():dot(bestNormal)) < 1e-5 then
 					-- exclude tops
 					if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
@@ -618,25 +618,25 @@ print('number to initialize with', #todo)
 	end
 
 	-- replace?
-	self.vts = table()
-	for i=1,#self.tris do
-		local t = self.tris[i]
+	mesh.vts = table()
+	for i=1,#mesh.tris do
+		local t = mesh.tris[i]
 		for j=1,3 do
 			local src = t[j].uv or {0,0}
-			self.vts:insert(matrix{src[1], src[2], 0})
-			t[j].vt = #self.vts
+			mesh.vts:insert(matrix{src[1], src[2], 0})
+			t[j].vt = #mesh.vts
 			t[j].uv = nil
 		end
 	end
 end
 
-function drawUVUnwrapEdges()
+function drawUVUnwrapEdges(mesh)
 	local gl = require 'gl'
 	local eps = 1e-3
 	-- [[ show unwrap info
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for _,info in ipairs(self.unwrapUVEdges or {}) do
+	for _,info in ipairs(mesh.unwrapUVEdges or {}) do
 		for i,t in ipairs(info) do
 			if info.floodFill == true then
 				gl.glColor3f(0,0,1)
@@ -654,7 +654,7 @@ function drawUVUnwrapEdges()
 	gl.glPointSize(3)
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_POINTS)
-	for _,v in ipairs(self.unwrapUVOrigins or {}) do
+	for _,v in ipairs(mesh.unwrapUVOrigins or {}) do
 		gl.glVertex3f(v:unpack())
 	end
 	gl.glEnd()
