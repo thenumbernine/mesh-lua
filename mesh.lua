@@ -227,7 +227,6 @@ function Mesh:findEdges()
 			t.edges:insert(e)
 		end
 		for _,t in ipairs(self.tris) do
-			assert(not t.edges)
 			t.edges = table()
 			local a,b,c = table.unpack(t)
 			addEdge(a.v, b.v, t)
@@ -745,6 +744,26 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	gl.glEnd()
 	gl.glLineWidth(1)
 end
+
+function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
+	local gl = require 'gl'
+	gl.glColor3f(1,1,1)
+	gl.glPointSize(3)
+	gl.glBegin(gl.GL_POINTS)
+	for i,v in ipairs(self.vs) do
+		-- avg of explode offsets of all touching tris
+		local offset = matrix{0,0,0}
+		-- get mtl for tri, then do groupExplodeDist too
+		-- matches the shader in view.lua
+		local triExplodeOffset = (v - self.com3) * triExplodeDist
+		offset = offset + triExplodeOffset
+		gl.glVertex3f((v + offset):unpack())
+	end
+	gl.glEnd()
+	gl.glPointSize(1)
+end
+
+
 
 function Mesh:drawStoredNormals()
 	local gl = require 'gl'
@@ -1456,25 +1475,27 @@ print('number to initialize with', #todo)
 	end
 end
 
-function Mesh:findClosestVertexToMouseRay(pos, dir)
-	dir = dir:normalize()
-	local bestdot, besti, bestdist
-	local eps = 1e-1
+function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local bestdot, besti, bestdepth
 	for i,v in ipairs(self.vs) do
 		local delta = v - pos
-		local dist = delta:dot(dir)
-		local dot = dist / delta:norm()
-		if dot > 1 - eps then
-			if not bestdot
-			or (dot >= bestdot and dist < bestdist)
+		local depth = delta:dot(fwd)
+		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
+		local dot = dir:unit():dot(delta:unit())
+		if dot > cosEpsAngle then
+			if not bestdepth
+			or depth < bestdepth
 			then
-				bestdot = dot
-				bestdist = dist
 				besti = i
+				bestdepth = depth
+				bestdot = dot
 			end
 		end
 	end
-	return besti, bestdist
+	return besti, bestdepth
 end
 
 return Mesh

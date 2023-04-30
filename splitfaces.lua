@@ -2,7 +2,7 @@
 local infn, outfn = ...
 assert(infn and outfn, "expected "..arg[0].." input-filename output-filename")
 
-local loader = require 'wavefrontobj.objloader'()
+local loader = require 'mesh.objloader'()
 local obj = loader:load(infn)
 
 local table = require 'ext.table'

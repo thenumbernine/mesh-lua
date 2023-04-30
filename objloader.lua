@@ -7,11 +7,7 @@ local timer = require 'ext.timer'
 local math = require 'ext.math'
 local matrix = require 'matrix'
 local Image = require 'image'
-local Mesh = require 'wavefrontobj.mesh'	-- TODO call this library 'Mesh' or something?
-
-local mergeVertexesOnLoad = true
-local mergeEdgesOnLoad = true
-local unwrapUVsOnLoad = true
+local Mesh = require 'mesh'
 
 local function wordsToVec3(w)
 	return matrix{3}:lambda(function(i)
@@ -119,38 +115,17 @@ function OBJLoader:load(filename)
 	mesh:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
-
--- [[ merge vtxs.  TODO make this an option with specified threshold.
--- do this before detecting edges.
--- do this after bbox bounds (so I can use a %age of the bounds for the vtx dist threshold)
-	if mergeVertexesOnLoad then
-		timer('merging vertexes', function()
-			mesh:mergeMatchingVertexes()
-		end)
-	end
---]]
-	if mergeEdgesOnLoad then
-		timer("finding edges that should've been merged by whoever made the model", function()
-			mesh:calcAllOverlappingEdges()
-		end)
-	end
+	
 	mesh:calcTriAux()
 	
 	-- store all edges of all triangles
-	-- ... why?
+	-- ... why?  who uses this?
+	-- unwrapUVs used to but now it uses the 'allOverlappingEdges' structure
+	-- it's used for visualization
 	mesh:findEdges()
-	
-	-- calculate coms ...
-	-- ... meh?
-	mesh:calcCOMs()
 
--- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
-	if unwrapUVsOnLoad then
-		timer('unwrapping uvs', function()
-			mesh:unwrapUVs()
-		end)
-	end
---]]
+	-- calculate coms ...
+	mesh:calcCOMs()
 
 	return mesh
 end

@@ -1,16 +1,18 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local timer = require 'ext.timer'
 local gl = require 'gl'
 local GLProgram = require 'gl.program'
 local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
-local OBJLoader = require 'wavefrontobj.objloader'
+local OBJLoader = require 'mesh.objloader'
 local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
 local matrix = require 'matrix'
 local matrix_ffi = require 'matrix.ffi'
+local cmdline = require 'ext.cmdline'(...)
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = assert((...))
@@ -23,6 +25,36 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.mesh = OBJLoader():load(fn)
+	
+	-- TODO make this an option with specified threshold.
+	-- calcBBox has to be done first
+	-- after doing this you have to call findEdges and calcCOMs
+	if cmdline.mergevtxs then
+		timer('merging vertexes', function()
+			self.mesh:mergeMatchingVertexes()
+		end)
+		-- refresh edges, com0, and com1
+		self.mesh:findEdges()
+		self.mesh.com0 = self.mesh:calcCOM0()
+		self.mesh.com1 = self.mesh:calcCOM1()
+	end
+
+	if cmdline.alledges then
+		timer("finding edges that should've been merged by whoever made the model", function()
+			-- this is required for uvunwrap
+			self.mesh:calcAllOverlappingEdges()
+		end)
+	end
+
+	if cmdline.uvunwrap then
+-- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+		timer('unwrapping uvs', function()
+			-- TODO move this function out of Mesh
+			self.mesh:unwrapUVs()
+		end)
+	end
+--]]
+
 	print('triangle bounded volume', self.mesh:calcVolume())
 	print('bbox', self.mesh.bbox)
 	print('bbox volume', (self.mesh.bbox.max - self.mesh.bbox.min):volume())
@@ -38,6 +70,7 @@ function App:initGL(...)
 
 	-- gui options
 	self.useWireframe = false
+	self.useDrawVertexes = false
 	self.useDrawEdges = false
 	self.useDrawPolys = true
 	self.drawStoredNormals = false
@@ -239,28 +272,69 @@ function App:update()
 	if self.useDrawEdges then
 		self.mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
 	end
+	if self.useDrawVertexes then
+		self.mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
+	end
+	if self.hoverVtx then
+		local v = self.mesh.vs[self.hoverVtx]
+		if v then
+			gl.glColor3f(1,0,0)
+			gl.glPointSize(3)
+			gl.glBegin(gl.GL_POINTS)
+			gl.glVertex3f(v:unpack())	-- TODO consider exploding?
+			gl.glEnd()
+			gl.glPointSize(1)
+		end
+	end
 
 	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
 	gl.glDisable(gl.GL_BLEND)
 	gl.glDisable(gl.GL_CULL_FACE)
 
+	local pos, dir = self:mouseRay()
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
-	gl.glVertex3f((self.view.pos + self:mouseDir() * 10):unpack())
+	gl.glVertex3f((pos + dir * 10):unpack())
 	gl.glEnd()
 
 	App.super.update(self)
-	
+
+	self.hoverVtx = self:findClosestVtxToMouse()
+	if self.mouse.leftPress then
+		self.dragVtx = self.hoverVtx
+	end
+
 	require 'gl.report''here'
 end
 
-function App:mouseDir()
-	local tanFovY = math.tan(math.rad(self.view.fovY / 2))
-	return self.view.angle:rotate(vec3d(
-		(self.mouse.pos.x*2 - 1) * self.width / self.height * tanFovY,
-		(self.mouse.pos.y*2 - 1) * tanFovY,
-		-1
-	))
+function App:mouseRay()
+	if self.view.ortho then
+		return self.view.pos + self.view.angle:rotate(vec3d(
+			(self.mouse.pos.x*2 - 1) * self.view.orthoSize * self.width / self.height,
+			(self.mouse.pos.y*2 - 1) * self.view.orthoSize,
+			0	-- zero or znear?
+		)),
+		-self.view.angle:zAxis()
+	else
+		local tanFovY = math.tan(math.rad(self.view.fovY / 2))
+		return
+			vec3d(self.view.pos:unpack()),
+			self.view.angle:rotate(vec3d(
+				(self.mouse.pos.x*2 - 1) * self.width / self.height * tanFovY,
+				(self.mouse.pos.y*2 - 1) * tanFovY,
+				-1
+			))
+	end
+end
+
+function App:findClosestVtxToMouse()
+	local cosEpsAngle = math.cos(math.rad(10 / self.height * self.view.fovY))
+	local pos, dir = self:mouseRay()
+	return self.mesh:findClosestVertexToMouseRay(
+		matrix{pos:unpack()},
+		matrix{dir:unpack()},
+		-matrix{self.view.angle:zAxis():unpack()},
+		cosEpsAngle)
 end
 
 function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
@@ -269,8 +343,10 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 		-- orbit behavior
 		App.super.mouseDownEvent(self, dx, dy, shiftDown, guiDown, altDown)
 	elseif self.editMode == 2 then
-		local i, dist = mesh:findClosestVertexToMouseRay(matrix{self.view.pos:unpack()}, matrix{self:mouseDir():unpack()})
+		local i = self.dragVtx
 		if i then
+			local pos, dir = self:mouseRay()
+			local dist = -self.view.angle:zAxis():dot(vec3f(self.mesh.vs[i]:unpack()) - pos)
 			if not shiftDown then
 				local tanFovY = math.tan(math.rad(self.view.fovY / 2))
 				local screenDelta = vec3d(
@@ -278,19 +354,24 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 					(-dy / self.height * 2) * tanFovY,
 					0
 				)
-				print('dist', dist)
-				print('dx dy', dx, dy)
-				print('screenDelta', screenDelta)
 				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
-				print('vtxDelta', vtxDelta)
 				mesh.vs[i] = mesh.vs[i] + matrix{vtxDelta:unpack()}
 			else
 				mesh.vs[i] = mesh.vs[i] + matrix{self.view.angle:rotate(vec3d(0, 0, dy)):unpack()}
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
-				mesh.vtxCPUBuf.v[i-1].pos:set(mesh.vs[i]:unpack())
-				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * (i-1) + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[i-1].pos.s)
+				-- the vtxcpubuf is indexed by tri ...
+				local index = 0
+				for k,t in ipairs(mesh.tris) do
+					for j=1,3 do
+						if t[j].v == i then
+							mesh.vtxCPUBuf.v[index].pos:set(mesh.vs[i]:unpack())
+							mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * index + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[index].pos.s)
+						end
+						index = index + 1
+					end
+				end
 			end
 		end
 	end
@@ -368,6 +449,7 @@ function App:updateGUI()
 	ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
 	ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
 	ig.luatableCheckbox('wireframe', self, 'useWireframe')
+	ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')
 	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
 	ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
 	ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
