@@ -6,13 +6,15 @@ local gl = require 'gl'
 local GLProgram = require 'gl.program'
 local glCallOrRun = require 'gl.call'
 local ig = require 'imgui'
-local OBJLoader = require 'mesh.objloader'
 local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
 local matrix = require 'matrix'
 local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
+local OBJLoader = require 'mesh.objloader'
+local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
+local drawUVUnwrapEdges = require 'mesh.unwrapuvs'.drawUVUnwrapEdges
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = assert((...))
@@ -50,7 +52,7 @@ function App:initGL(...)
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
 			-- TODO move this function out of Mesh
-			self.mesh:unwrapUVs()
+			unwrapUVs(self.mesh)
 		end)
 	end
 --]]
@@ -267,7 +269,7 @@ function App:update()
 		self.shader:useNone()
 	end
 	if self.drawUVUnwrapEdges then
-		self.mesh:drawUVUnwrapEdges()
+		drawUVUnwrapEdges(self.mesh)
 	end
 	if self.useDrawEdges then
 		self.mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
