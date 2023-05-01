@@ -110,6 +110,7 @@ function Mesh:mergeMatchingVertexes()
 end
 
 -- fill the allOverlappingEdges table
+-- TODO instead generate this upon request?
 function Mesh:calcAllOverlappingEdges()
 	--[[
 	these are whatever mesh edges are partially overlapping one another.

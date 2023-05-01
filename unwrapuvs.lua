@@ -589,7 +589,7 @@ print('number to initialize with', #todo)
 			local edgesToCheck = table()
 			for _,t in ipairs(todo) do
 				for _,e in ipairs(t.allOverlappingEdges) do
-					
+
 
 -- TODO this doesn't work anymore because they're fucking up the models 
 					if #e.tris == 2 then
@@ -692,11 +692,35 @@ function drawUVUnwrapEdges(mesh)
 			gl.glColor3f(0,1,0)
 		end
 		gl.glVertex3f((ta.com + eps * ta.normal):unpack())
+		
+		-- [=[
 		if not info.floodFill == true then
 			gl.glColor3f(.5,.5,0)
-			gl.glVertex3f((.5 * (mesh.vs[e[1]] + mesh.vs[e[2]]) + eps * (ta.normal + tb.normal):normalize()):unpack())
-		end	
-		gl.glVertex3f(
+		end
+		local t1 = mesh.tris[e[1]]
+		local t2 = mesh.tris[e[2]]
+		assert((t1 == ta and t2 == tb) or (t1 == tb and t2 == ta))
+		local vi11 = t1[e.triVtxIndexes[1]].v
+		local vi12 = t1[e.triVtxIndexes[1]%3+1].v
+		local vi21 = t2[e.triVtxIndexes[2]].v
+		local vi22 = t2[e.triVtxIndexes[2]%3+1].v
+		local v11 = mesh.vs[vi11]	-- this's intervals is along the opposing tri's edge
+		local v12 = mesh.vs[vi12]
+		local v21 = mesh.vs[vi21]	-- e.intervals[2][1] is always 0
+		local v22 = mesh.vs[vi22]	-- e.intervals[2][2] is always its edge length
+		local l = e.intervals[2][2]
+		-- pick the subset of intervals in common
+		local lmin = math.max(e.intervals[1][1], e.intervals[2][1])
+		local lmax = math.min(e.intervals[1][2], e.intervals[2][2])
+		-- pick its average
+		local s = .5 * (lmin + lmax)
+		-- find its ratio along the fixed interval of the 2nd tri's edge
+		local t = s / l
+		local edgeCom = ((v21 * (1 - t) + v22 * t) + eps * (ta.normal + tb.normal):normalize())
+		gl.glVertex3f(edgeCom:unpack())
+		gl.glVertex3f(edgeCom:unpack())
+		--]=]
+		
 		if not info.floodFill == true then
 			gl.glColor3f(1,0,0)
 		end	
