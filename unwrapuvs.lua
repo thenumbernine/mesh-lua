@@ -521,7 +521,7 @@ print('number to initialize with', #todo)
 			for j=1,3 do
 				local a = mesh.vs[t[j].v]
 				local b = mesh.vs[t[j%3+1].v]
-				if math.abs((b - a):normalize():dot(bestNormal)) < 1e-5 then
+				if math.abs((b - a):normalize():dot{0,1,0}) < 1e-5 then
 					-- [[ exclude tops.  necessary for roofs.  helps walls too.
 					--if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
 					if (.5 * (b + a) - t.com):dot{0,1,0} > 0 then
