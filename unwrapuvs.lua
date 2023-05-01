@@ -158,6 +158,9 @@ do--	else
 			-- [[ just use n cross y+
 			-- BEST FOR CARTESIAN ALIGNED
 			-- best for top
+			local ex = n:cross{0,1,0}:normalize()
+			--]]
+			--[[ use the most-signfiicantly-found axis-aligned normal:
 			local ex = n:cross(bestNormal):normalize()
 			--]]
 			--[[ just use n cross x+ or z+ ...
@@ -367,7 +370,7 @@ tsrc.v1*-------*
 	local done = table()
 
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
-		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t} end
+		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, e} end
 		-- calc the basis by rotating it around the edge
 		assert((tsrc == nil) == (e == nil))
 		local gotBadTri = calcUVBasis(t, tsrc, e)
@@ -404,7 +407,7 @@ tsrc.v1*-------*
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
 		if t[1].uv then return end
-		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, floodFill=true} end
+		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true} end
 		assert((tsrc == nil) == (e == nil))
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
@@ -519,12 +522,14 @@ print('number to initialize with', #todo)
 				local a = mesh.vs[t[j].v]
 				local b = mesh.vs[t[j%3+1].v]
 				if math.abs((b - a):normalize():dot(bestNormal)) < 1e-5 then
-					-- exclude tops
-					if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
+					-- [[ exclude tops.  necessary for roofs.  helps walls too.
+					--if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
+					if (.5 * (b + a) - t.com):dot{0,1,0} > 0 then
 						notDoneYet:remove(i)
 						todo:insert(t)
 						break
 					end
+					--]]
 				end
 			end
 		end
@@ -555,8 +560,9 @@ print('number to initialize with', #todo)
 		todo = todo:reverse()
 		--]]
 
-		-- [[ first pass to make sure all the first picked are considered
+		-- [=[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
+		-- this is required for v=0 to align with roof bottom edges
 --print('starting first pass with #todo', #todo)
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
@@ -574,7 +580,7 @@ print('number to initialize with', #todo)
 			--]]
 		end
 --print('after first pass, #todo', #todo, '#done', #done)
-		--]]
+		--]=]
 
 		while #todo > 0 do
 			local t, tsrc, e
@@ -583,7 +589,13 @@ print('number to initialize with', #todo)
 			local edgesToCheck = table()
 			for _,t in ipairs(todo) do
 				for _,e in ipairs(t.allOverlappingEdges) do
+					
+
+-- TODO this doesn't work anymore because they're fucking up the models 
 					if #e.tris == 2 then
+						
+
+
 						local t2 = getEdgeOppositeTri(e, t)
 						if done:find(t2) then
 							edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
@@ -673,18 +685,22 @@ function drawUVUnwrapEdges(mesh)
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
 	for _,info in ipairs(mesh.unwrapUVEdges or {}) do
-		for i,t in ipairs(info) do
-			if info.floodFill == true then
-				gl.glColor3f(0,0,1)
-			else
-				if i==1 then
-					gl.glColor3f(0,1,0)
-				else
-					gl.glColor3f(1,0,0)
-				end
-			end
-			gl.glVertex3f((t.com + eps * t.normal):unpack())
+		local ta, tb, e = table.unpack(info)
+		if info.floodFill then
+			gl.glColor3f(0,0,1)
+		else
+			gl.glColor3f(0,1,0)
 		end
+		gl.glVertex3f((ta.com + eps * ta.normal):unpack())
+		if not info.floodFill == true then
+			gl.glColor3f(.5,.5,0)
+			gl.glVertex3f((.5 * (mesh.vs[e[1]] + mesh.vs[e[2]]) + eps * (ta.normal + tb.normal):normalize()):unpack())
+		end	
+		gl.glVertex3f(
+		if not info.floodFill == true then
+			gl.glColor3f(1,0,0)
+		end	
+		gl.glVertex3f((tb.com + eps * tb.normal):unpack())
 	end
 	gl.glEnd()
 	gl.glPointSize(3)
