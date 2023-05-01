@@ -413,7 +413,7 @@ tsrc.v1*-------*
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
 			for _,e in ipairs(t.allOverlappingEdges) do
-				if #e.tris == 2 then
+				do--if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
 					if not alreadyFilled:find(t2) then
 						if t.normal:dot(t2.normal) > 1 - 1e-3 then
@@ -589,13 +589,7 @@ print('number to initialize with', #todo)
 			local edgesToCheck = table()
 			for _,t in ipairs(todo) do
 				for _,e in ipairs(t.allOverlappingEdges) do
-
-
--- TODO this doesn't work anymore because they're fucking up the models 
-					if #e.tris == 2 then
-						
-
-
+					do--if #e.tris == 2 then
 						local t2 = getEdgeOppositeTri(e, t)
 						if done:find(t2) then
 							edgesToCheck:insert{tri=t, edge=e, prevtri=t2}
