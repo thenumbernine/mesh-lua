@@ -9,6 +9,7 @@ local ig = require 'imgui'
 local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
+local quatd = require 'vec-ffi.quatd'
 local matrix = require 'matrix'
 local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
@@ -207,6 +208,14 @@ function App:update()
 	gl.glDepthFunc(gl.GL_LEQUAL)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glBegin(gl.GL_LINES)
+	gl.glColor3f(1,0,0) gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
+	gl.glColor3f(0,1,0) gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
+	gl.glColor3f(0,0,1) gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
+	gl.glEnd()
+	gl.glDepthMask(gl.GL_TRUE)
+
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
 	end
@@ -386,22 +395,7 @@ function App:setCenter(center)
 end
 
 function App:updateGUI()
-	ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
-	ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
-
-	ig.igColorPicker3('background color', self.bgcolor.s, 0)
-	if ig.igButton'set to vtx center' then
-		self:setCenter(self.mesh.com0)
-	end
-	if ig.igButton'set to line center' then
-		self:setCenter(self.mesh.com1)
-	end
-	if ig.igButton'set to face center' then
-		self:setCenter(self.mesh.com2)
-	end
-	if ig.igButton'set to volume center' then
-		self:setCenter(self.mesh.com3)
-	end
+	
 	ig.luatableCheckbox('ortho view', self.view, 'ortho')
 	if ig.igButton'reset view z-' then
 		self.view.angle:set(0,0,0,1)
@@ -420,14 +414,38 @@ function App:updateGUI()
 		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view x-' then
-		self.view.angle:fromAngleAxis(0,1,0,90)
+		self.view.angle:set(
+			--quatd():fromAngleAxis(1,0,0,90) *	-- combine for putting z-up
+			quatd():fromAngleAxis(0,1,0,90)
+		)
 		self:setCenter(self.mesh.com3)
 	end
 	if ig.igButton'reset view x+' then
-		self.view.angle:fromAngleAxis(0,1,0,-90)
+		self.view.angle:set(
+			--quatd():fromAngleAxis(1,0,0,90) *	-- combine for putting z-up
+			quatd():fromAngleAxis(0,1,0,-90)
+		)
 		self:setCenter(self.mesh.com3)
 	end
 
+
+
+	ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
+	ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
+
+	ig.igColorPicker3('background color', self.bgcolor.s, 0)
+	if ig.igButton'set to vtx center' then
+		self:setCenter(self.mesh.com0)
+	end
+	if ig.igButton'set to line center' then
+		self:setCenter(self.mesh.com1)
+	end
+	if ig.igButton'set to face center' then
+		self:setCenter(self.mesh.com2)
+	end
+	if ig.igButton'set to volume center' then
+		self:setCenter(self.mesh.com3)
+	end
 
 	ig.luatableCheckbox('use cull face', self, 'useCullFace')
 	ig.luatableCheckbox('use depth test', self, 'useDepthTest')

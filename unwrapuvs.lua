@@ -1,5 +1,7 @@
--- this belongs in its own place, outside this project
-
+local table = require 'ext.table'
+local math = require 'ext.math'
+local quat = require 'vec.quat'
+local matrix = require 'matrix'
 
 local function unwrapUVs(mesh)
 -- TODO put this all in its own function or its own app
@@ -153,10 +155,9 @@ do--	else
 			end)[1]:normalize()
 			print('ex', ex)
 			--]]
-			--[[ just use n cross y+
+			-- [[ just use n cross y+
 			-- BEST FOR CARTESIAN ALIGNED
 			-- best for top
-			-- crashes for sides
 			local ex = n:cross(bestNormal):normalize()
 			--]]
 			--[[ just use n cross x+ or z+ ...
@@ -188,7 +189,7 @@ do--	else
 				end
 			end
 			--]]
-			-- [[ most orthogonal to bestNormal take 2
+			--[[ most orthogonal to bestNormal take 2
 			local d3 = v[1] - v[3]
 			local ds = table{d1:normalize(), d2:normalize(), d3:normalize()}
 			local dots = ds:mapi(function(d) return math.abs(d:dot(bestNormal)) end)
@@ -196,14 +197,19 @@ do--	else
 			local ex = ds[i]
 			ex = n:cross(ex):normalize()
 			--]]
+			--[[ always use the fallback
+			local ex = matrix{0,0,0}
+			--]]
 
 			-- fallback, if n is nan or zero
+			-- n = x+ x- looks good, v us left/right
+			-- n = z+ z- has v sideways
 			local exNormSq = ex:normSq()
 			if exNormSq < 1e-3						-- can't use zero
 			or not math.isfinite(exNormSq)			-- can't use nan
 			or math.abs(ex:dot(n)) > 1 - 1e-3	-- can't use ex perp to n
 			then
-print('failed to find u vector based on bestNormal, picked ex='..ex..' from bestNormal '..bestNormal)
+print('failed to find u vector based on bestNormal, picked ex='..ex)
 				-- pick any basis perpendicular to 'n'
 				local ns = matrix{3}:lambda(function(i)
 					local a = matrix{0,0,0}
@@ -216,15 +222,23 @@ print('failed to find u vector based on bestNormal, picked ex='..ex..' from best
 --print('biggest cross '..i)
 				ex = ns[i]:normalize()
 print('picking fallback ', ex)
+--print('ex = '..ex)
+				-- tangent space.  store as row vectors i.e. transpose, hence the T
+				t.uvbasisT = matrix{
+					n:cross(ex):normalize(),
+					-ex,
+					n,
+				}
+			else
+--print('ex = '..ex)
+				-- tangent space.  store as row vectors i.e. transpose, hence the T
+				t.uvbasisT = matrix{
+					ex,
+					n:cross(ex):normalize(),
+					n,
+				}
 			end
 
---print('ex = '..ex)
-			-- tangent space.  store as row vectors i.e. transpose, hence the T
-			t.uvbasisT = matrix{
-				ex,
-				n:cross(ex):normalize(),
-				n,
-			}
 --print('ey = '..t.uvbasisT[2])
 		else
 			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
@@ -521,6 +535,25 @@ print('number to initialize with', #todo)
 			todo:insert(notDoneYet:remove(1))
 		end
 		--]=]
+		-- [[ sort 'todo'
+		todo:sort(function(a,b)
+			a = mesh.vs[a[3].v]
+			b = mesh.vs[b[3].v]
+			-- sort by y
+			if a[2] < b[2] then return true end
+			if a[2] > b[2] then return false end
+			-- [[
+			-- sort by x
+			if a[1] < b[1] then return true end
+			if a[1] > b[1] then return false end
+			-- sort by z
+			return a[3] < b[3] 
+			--]]
+			-- sort by area
+			--return a.area > b.area
+		end)
+		todo = todo:reverse()
+		--]]
 
 		-- [[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
@@ -529,13 +562,16 @@ print('number to initialize with', #todo)
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
 			-- while flood-filling, continue adding neighbors to 'todo'
-			local filled = table()
+			local filled = table()		-- allow overwriting of other seeded locations
+			--local filled = table(todo)	-- don't
 			floodFillMatchingNormalNeighbors(t, nil, nil, filled)
+			--[[
 			for _,t in ipairs(filled) do
 				if not t[1].uv then
 					todo:insertUnique(t)
 				end
 			end
+			--]]
 		end
 --print('after first pass, #todo', #todo, '#done', #done)
 		--]]
