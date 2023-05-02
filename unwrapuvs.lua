@@ -75,7 +75,7 @@ do--	else
 --]]
 
 	local function getEdgeOppositeTri(e, t)
-		assert(#e.tris == 2)
+		--assert(#e.tris == 2)
 		local t1,t2 = table.unpack(e.tris)
 		if t2 == t then
 			t1, t2 = t2, t1
@@ -83,6 +83,7 @@ do--	else
 		assert(t1 == t)
 		return t2, t1
 	end
+	-- returns true on success
 	local function calcUVBasis(t, tsrc, esrc)
 		assert(not t[1].uv and not t[2].uv and not t[3].uv)
 		-- t[1] is our origin
@@ -100,7 +101,7 @@ do--	else
 			t.normal = d1:normalize()
 			-- can't fold this because i'ts not a triangle ... it's a line
 			-- should I even populate the uv fields?  nah, just toss it in the caller
-			return true
+			return
 		end
 		n = n / nlen
 --print('n = '..n)
@@ -120,7 +121,7 @@ do--	else
 					return v[i][2]
 				end):inf())
 			])
-print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)			
+--print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)
 			mesh.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
 			--]]
 
@@ -330,15 +331,15 @@ tsrc.v1*-------*
 				local _, i = table.inf(dn:map(math.abs))
 				if i == 1 then
 					local degrees = math.deg(math.atan2(n[3], n[2]) - math.atan2(tsrc.normal[3], tsrc.normal[2]))
---print(t.normal, tsrc.normal, dn, 'rot on x-axis by', degrees)
+print(t.normal, tsrc.normal, dn, 'rot on x-axis by', degrees)
 					q = quat():fromAngleAxis(1, 0, 0, degrees)
 				elseif i == 2 then
 					local degrees = math.deg(math.atan2(n[1], n[3]) - math.atan2(tsrc.normal[1], tsrc.normal[3]))
---print(t.normal, tsrc.normal, dn, 'rot on y-axis by', degrees)
+print(t.normal, tsrc.normal, dn, 'rot on y-axis by', degrees)
 					q = quat():fromAngleAxis(0, 1, 0, degrees)
 				elseif i == 3 then
 					local degrees = math.deg(math.atan2(n[2], n[1]) - math.atan2(tsrc.normal[2], tsrc.normal[1]))
---print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
+print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 					q = quat():fromAngleAxis(0, 0, 1, degrees)
 				end
 			end
@@ -365,31 +366,32 @@ tsrc.v1*-------*
 --print('m\n'..m)
 --print('m * d = '..(m * d))
 			t[i].uv = m * d + t.uvorigin2D
-print('uv = '..t[i].uv)
+--print('uv = '..t[i].uv)
 			if not math.isfinite(t[i].uv:normSq()) then
 				print('tri has nans in its basis')
 			end
 		end
+		return true
 	end
 
 	-- debug information
 	-- keep track of how it's made for visualization's sake ...
 	mesh.unwrapUVOrigins = table()
-	mesh.unwrapUVEdges = table()	
+	mesh.unwrapUVEdges = table()
 
 	local notDoneYet = table(mesh.tris)
 	local done = table()
 
+	-- roofs
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then
-print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+--print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e}
 		end
 		-- calc the basis by rotating it around the edge
 		assert((tsrc == nil) == (e == nil))
-		local gotBadTri = calcUVBasis(t, tsrc, e)
-		-- TODO roof actually looks good with always retarting ... but not best
-		if not gotBadTri then
+		-- roof actually looks good with always retarting ... but not best
+		if calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
 			-- insert neighbors into a to-be-calcd list
@@ -418,6 +420,9 @@ print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'ed
 		end
 	end
 
+	local cosThetaThreshold = math.cos(math.rad(5))
+
+	-- walls
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
 		if t[1].uv then return end
@@ -426,14 +431,15 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 			mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true}
 		end
 		assert((tsrc == nil) == (e == nil))
-		if not calcUVBasis(t, tsrc, e) then
+		if calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t[1].uv and t[2].uv and t[3].uv)
 			for _,e in ipairs(t.allOverlappingEdges) do
 				do--if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
 					if not alreadyFilled:find(t2) then
-						if t.normal:dot(t2.normal) > 1 - 1e-3 then
+--print('flood fill testing', math.deg(math.acos(math.clamp(t.normal:dot(t2.normal), -1, 1))))
+						if t.normal:dot(t2.normal) > cosThetaThreshold then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						else
 							alreadyFilled:insertUnique(t2)
@@ -538,23 +544,43 @@ print('number to initialize with', #todo)
 			for j=1,3 do
 				local a = mesh.vs[t[j].v]
 				local b = mesh.vs[t[j%3+1].v]
-				if math.abs((b - a):normalize():dot{0,1,0}) < 1e-5 then
+				local edgeDir = b - a
+				-- [[ if the edges is in the xz plane ...
+				-- needed for basic walls to look good
+				if math.abs(edgeDir:normalize():dot{0,1,0}) < 1e-5 then
+				--]] do
+					local comToEdge = .5 * (b + a) - t.com
+--print('comToEdge', comToEdge)
 					-- [[ exclude tops.  necessary for roofs.  helps walls too.
-					--if (.5 * (b + a) - t.com):dot(bestNormal) > 0 then
-					if (.5 * (b + a) - t.com):dot{0,1,0} > 0 then
-						notDoneYet:remove(i)
-						todo:insert(t)
-						break
+					--if comToEdge:dot(bestNormal) > 0 then
+					if comToEdge:dot{0,1,0} > 0 then
+					--]] do
+						--[[ exclude edges pointed straight downward
+						if math.abs(t.normal:cross(edgeDir):dot{0,1,0}) > 1 - 1e-3 then
+						--]] do
+							--[[ exclude normals that aren't 90' in the xz plane ...
+							-- necessary for rounded walls
+							if math.abs(t.normal[1]) > 1 - 1e-3
+							or math.abs(t.normal[3]) > 1 - 1e-3
+							then
+							--]] do
+								notDoneYet:remove(i)
+								todo:insert(t)
+								break
+							end
+						end
 					end
-					--]]
 				end
 			end
 		end
 		-- if finding a y-perpendicular downward-pointing edge was too much to ask,
 		-- ... then pick one at random?
+		-- this is used when seeding the roof
 		if #todo == 0 then
---print("couldn't find any perp-to-bestNormal edges to initialize with...")
+print("couldn't find any perp-to-bestNormal edges to initialize with... picking one at random")
 			todo:insert(notDoneYet:remove(1))
+		else
+print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		end
 		--]=]
 		-- [[ sort 'todo'
@@ -572,15 +598,23 @@ print('number to initialize with', #todo)
 			local minby = math.min(b1[2], b2[2], b3[2])
 			local minbz = math.min(b1[3], b2[3], b3[3])
 			-- sort by lowest y first
+			-- this is what makes v-texcoord align with the bottom of the roof
+			-- but for xz-plane rounded walls we don't want ymin to be a priority ... instead we want the xz to be a priority ...
+			-- so only sort like this if the normal is pointing in a cartesian direction?
+			-- nah that seems too complicated -- instead try to just filter out these rounded walls from the 'todo' seed in the first place.
 			if minay < minby then return true end
 			if minay > minby then return false end
 			-- [[
+			-- sort by x and z next
+			-- this is what makes the u-texcoord align with the furthest sides of the  90' aligned walls
 			-- sort by x
 			if minax < minbx then return true end
 			if minax > minbx then return false end
 			-- sort by z
-			return minaz < minbz
+			if minaz < minbz then return true end
+			if minaz > minbz then return false end
 			--]]
+			return minaz < minbz
 			-- sort by area
 			--return a.area > b.area
 		end)
@@ -599,6 +633,8 @@ print('number to initialize with', #todo)
 			--local filled = table(todo)	-- don't
 			floodFillMatchingNormalNeighbors(t, nil, nil, filled)
 			--[[
+			-- helpes for curved walls
+			-- MUST NOT be used for the roof with multiple trim levels
 			for _,t in ipairs(filled) do
 				if not t[1].uv then
 					todo:insertUnique(t)
@@ -697,6 +733,8 @@ print('number to initialize with', #todo)
 			t[j].uv = nil
 		end
 	end
+
+	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))
 end
 
 function drawUVUnwrapEdges(mesh)
@@ -713,7 +751,7 @@ function drawUVUnwrapEdges(mesh)
 			gl.glColor3f(0,1,0)
 		end
 		gl.glVertex3f((ta.com + eps * ta.normal):unpack())
-		
+
 		-- [=[
 		if not info.floodFill == true then
 			gl.glColor3f(.5,.5,0)
@@ -741,10 +779,10 @@ function drawUVUnwrapEdges(mesh)
 		gl.glVertex3f(edgeCom:unpack())
 		gl.glVertex3f(edgeCom:unpack())
 		--]=]
-		
+
 		if not info.floodFill == true then
 			gl.glColor3f(1,0,0)
-		end	
+		end
 		gl.glVertex3f((tb.com + eps * tb.normal):unpack())
 	end
 	gl.glEnd()

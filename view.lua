@@ -28,7 +28,7 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.mesh = OBJLoader():load(fn)
-	-- TODO how to request this?  dirty bits? 
+	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
 
 	-- TODO make this an option with specified threshold.
@@ -397,7 +397,7 @@ function App:setCenter(center)
 end
 
 function App:updateGUI()
-	
+
 	ig.luatableCheckbox('ortho view', self.view, 'ortho')
 	if ig.igButton'reset view z-' then
 		self.view.angle:set(0,0,0,1)

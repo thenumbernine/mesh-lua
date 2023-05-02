@@ -57,7 +57,7 @@ function Triangle:calcAux(mesh)
 	self.com = (a + b + c) / 3
 	-- TODO what if the tri is degenerate to a line?
 	self.normal = (b - a):cross(c - b)
-	if self.normal:normSq() < 1e-3 then
+	if self.normal:norm() < 1e-7 then
 		self.normal = matrix{0,0,0}
 	else
 		self.normal = self.normal:normalize()
@@ -85,9 +85,9 @@ function Mesh:prepare()
 	self:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
-	
+
 	self:calcTriAux()
-	
+
 	-- store all edges of all triangles
 	-- ... why?  who uses this?
 	-- unwrapUVs used to but now it uses the 'allOverlappingEdges' structure
@@ -158,16 +158,16 @@ function Mesh:calcAllOverlappingEdges()
 		t1.allOverlappingEdges:insert(e)
 		t2.allOverlappingEdges:insert(e)
 	end
-for _,t in ipairs(self.tris) do
-	print('n = '..t.normal)
-end
+--for _,t in ipairs(self.tris) do
+--	print('n = '..t.normal)
+--end
 	for i1=#self.tris,2,-1 do
 		local t1 = self.tris[i1]
 		for j1=1,3 do
 			-- t1's j1'th edge
 			local v11 = self.vs[t1[j1].v]
 			local v12 = self.vs[t1[j1%3+1].v]
-print('tri', i1, 'pos', j1, '=', v11)			
+--print('tri', i1, 'pos', j1, '=', v11)
 			local n1 = v12 - v11
 			local n1NormSq = n1:normSq()
 			if n1NormSq  > 1e-3 then
@@ -210,6 +210,7 @@ print('tri', i1, 'pos', j1, '=', v11)
 			end
 		end
 	end
+--[[
 	for _,e in ipairs(self.allOverlappingEdges) do
 		print(
 			'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
@@ -219,6 +220,7 @@ print('tri', i1, 'pos', j1, '=', v11)
 			'and', table.concat(e.intervals[2], ', '))
 	end
 	print('found', #self.allOverlappingEdges, 'overlaps')
+--]]
 end
 
 function Mesh:calcTriAux()

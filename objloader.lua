@@ -279,7 +279,7 @@ function OBJLoader:save(filename, mesh)
 				local vs = table{vi.v, vi.vt, vi.vn}
 				for i=1,vs:maxn() do vs[i] = vs[i] or '' end
 				return vs:concat'/'
-			end):concat' ', '\n')	
+			end):concat' ', '\n')
 			vis = nil
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
