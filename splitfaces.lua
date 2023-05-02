@@ -1,4 +1,5 @@
 #!/usr/bin/env luajit
+-- TODO i think i made this obsolete
 local infn, outfn = ...
 assert(infn and outfn, "expected "..arg[0].." input-filename output-filename")
 

@@ -28,7 +28,9 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.mesh = OBJLoader():load(fn)
-	
+	-- TODO how to request this?  dirty bits? 
+	self.mesh:prepare()
+
 	-- TODO make this an option with specified threshold.
 	-- calcBBox has to be done first
 	-- after doing this you have to call findEdges and calcCOMs

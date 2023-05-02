@@ -79,6 +79,25 @@ function Mesh:init(filename)
 	self.tris = table() -- triangulation of all faces
 end
 
+function Mesh:prepare()
+-- [[ calculate bbox.
+-- do this before merging vtxs.
+	self:calcBBox()
+--]]
+-- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
+	
+	self:calcTriAux()
+	
+	-- store all edges of all triangles
+	-- ... why?  who uses this?
+	-- unwrapUVs used to but now it uses the 'allOverlappingEdges' structure
+	-- it's used for visualization
+	self:findEdges()
+
+	-- calculate coms ...
+	self:calcCOMs()
+end
+
 function Mesh:calcBBox()
 	local box3 = require 'vec.box3'
 	self.bbox = box3(-math.huge)
@@ -118,38 +137,37 @@ function Mesh:calcAllOverlappingEdges()
 	because of which, there is no guarantee with this table that each tri has 3 edges, and each edge has only 2 tris.
 	instead it's a shitfest shitstorm.
 	--]]
-	self.allOverlappingEdges = {}
+	self.allOverlappingEdges = table()
 	for _,t in ipairs(self.tris) do
 		t.allOverlappingEdges = table()
 	end
-	local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+	local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, rayPos, rayDir)
 		-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
 		assert(i2 < i1)
-		self.allOverlappingEdges[i2] = self.allOverlappingEdges[i2] or {}
-		self.allOverlappingEdges[i2][i1] = self.allOverlappingEdges[i2][i1] or {
-			[1] = i2,
-			[2] = i1,
-			triVtxIndexes = {j2, j1},
-			intervals = {{s21,s22}, {s11,s12}},
-			tris = table(),
-			dist = dist,
-			planeOrigin = planeOrigin,
-			planeNormal = planeNormal
-		}
-		local e = self.allOverlappingEdges[i2][i1]
 		local t1 = self.tris[i1]
 		local t2 = self.tris[i2]
-		e.tris:insertUnique(t2)
-		e.tris:insertUnique(t1)
-		t1.allOverlappingEdges:insertUnique(e)
-		t2.allOverlappingEdges:insertUnique(e)
+		local e = {
+			tris = {t2, t1},
+			triVtxIndexes = {j2, j1},
+			intervals = {{s21,s22}, {s11,s12}},
+			dist = dist,
+			rayPos = rayPos,
+			rayDir = rayDir
+		}
+		self.allOverlappingEdges:insert(e)
+		t1.allOverlappingEdges:insert(e)
+		t2.allOverlappingEdges:insert(e)
 	end
+for _,t in ipairs(self.tris) do
+	print('n = '..t.normal)
+end
 	for i1=#self.tris,2,-1 do
 		local t1 = self.tris[i1]
 		for j1=1,3 do
 			-- t1's j1'th edge
 			local v11 = self.vs[t1[j1].v]
 			local v12 = self.vs[t1[j1%3+1].v]
+print('tri', i1, 'pos', j1, '=', v11)			
 			local n1 = v12 - v11
 			local n1NormSq = n1:normSq()
 			if n1NormSq  > 1e-3 then
@@ -164,24 +182,25 @@ function Mesh:calcAllOverlappingEdges()
 						if n2NormSq  > 1e-3 then
 							n2 = n2 / math.sqrt(n2NormSq)
 							if math.abs(n1:dot(n2)) > 1 - 1e-3 then
+--print('allOverlappingEdges normals align:', i1-1, j1-1, i2-1, j2-1)
 								-- normals align, calculate distance
-								local planeOrigin = v11	-- pick any point on line v1: v11 or v12
-								local planeNormal = n1
-								local dv = v21 - planeOrigin	-- ray from the v1 line to any line on v2
-								dv = dv - planeNormal * dv:dot(planeNormal)		-- project onto the plane normal
+								local rayPos = v11	-- pick any point on line v1: v11 or v12
+								local rayDir = n1
+								local dv = v21 - rayPos	-- ray from the v1 line to any line on v2
+								dv = dv - rayDir * dv:dot(rayDir)		-- project onto the plane normal
 								local dist = dv:norm()
 								if dist < 1e-3 then
 
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-									local s11 = 0	--(v11 - planeOrigin):dot(planeNormal) -- assuming v11 is the plane origin
-									local s12 = (v12 - planeOrigin):dot(planeNormal)
+									local s11 = 0	--(v11 - rayPos):dot(rayDir) -- assuming v11 is the plane origin
+									local s12 = (v12 - rayPos):dot(rayDir)
 									-- based on n1 being the plane normal, s11 and s12 are already sorted
-									local s21 = (v21 - planeOrigin):dot(planeNormal)
-									local s22 = (v22 - planeOrigin):dot(planeNormal)
+									local s21 = (v21 - rayPos):dot(rayDir)
+									local s22 = (v22 - rayPos):dot(rayDir)
 									-- since these aren't, they have to be sorted
 									if s21 > s22 then s21, s22 = s22, s21 end
 									if s11 < s22 and s12 > s21 then
-										addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, planeOrigin, planeNormal)
+										addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, rayPos, rayDir)
 									end
 								end
 							end
@@ -191,16 +210,15 @@ function Mesh:calcAllOverlappingEdges()
 			end
 		end
 	end
-	for a,o in pairs(self.allOverlappingEdges) do
-		for b,e in pairs(o) do
-			print(
-				'edges', e[1], e.triVtxIndexes[1],
-				'and', e[2], e.triVtxIndexes[2],
-				'align with dist', e.dist,
-				'with projected intervals', table.concat(e.intervals[1], ', '),
-				'and', table.concat(e.intervals[2], ', '))
-		end
+	for _,e in ipairs(self.allOverlappingEdges) do
+		print(
+			'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
+			'and', self.tris:find(e.tris[2])-1, e.triVtxIndexes[2]-1,
+			'align with dist', e.dist,
+			'with projected intervals', table.concat(e.intervals[1], ', '),
+			'and', table.concat(e.intervals[2], ', '))
 	end
+	print('found', #self.allOverlappingEdges, 'overlaps')
 end
 
 function Mesh:calcTriAux()
@@ -334,16 +352,94 @@ function Mesh:removeVertex(vi)
 	end
 end
 
+-- same as removeVertex
+-- removes vts[]
+-- errors if a tri is still using it
+function Mesh:removeTexCoord(vti)
+	assert(vti >= 1 and vti <= #self.vts)
+	self.vts:remove(vti)
+	for j=#self.tris,1,-1 do
+		local t = self.tris[j]
+		for i=1,3 do
+			if t[i].vt == vti then
+				error("found a to-be-removed texcoord index in a tri")
+			elseif t[i].vt > vti then
+				t[i].vt = t[i].vt - 1
+			end
+		end
+	end
+end
+
+-- same as removeTexCoord
+function Mesh:removeNormal(vni)
+	assert(vni >= 1 and vni <= #self.vns)
+	self.vns:remove(vni)
+	for j=#self.tris,1,-1 do
+		local t = self.tris[j]
+		for i=1,3 do
+			if t[i].vn == vni then
+				error("found a to-be-removed normal index in a tri")
+			elseif t[i].vn > vni then
+				t[i].vn = t[i].vn - 1
+			end
+		end
+	end
+end
+
+-- TODO just use a single dense tri array
+-- don't use indexes at all
+
 --[[
 1) replace the 'from' with the 'to'
 2) remove any degenerate triangles/faces
 3) remove the to vertex from the list
+
+-- TODO same for .vts and .vns ?
 --]]
 function Mesh:mergeVertex(from,to)
 	assert(from > to)
 	self:replaceVertex(from,to)
 	self:removeDegenerateTriangles()
 	self:removeVertex(from)
+end
+
+function Mesh:removeUnusedVtxs()
+	local usedVs = {}
+	local usedVts = {}
+	local usedVns = {}
+	timer('finding used vertexes', function()
+		for _,t in ipairs(self.tris) do
+			for j=1,3 do
+				usedVs[t[j].v] = true
+				if t[j].vt then usedVts[t[j].vt] = true end
+				if t[j].vn then usedVns[t[j].vn] = true end
+			end
+		end
+	end)
+
+	timer('removing unused vtxs', function()
+		print('before removing, #vs', #self.vs)
+		for i=#self.vs,1,-1 do
+			if not usedVs[i] then
+				self:removeVertex(i)
+			end
+		end
+		print('after removing, #vs', #self.vs)
+		print('before removing, #vts', #self.vts)
+		for i=#self.vts,1,-1 do
+			if not usedVts[i] then
+				self:removeTexCoord(i)
+			end
+		end
+		print('after removing, #vts', #self.vts)
+		print('before removing, #vns', #self.vns)
+		for i=#self.vns,1,-1 do
+			if not usedVns[i] then
+				self:removeNormal(i)
+			end
+		end
+		print('after removing, #vns', #self.vns)
+	end)
 end
 
 -- common interface?  for dif 3d format types?

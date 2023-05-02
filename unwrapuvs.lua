@@ -1,10 +1,15 @@
 local table = require 'ext.table'
 local math = require 'ext.math'
+local range = require 'ext.range'
 local quat = require 'vec.quat'
 local matrix = require 'matrix'
 
 local function unwrapUVs(mesh)
--- TODO put this all in its own function or its own app
+	if not mesh.allOverlappingEdges then
+		mesh:calcAllOverlappingEdges()
+	end
+
+--[[ TODO put this all in its own function or its own app
 	local numSharpEdges = 0
 	for a,other in pairs(mesh.allOverlappingEdges) do
 		for b,edge in pairs(other) do
@@ -34,7 +39,6 @@ local function unwrapUVs(mesh)
 	print('avg normal = '..avgNormal)
 
 	-- the same idea as the l=1 spherical harmonics
-	local range = require 'ext.range'
 	local areas = matrix{6}:zeros()
 	for _,t in ipairs(mesh.tris) do
 		local _,i = table.sup(t.normal:map(math.abs))
@@ -45,6 +49,7 @@ local function unwrapUVs(mesh)
 	end
 	print('per-side x plus/minus normal distribution = '..require 'ext.tolua'(areas))
 
+	-- turned out to not be so helpful
 	local bestNormal
 -- TODO snap-to-axis for within epsilon
 --	if not avgNormalIsZero then
@@ -67,6 +72,8 @@ do--	else
 			if t[i].v == v then return i end
 		end
 	end
+--]]
+
 	local function getEdgeOppositeTri(e, t)
 		assert(#e.tris == 2)
 		local t1,t2 = table.unpack(e.tris)
@@ -113,6 +120,7 @@ do--	else
 					return v[i][2]
 				end):inf())
 			])
+print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)			
 			mesh.unwrapUVOrigins:insert(t.uvorigin3D * .7 + t.com * .3)
 			--]]
 
@@ -279,13 +287,14 @@ tsrc.v1*-------*
 			-- tables are identical
 
 			local isrc
-			if tsrc[i11].uv then
+			assert(tsrc[i11].uv)
+			--if tsrc[i11].uv then
 				isrc = i11
-			elseif tsrc[i12].uv then
-				isrc = i12
-			else
-				error("how can we fold a line when the src tri doesn't have uv coords for it?")
-			end
+			--elseif tsrc[i12].uv then
+			--	isrc = i12
+			--else
+			--	error("how can we fold a line when the src tri doesn't have uv coords for it?")
+			--end
 			t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
 			t.uvorigin3D = matrix(mesh.vs[tsrc[isrc].v])	-- copy matching 3D position
 --print('uv2D = '..t.uvorigin2D)
@@ -356,21 +365,26 @@ tsrc.v1*-------*
 --print('m\n'..m)
 --print('m * d = '..(m * d))
 			t[i].uv = m * d + t.uvorigin2D
---print('uv = '..t[i].uv)
+print('uv = '..t[i].uv)
 			if not math.isfinite(t[i].uv:normSq()) then
 				print('tri has nans in its basis')
 			end
 		end
 	end
 
+	-- debug information
+	-- keep track of how it's made for visualization's sake ...
 	mesh.unwrapUVOrigins = table()
-	mesh.unwrapUVEdges = table()	-- keep track of how it's made for visualization's sake ...
+	mesh.unwrapUVEdges = table()	
 
 	local notDoneYet = table(mesh.tris)
 	local done = table()
 
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
-		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, e} end
+		if tsrc then
+print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+			mesh.unwrapUVEdges:insert{tsrc, t, e}
+		end
 		-- calc the basis by rotating it around the edge
 		assert((tsrc == nil) == (e == nil))
 		local gotBadTri = calcUVBasis(t, tsrc, e)
@@ -407,7 +421,10 @@ tsrc.v1*-------*
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
 		if t[1].uv then return end
-		if tsrc then mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true} end
+		if tsrc then
+print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+			mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true}
+		end
 		assert((tsrc == nil) == (e == nil))
 		if not calcUVBasis(t, tsrc, e) then
 			done:insert(t)
@@ -419,7 +436,7 @@ tsrc.v1*-------*
 						if t.normal:dot(t2.normal) > 1 - 1e-3 then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						else
-							alreadyFilled:insertUnique(t)
+							alreadyFilled:insertUnique(t2)
 						end
 					end
 				end
@@ -541,18 +558,28 @@ print('number to initialize with', #todo)
 		end
 		--]=]
 		-- [[ sort 'todo'
-		todo:sort(function(a,b)
-			a = mesh.vs[a[3].v]
-			b = mesh.vs[b[3].v]
-			-- sort by y
-			if a[2] < b[2] then return true end
-			if a[2] > b[2] then return false end
+		todo:sort(function(ta,tb)
+			local a1 = mesh.vs[ta[1].v]
+			local a2 = mesh.vs[ta[2].v]
+			local a3 = mesh.vs[ta[3].v]
+			local minax = math.min(a1[1], a2[1], a3[1])
+			local minay = math.min(a1[2], a2[2], a3[2])
+			local minaz = math.min(a1[3], a2[3], a3[3])
+			local b1 = mesh.vs[tb[1].v]
+			local b2 = mesh.vs[tb[2].v]
+			local b3 = mesh.vs[tb[3].v]
+			local minbx = math.min(b1[1], b2[1], b3[1])
+			local minby = math.min(b1[2], b2[2], b3[2])
+			local minbz = math.min(b1[3], b2[3], b3[3])
+			-- sort by lowest y first
+			if minay < minby then return true end
+			if minay > minby then return false end
 			-- [[
 			-- sort by x
-			if a[1] < b[1] then return true end
-			if a[1] > b[1] then return false end
+			if minax < minbx then return true end
+			if minax > minbx then return false end
 			-- sort by z
-			return a[3] < b[3] 
+			return minaz < minbz
 			--]]
 			-- sort by area
 			--return a.area > b.area
@@ -691,8 +718,8 @@ function drawUVUnwrapEdges(mesh)
 		if not info.floodFill == true then
 			gl.glColor3f(.5,.5,0)
 		end
-		local t1 = mesh.tris[e[1]]
-		local t2 = mesh.tris[e[2]]
+		local t1 = e.tris[1]
+		local t2 = e.tris[2]
 		assert((t1 == ta and t2 == tb) or (t1 == tb and t2 == ta))
 		local vi11 = t1[e.triVtxIndexes[1]].v
 		local vi12 = t1[e.triVtxIndexes[1]%3+1].v

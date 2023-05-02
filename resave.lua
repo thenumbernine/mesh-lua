@@ -6,11 +6,10 @@ assert(infn and outfn, "expected "..arg[0].." input-filename output-filename")
 local loader = require 'mesh.objloader'()
 
 local mesh = loader:load(infn)
+mesh:removeUnusedVtxs()
 
-print('before merge vtxs', #mesh.vs, 'tris', #mesh.tris)
-timer('merging vertexes', function()
-	mesh:mergeMatchingVertexes()
-end)
-print('after merge vtxs', #mesh.vs, 'tris', #mesh.tris)
+mesh:calcBBox()	-- needed by mesh:mergeMatchingVertexes()
+mesh:mergeMatchingVertexes()
 
+mesh:calcTriAux()	-- needed for save()
 loader:save(outfn, mesh)

@@ -45,8 +45,6 @@ function OBJLoader:load(filename)
 		local curmtl = ''
 		mesh.mtllib[curmtl] = {
 			name = curmtl,
-			triFirstIndex = 1,	-- index into first instance of mesh.tris for this material
-			triCount = 0,	-- number of tris used in this material
 		}
 		assert(file(filename):exists(), "failed to find material file "..filename)
 		for line in io.lines(filename) do
@@ -63,7 +61,6 @@ function OBJLoader:load(filename)
 				vns:insert(wordsToVec3(words))
 			-- TODO lineType == 'vp'
 			elseif lineType == 'f' then
-				local usingMtl = curmtl
 				local vis = table()
 				local foundVT = false
 				for _,vertexIndexString in ipairs(words) do
@@ -73,14 +70,8 @@ function OBJLoader:load(filename)
 					if vti then foundVT = true end
 					vis:insert{v=vi, vt=vti, vn=vni}
 				end
-
-				-- TODO hmm really?
-				-- if no vt found then we can still use the Ks Kd etc from the mtl
-				-- we just have to take care when drawing it not to have the texture bound
-				-- (unlike the other faces in the mtl which do have vt's)
-				--if not foundVT then usingMtl = '' end
-
-				local mtl = mesh.mtllib[usingMtl]
+				local mtl = mesh.mtllib[curmtl]
+				mtl.name = curmtl
 				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 				for i=2,#words-1 do
 					-- store a copy of the vertex indices per triangle index
@@ -101,6 +92,10 @@ function OBJLoader:load(filename)
 				-- TODO then we start a new named object
 			elseif lineType == 'usemtl' then
 				curmtl = assert(words[1])
+				local mtl = mesh.mtllib[curmtl]
+				assert(not mtl.triFirstIndex)
+				mtl.triFirstIndex = #mesh.tris+1
+				mtl.triCount = 0
 			elseif lineType == 'mtllib' then
 				-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
 				self:loadMtl(words:concat' ', mesh)
@@ -108,25 +103,14 @@ function OBJLoader:load(filename)
 		end
 	end)
 
+	for _,m in pairs(mesh.mtllib) do
+		if not m.triFirstIndex then
+			m.triFirstIndex = 1
+			m.triCount = 0
+		end
+	end
+
 	print('#tris', #mesh.tris)
-
--- [[ calculate bbox.
--- do this before merging vtxs.
-	mesh:calcBBox()
---]]
--- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
-	
-	mesh:calcTriAux()
-	
-	-- store all edges of all triangles
-	-- ... why?  who uses this?
-	-- unwrapUVs used to but now it uses the 'allOverlappingEdges' structure
-	-- it's used for visualization
-	mesh:findEdges()
-
-	-- calculate coms ...
-	mesh:calcCOMs()
-
 	return mesh
 end
 
@@ -145,8 +129,6 @@ function OBJLoader:loadMtl(filename, mesh)
 		if lineType == 'newmtl' then
 			mtl = {}
 			mtl.name = assert(words[1])
-			mtl.triFirstIndex = 1
-			mtl.triCount = 0
 			-- TODO if a mtllib comes after a face then this'll happen:
 			if mesh.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
 			mesh.mtllib[mtl.name] = mtl
@@ -261,6 +243,7 @@ function OBJLoader:loadMtl(filename, mesh)
 	end
 end
 
+-- only saves the .obj, not the .mtl
 function OBJLoader:save(filename, mesh)
 	local o = assert(file(filename):open'w')
 	-- TODO write smooth flag, groups, etc
@@ -280,13 +263,18 @@ function OBJLoader:save(filename, mesh)
 	assert(mtlnames[1] == '')	-- should always be there
 	for _,mtlname in ipairs(mtlnames) do
 		local mtl = mesh.mtllib[mtlname]
-		if mtlname ~= '' then
+		local usemtlWritten = false
+		local function writeMtlName()
+			if mtlname == '' then return end
+			if usemtlWritten then return end
+			usemtlWritten = true
 			o:write('usemtl ', mtlname, '\n')
 		end
 		local lastt
 		local vis
 		local function writeFaceSoFar()
 			if not vis then return end
+			writeMtlName()
 			o:write('f ', table.mapi(vis, function(vi)
 				local vs = table{vi.v, vi.vt, vi.vn}
 				for i=1,vs:maxn() do vs[i] = vs[i] or '' end
