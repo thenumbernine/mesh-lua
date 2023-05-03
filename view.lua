@@ -88,7 +88,7 @@ function App:initGL(...)
 	self.editMode = 1
 
 	self.useLighting = false
-	self.useGeneratedNormalsForLighting = false
+	self.useGeneratedNormalsForLighting = true
 	self.lightDir = vec3f(1,1,1)
 
 	self.useCullFace = true
@@ -132,7 +132,7 @@ out float Nsv;
 void main() {
 	texCoordv = texCoord;
 	if (useFlipTexture) texCoordv.y = 1. - texCoordv.y;
-	normalv = (modelViewMatrix * vec4(useNormal2 ? normal : normal2, 0.)).xyz;
+	normalv = (modelViewMatrix * vec4(useNormal2 ? normal2 : normal, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
 	Ksv = Ks;
@@ -175,8 +175,7 @@ void main() {
 		fragColor.xyz *= max(0., dot(normal, lightDir));
 	}
 	if (useLighting) {
-		vec3 viewPos = vec3(0., 0., 0.);
-		vec3 viewDir = normalize(viewPos - fragPosv);
+		vec3 viewDir = normalize(-fragPosv);
 		vec3 reflectDir = reflect(-lightDir, normal);
 		float spec = pow(max(dot(viewDir, reflectDir), 0.), Nsv);
 		fragColor += Ksv * spec;
@@ -279,7 +278,7 @@ function App:update()
 					Ka = {0,0,0,0},
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
-					Ns = mtl.Ns or 1,
+					Ns = mtl.Ns or 10,
 					objCOM = self.mesh.com3,
 					groupCOM = mtl.com3,
 					groupExplodeDist = self.groupExplodeDist,
