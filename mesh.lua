@@ -73,6 +73,9 @@ local Mesh = class()
 Mesh.Triangle = Triangle
 
 function Mesh:init(filename)
+	-- TODO *only* store tris, 
+	-- or maybe store indexes too
+	-- then the rest pack/unpack upon obj save/load
 	self.vs = table()
 	self.vts = table()
 	self.vns = table()
@@ -112,7 +115,7 @@ function Mesh:mergeMatchingVertexes()
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
-	print('vtxMergeThreshold', vtxMergeThreshold)
+print('vtxMergeThreshold', vtxMergeThreshold)
 	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
 	for i=#self.vs,2,-1 do
 		for j=1,i-1 do
@@ -653,7 +656,7 @@ function Mesh:loadGL(shader)
 
 	-- mtl will just index into this.
 	-- why does mtl store a list of tri indexes?  it should just store an offset
-print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
+--print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
 	local vtxCPUBuf = vector('obj_vertex_t', #self.tris * 3)
 	self.vtxCPUBuf = vtxCPUBuf
 
@@ -683,7 +686,7 @@ print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
 		end
 	end
 
-print('creating array buffer of size', self.vtxCPUBuf.size)
+--print('creating array buffer of size', self.vtxCPUBuf.size)
 	self.vtxBuf = GLArrayBuffer{
 		size = self.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
 		data = self.vtxCPUBuf.v,

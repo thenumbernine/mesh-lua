@@ -65,13 +65,12 @@ function App:initGL(...)
 	print('bbox volume', (self.mesh.bbox.max - self.mesh.bbox.min):volume())
 	print('mesh.bbox corner-to-corner distance: '..(self.mesh.bbox.max - self.mesh.bbox.min):norm())
 
-	-- [[ default camera to ortho looking down y-
+--[[ default camera to ortho looking down y-
 	self.view.ortho = true
 	self.view.angle:fromAngleAxis(1,0,0,-90)
-	--]]
-
-	self:setCenter(self.mesh.com3)
-	self.displayList = {}
+--]]
+	self.updir = 2	-- 1=x 2=y 3=z
+	self:resetAngle(vec3d(0,0,-1))
 
 	-- gui options
 	self.useWireframe = false
@@ -211,12 +210,23 @@ function App:update()
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
 	gl.glDepthMask(gl.GL_FALSE)
+	local axisw = math.ceil(math.min(self.width, self.height) / 4)
+	gl.glViewport(self.width-1-axisw, self.height-1-axisw, axisw, axisw)
+	local pushOrtho = self.view.ortho
+	self.view.ortho = false
+	self.view:setup(1)
+	local aa = self.view.angle:conjugate():toAngleAxis()
+	--gl.glRotatef(aa.w, aa.x, aa.y, aa.z)
 	gl.glBegin(gl.GL_LINES)
 	gl.glColor3f(1,0,0) gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
 	gl.glColor3f(0,1,0) gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
 	gl.glColor3f(0,0,1) gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
 	gl.glEnd()
 	gl.glDepthMask(gl.GL_TRUE)
+	
+	gl.glViewport(0, 0, self.width, self.height)
+	self.view.ortho = pushOrtho
+	self.view:setup(self.width / self.height)
 
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
@@ -391,93 +401,101 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 end
 
 function App:setCenter(center)
-	local size = self.mesh.vs:mapi(function(v) return (v - center):norm() end):sup()
+	if not self.mesh.bbox then self.mesh:calcBBox() end	-- TODO always keep this updated?  or dirty bit?
+	local size = (self.mesh.bbox.max - self.mesh.bbox.min):norm()
 	self.view.orbit:set(center:unpack())
-	self.view.pos = self.view.orbit + self.view.angle:zAxis() * size
+	self.view.pos = self.view.angle:zAxis() * size+ self.view.orbit
+end
+
+function App:resetAngle(fwd)
+	local up = vec3d()
+	up.s[self.updir-1] = 1
+	fwd = fwd or -self.view.angle:zAxis() 
+	-- if 'fwd' aligns with 'up' then pick another up vector 
+	if math.abs(fwd:dot(up)) > .999 then
+		print('fwd is up')
+		up.s[self.updir-1] = 0
+		up.s[self.updir%3] = 1
+	end
+	local back = -fwd
+	local right = up:cross(back)
+	-- vec-ffi's quat's fromMatrix uses col-major Lua-table-of-vec3s (just like 'toMatrix')
+	self.view.angle:fromMatrix{right, up, back}
+--print('matrix', right, up, back)
+--print('quat', self.view.angle)
+	self:setCenter(self.mesh.com3)
+--print('qmatrix', table.unpack(self.view.angle:toMatrix()))
 end
 
 function App:updateGUI()
+	if ig.igBeginMainMenuBar() then
+		if ig.igBeginMenu'View' then
 
-	ig.luatableCheckbox('ortho view', self.view, 'ortho')
-	if ig.igButton'reset view z-' then
-		self.view.angle:set(0,0,0,1)
-		self:setCenter(self.mesh.com3)
-	end
-	if ig.igButton'reset view z+' then
-		self.view.angle:fromAngleAxis(0,1,0,180)
-		self:setCenter(self.mesh.com3)
-	end
-	if ig.igButton'reset view y-' then
-		self.view.angle:fromAngleAxis(1,0,0,-90)
-		self:setCenter(self.mesh.com3)
-	end
-	if ig.igButton'reset view y+' then
-		self.view.angle:fromAngleAxis(1,0,0,90)
-		self:setCenter(self.mesh.com3)
-	end
-	if ig.igButton'reset view x-' then
-		self.view.angle:set(
-			--quatd():fromAngleAxis(1,0,0,90) *	-- combine for putting z-up
-			quatd():fromAngleAxis(0,1,0,90)
-		)
-		self:setCenter(self.mesh.com3)
-	end
-	if ig.igButton'reset view x+' then
-		self.view.angle:set(
-			--quatd():fromAngleAxis(1,0,0,90) *	-- combine for putting z-up
-			quatd():fromAngleAxis(0,1,0,-90)
-		)
-		self:setCenter(self.mesh.com3)
-	end
+			ig.luatableCheckbox('ortho view', self.view, 'ortho')
+			
+			if ig.luatableRadioButton('x up', self, 'updir', 1) then self:resetAngle() end
+			if ig.luatableRadioButton('y up', self, 'updir', 2) then self:resetAngle() end
+			if ig.luatableRadioButton('z up', self, 'updir', 3) then self:resetAngle() end
+
+			if ig.igButton'reset view z-' then self:resetAngle(vec3d(0,0,-1)) end
+			if ig.igButton'reset view z+' then self:resetAngle(vec3d(0,0,1)) end
+			if ig.igButton'reset view y-' then self:resetAngle(vec3d(0,-1,0)) end
+			if ig.igButton'reset view y+' then self:resetAngle(vec3d(0,1,0)) end
+			if ig.igButton'reset view x-' then self:resetAngle(vec3d(-1,0,0)) end
+			if ig.igButton'reset view x+' then self:resetAngle(vec3d(1,0,0)) end
 
 
+			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
+			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
 
-	ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
-	ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
-
-	ig.igColorPicker3('background color', self.bgcolor.s, 0)
-	if ig.igButton'set to vtx center' then
-		self:setCenter(self.mesh.com0)
-	end
-	if ig.igButton'set to line center' then
-		self:setCenter(self.mesh.com1)
-	end
-	if ig.igButton'set to face center' then
-		self:setCenter(self.mesh.com2)
-	end
-	if ig.igButton'set to volume center' then
-		self:setCenter(self.mesh.com3)
-	end
-
-	ig.luatableCheckbox('use cull face', self, 'useCullFace')
-	ig.luatableCheckbox('use depth test', self, 'useDepthTest')
-	ig.luatableCheckbox('use blend', self, 'useBlend')
-	ig.luatableCheckbox('use textures', self, 'useTextures')
-	ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
-	if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
-		for mtlname, mtl in pairs(self.mesh.mtllib) do
-			if mtl.tex_Kd then
-				mtl.tex_Kd:bind()
-				mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
-				mtl.tex_Kd:unbind()
+			ig.igColorPicker3('background color', self.bgcolor.s, 0)
+			if ig.igButton'set to vtx center' then
+				self:setCenter(self.mesh.com0)
 			end
-		end
-	end
-	ig.luatableCheckbox('use lighting', self, 'useLighting')
-	ig.luatableCheckbox('use generated normals for lighting', self, 'useGeneratedNormalsForLighting')
+			if ig.igButton'set to line center' then
+				self:setCenter(self.mesh.com1)
+			end
+			if ig.igButton'set to face center' then
+				self:setCenter(self.mesh.com2)
+			end
+			if ig.igButton'set to volume center' then
+				self:setCenter(self.mesh.com3)
+			end
 
-	-- TODO max dependent on bounding radius of model, same with COM camera positioning
-	-- TODO per-tri exploding as well
-	ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
-	ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
-	ig.luatableCheckbox('wireframe', self, 'useWireframe')
-	ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')
-	ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
-	ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
-	ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
-	ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
-	ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
-	ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
+			ig.luatableCheckbox('use cull face', self, 'useCullFace')
+			ig.luatableCheckbox('use depth test', self, 'useDepthTest')
+			ig.luatableCheckbox('use blend', self, 'useBlend')
+			ig.luatableCheckbox('use textures', self, 'useTextures')
+			ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
+			if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
+				for mtlname, mtl in pairs(self.mesh.mtllib) do
+					if mtl.tex_Kd then
+						mtl.tex_Kd:bind()
+						mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
+						mtl.tex_Kd:unbind()
+					end
+				end
+			end
+			ig.luatableCheckbox('use lighting', self, 'useLighting')
+			ig.luatableCheckbox('use generated normals for lighting', self, 'useGeneratedNormalsForLighting')
+
+			-- TODO max dependent on bounding radius of model, same with COM camera positioning
+			-- TODO per-tri exploding as well
+			ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
+			ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
+			ig.luatableCheckbox('wireframe', self, 'useWireframe')
+			ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')
+			ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
+			ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
+			ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
+			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
+			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
+			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
+			
+			ig.igEndMenu()
+		end
+		ig.igEndMainMenuBar()
+	end
 end
 
 App():run()
