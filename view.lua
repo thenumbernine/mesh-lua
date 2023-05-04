@@ -19,7 +19,9 @@ local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
 local drawUVUnwrapEdges = require 'mesh.unwrapuvs'.drawUVUnwrapEdges
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
-local fn = assert((...))
+local fn = cmdline.file
+if not fn then fn = ... end
+if not fn then error("can't figure out what your file is from the cmdline") end
 
 local App = class(require 'imguiapp.withorbit'())
 
@@ -110,7 +112,6 @@ function App:initGL(...)
 	self.editMode = 1
 
 	self.useLighting = false
-	self.useGeneratedNormalsForLighting = true
 	self.lightDir = vec3f(1,1,1)
 
 	self.useCullFace = true
@@ -126,11 +127,9 @@ function App:initGL(...)
 
 in vec3 pos;
 in vec3 texCoord;
-in vec3 normal;		//mesh-provided normal
-in vec3 normal2;	//generated normal
+in vec3 normal;
 in vec3 com;
 
-uniform bool useNormal2;
 uniform bool useFlipTexture;
 uniform vec4 Ka;
 uniform vec4 Kd;
@@ -154,7 +153,7 @@ out float Nsv;
 void main() {
 	texCoordv = texCoord;
 	if (useFlipTexture) texCoordv.y = 1. - texCoordv.y;
-	normalv = (modelViewMatrix * vec4(useNormal2 ? normal2 : normal, 0.)).xyz;
+	normalv = (modelViewMatrix * vec4(normal, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
 	Ksv = Ks;
@@ -237,7 +236,9 @@ function App:update()
 	self.view.ortho = false
 	self.view:setup(1)
 	local aa = self.view.angle:conjugate():toAngleAxis()
-	--gl.glRotatef(aa.w, aa.x, aa.y, aa.z)
+	gl.glLoadIdentity()
+	gl.glTranslatef(0,0,-2)
+	gl.glRotatef(aa.w, aa.x, aa.y, aa.z)
 	gl.glBegin(gl.GL_LINES)
 	gl.glColor3f(1,0,0) gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
 	gl.glColor3f(0,1,0) gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
@@ -282,7 +283,6 @@ function App:update()
 		self.shader:use()
 		self.shader:setUniforms{
 			useFlipTexture = self.useFlipTexture,
-			useNormal2 = self.useGeneratedNormalsForLighting,
 			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
 			modelViewMatrix = self.modelViewMatrix.ptr,
@@ -496,7 +496,9 @@ function App:updateGUI()
 				end
 			end
 			ig.luatableCheckbox('use lighting', self, 'useLighting')
-			ig.luatableCheckbox('use generated normals for lighting', self, 'useGeneratedNormalsForLighting')
+			if ig.igButton'regen normals' then
+				self.mesh:regenNormals()
+			end
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning
 			-- TODO per-tri exploding as well

@@ -5,6 +5,7 @@ local table = require 'ext.table'
 local string = require 'ext.string'
 local timer = require 'ext.timer'
 local math = require 'ext.math'
+local vector = require 'ffi.cpp.vector'
 local matrix = require 'matrix'
 local Image = require 'image'
 local Mesh = require 'mesh'
@@ -31,77 +32,83 @@ local OBJLoader = class()
 
 function OBJLoader:load(filename)
 	local mesh = Mesh()
-	local vs = mesh.vs
-	local vts = mesh.vts
-	local vns = mesh.vns
+	local vs = table()
+	local vts = table()
+	local vns = table()
 
 	mesh.relpath = file(filename):getdir()
 	mesh.mtlFilenames = table()
 
-	timer('loading', function()
+--timer('loading', function()
 
-		-- map of materials
-		mesh.mtllib = {}
-		local curmtl = ''
-		mesh.mtllib[curmtl] = {
-			name = curmtl,
-		}
-		assert(file(filename):exists(), "failed to find material file "..filename)
-		for line in io.lines(filename) do
-			local words = string.split(string.trim(line), '%s+')
-			local lineType = words:remove(1):lower()
-			if lineType == 'v' then
-				assert(#words >= 2)
-				vs:insert(wordsToVec3(words))
-			elseif lineType == 'vt' then
-				assert(#words >= 2)
-				vts:insert(wordsToVec3(words))
-			elseif lineType == 'vn' then
-				assert(#words >= 2)
-				vns:insert(wordsToVec3(words))
-			-- TODO lineType == 'vp'
-			elseif lineType == 'f' then
-				local vis = table()
-				local foundVT = false
-				for _,vertexIndexString in ipairs(words) do
-					local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
-					local vertexIndices = vertexIndexStringParts:mapi(function(x) return tonumber(x) end)	-- may be nil
-					local vi, vti, vni = unpack(vertexIndices, 1, 3)
-					if vti then foundVT = true end
-					vis:insert{v=vi, vt=vti, vn=vni}
-				end
-				local mtl = mesh.mtllib[curmtl]
-				mtl.name = curmtl
-				assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
-				for i=2,#words-1 do
-					-- store a copy of the vertex indices per triangle index
-					local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
-					mesh.tris:insert(t)
-					-- keys:
-					t.index = #mesh.tris+1	-- so far only used for debugging
-					t.mtl = mtl
-					if not mtl.triFirstIndex then mtl.triFirstIndex = #mesh.tris end
-					mtl.triCount = #mesh.tris - mtl.triFirstIndex + 1
-				end
-			elseif lineType == 's' then
-				-- TODO then smooth is on
-				-- for all subsequent polys, or for the entire group (including previously defined polys) ?
-			elseif lineType == 'g' then
-				-- TODO then we start a new named group
-			elseif lineType == 'o' then
-				-- TODO then we start a new named object
-			elseif lineType == 'usemtl' then
-				curmtl = assert(words[1])
-				local mtl = mesh.mtllib[curmtl]
-				assert(not mtl.triFirstIndex)
-				mtl.triFirstIndex = #mesh.tris+1
-				mtl.triCount = 0
-			elseif lineType == 'mtllib' then
-				-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
-				self:loadMtl(words:concat' ', mesh)
+	-- map of materials
+	mesh.mtllib = {}
+	local curmtl = ''
+	mesh.mtllib[curmtl] = {
+		name = curmtl,
+	}
+	assert(file(filename):exists(), "failed to find material file "..filename)
+	for line in io.lines(filename) do
+		local words = string.split(string.trim(line), '%s+')
+		local lineType = words:remove(1):lower()
+		if lineType == 'v' then
+			assert(#words >= 2)
+			vs:insert(wordsToVec3(words))
+		elseif lineType == 'vt' then
+			assert(#words >= 2)
+			vts:insert(wordsToVec3(words))
+		elseif lineType == 'vn' then
+			assert(#words >= 2)
+			vns:insert(wordsToVec3(words))
+		-- TODO lineType == 'vp'
+		elseif lineType == 'f' then
+			local vis = table()
+			local foundVT = false
+			for _,vertexIndexString in ipairs(words) do
+				local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
+				local vertexIndices = vertexIndexStringParts:mapi(function(x) return tonumber(x) end)	-- may be nil
+				local vi, vti, vni = unpack(vertexIndices, 1, 3)
+				if vti then foundVT = true end
+				vis:insert{v=vi, vt=vti, vn=vni}
 			end
+			local mtl = mesh.mtllib[curmtl]
+			mtl.name = curmtl
+			assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
+			for i=2,#words-1 do
+				-- store a copy of the vertex indices per triangle index
+				local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
+				mesh.tris:insert(t)
+				-- keys:
+				t.index = #mesh.tris+1	-- so far only used for debugging
+				t.mtl = mtl
+				if not mtl.triFirstIndex then mtl.triFirstIndex = #mesh.tris end
+				mtl.triCount = #mesh.tris - mtl.triFirstIndex + 1
+			end
+		elseif lineType == 's' then
+			-- TODO then smooth is on
+			-- for all subsequent polys, or for the entire group (including previously defined polys) ?
+		elseif lineType == 'g' then
+			-- TODO then we start a new named group
+		elseif lineType == 'o' then
+			-- TODO then we start a new named object
+		elseif lineType == 'usemtl' then
+			curmtl = assert(words[1])
+			local mtl = mesh.mtllib[curmtl]
+			if not mtl then
+				print("failed to find material "..curmtl)
+				mtl = {}
+				mesh.mtllib[curmtl] = mtl
+			end
+			assert(not mtl.triFirstIndex)
+			mtl.triFirstIndex = #mesh.tris+1
+			mtl.triCount = 0
+		elseif lineType == 'mtllib' then
+			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
+			self:loadMtl(words:concat' ', mesh)
 		end
-	end)
+	end
+
+--end)
 
 	for _,m in pairs(mesh.mtllib) do
 		if not m.triFirstIndex then
@@ -110,7 +117,51 @@ function OBJLoader:load(filename)
 		end
 	end
 
-	print('#tris', #mesh.tris)
+-- TODO in the near future, calculate vtxCPUBuf here
+-- and map vertexes to unique indexes to build IndexedArrays here
+	-- for tri.normal and tri.area
+	mesh.vs = vs
+	mesh.vts = vts
+	mesh.vns = vns
+	mesh:calcTriAux()
+
+	-- TODO calc vtx normals before or after grouping redundant vtxs?
+	-- TODO this breaks .area, .com, and .normal
+	-- should I calculate them here?
+	-- should I even use .normal vs .normal2?
+
+	local indexForVtx = {}	-- from 'v,vt,vn'
+	local vtxCPUBuf = vector'obj_vertex_t'	-- vertex structure
+	local triIndexBuf = vector'int32_t'		-- triangle indexes
+	for _,t in ipairs(mesh.tris) do
+		for j,tj in ipairs(t) do
+			local k = table.concat({tj.v, tj.vt, tj.vn},',')
+			local i = indexForVtx[k]	-- 0-based
+			if not i then
+				i = vtxCPUBuf.size
+				indexForVtx[k] = i
+				local dst = vtxCPUBuf:emplace_back()
+				dst.pos:set(assert(vs[tj.v]):unpack())
+				if tj.vt then
+					dst.texCoord:set(assert(vts[tj.vt]):unpack())
+				else
+					dst.texCoord:set(0,0,0)
+				end
+				if tj.vn then
+					dst.normal:set(assert(vns[tj.vn]):unpack())
+				else
+					dst.normal:set(0,0,0)
+				end
+			end
+			triIndexBuf:push_back(i)
+		end
+	end
+
+	self.vtxCPUBuf = vtxCPUBuf
+	self.triIndexBuf = triIndexBuf
+
+
+--print('#tris', #mesh.tris)
 	return mesh
 end
 
@@ -228,7 +279,7 @@ function OBJLoader:loadMtl(filename, mesh)
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
 				mtl.image_Kd = Image(mtl.map_Kd)
-				print('loaded map_Kd '..mtl.map_Kd..' as '..mtl.image_Kd.width..' x '..mtl.image_Kd.height..' x '..mtl.image_Kd.channels..' ('..mtl.image_Kd.format..')')
+--print('loaded map_Kd '..mtl.map_Kd..' as '..mtl.image_Kd.width..' x '..mtl.image_Kd.height..' x '..mtl.image_Kd.channels..' ('..mtl.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
 				-- manually?  upon first draw?  both?

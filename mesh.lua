@@ -11,12 +11,10 @@ local vec3f = require 'vec-ffi.vec3f'
 ffi.cdef[[
 typedef struct {
 	vec3f_t pos;
-	vec3f_t normal;		//loaded normal
-	vec3f_t normal2;	//generated normal ... because i want the viewer to toggle between the two
 	vec3f_t texCoord;
+	vec3f_t normal;
 
 	// per-triangle stats (duplicated 3x per-vertex)
-	float area;
 	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
 } obj_vertex_t;
 ]]
@@ -79,7 +77,9 @@ function Mesh:init(filename)
 	self.vs = table()
 	self.vts = table()
 	self.vns = table()
+	
 	self.tris = table() -- triangulation of all faces
+	self.mtllib = {[''] = {}}
 end
 
 function Mesh:prepare()
@@ -604,6 +604,43 @@ function Mesh:calcVolume()
 end
 
 
+-- regenerate the vertex normals based on the face normals, weighted average by face area
+function Mesh:regenNormals()
+	-- calculate vertex normals
+	-- TODO store this?  in its own self.vn2s[] or something?
+--print('zeroing vertex normals')
+	local vtxnormals = self.vs:mapi(function(v)
+		return matrix{0,0,0}
+	end)
+--print('accumulating triangle normals into vertex normals')
+	for t in self:triiter(mtlname) do
+		if math.isfinite(t.normal:normSq()) then
+			for _,vi in ipairs(t) do
+				vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
+			end
+		end
+	end
+--print('normals vertex normals')
+	for k=1,#vtxnormals do
+		if vtxnormals[k]:normSq() > 1e-3 then
+			vtxnormals[k] = vtxnormals[k]:normalize()
+		end
+--print(k, vtxnormals[k])
+	end
+
+	if self.vtxCPUBuf then
+		local e = 0
+		for i,t in ipairs(self.tris) do
+			for j,tj in ipairs(t) do
+				self.vtxCPUBuf.v[e].normal:set(vtxnormals[tj.v]:unpack())
+				e = e + 1
+			end
+		end
+		assert(e == self.vtxCPUBuf.size)
+		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxCPUBuf.size, self.vtxCPUBuf.v)
+	end
+end
+
 -- all the draw functionality is tied tightly with view.lua so ...
 -- idk if i should move it from one or the other
 
@@ -632,28 +669,6 @@ function Mesh:loadGL(shader)
 		end
 	end
 
-	-- calculate vertex normals
-	-- TODO store this?  in its own self.vn2s[] or something?
---print('zeroing vertex normals')
-	local vtxnormals = self.vs:mapi(function(v)
-		return matrix{0,0,0}
-	end)
---print('accumulating triangle normals into vertex normals')
-	for t in self:triiter(mtlname) do
-		if math.isfinite(t.normal:normSq()) then
-			for _,vi in ipairs(t) do
-				vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
-			end
-		end
-	end
---print('normals vertex normals')
-	for k=1,#vtxnormals do
-		if vtxnormals[k]:normSq() > 1e-3 then
-			vtxnormals[k] = vtxnormals[k]:normalize()
-		end
---print(k, vtxnormals[k])
-	end
-
 	-- mtl will just index into this.
 	-- why does mtl store a list of tri indexes?  it should just store an offset
 --print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
@@ -680,8 +695,6 @@ function Mesh:loadGL(shader)
 					dst.normal:set(self.vns[vi.vn]:unpack())
 				end
 			end
-			dst.normal2:set(vtxnormals[vi.v]:unpack())
-			dst.area = t.area
 			dst.com:set(t.com:unpack())
 		end
 	end
@@ -698,7 +711,6 @@ function Mesh:loadGL(shader)
 		{name='pos', size=3},
 		{name='texCoord', size=3},
 		{name='normal', size=3},
-		{name='normal2', size=3},
 		{name='com', size=3},
 	}:mapi(function(info)
 		if not shader.attrs[info.name] then return end
@@ -874,7 +886,6 @@ function Mesh:drawStoredNormals()
 				local vn = self.vns[vi.vn]
 				gl.glVertex3f(t.com:unpack())
 				gl.glVertex3f((t.com + vn):unpack())
-				--gl.glVertex3f((v.com + v.normal2):unpack())
 			end
 		end
 	end
@@ -890,7 +901,7 @@ function Mesh:drawVertexNormals()
 			for i=0,mtl.vtxCPUBuf.size-1,3 do
 				local v = mtl.vtxCPUBuf.v[i]
 				gl.glVertex3f(v.pos:unpack())
-				gl.glVertex3f((v.pos + v.normal2):unpack())
+				gl.glVertex3f((v.pos + v.normal):unpack())
 			end
 		end
 	end
