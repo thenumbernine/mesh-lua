@@ -81,10 +81,10 @@ function Mesh:mergeMatchingVertexes()
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
-	print('before merge vtx count', #self.vs, 'tri count', self.triIndexBuf.size)
-	for i=#self.vs,2,-1 do
-		for j=1,i-1 do
-			local dist = (self.vs[i] - self.vs[j]):norm()
+	print('before merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
+	for i=self.vtxCPUBuf.size-1,1,-1 do
+		for j=0,i-1 do
+			local dist = (self.vtxCPUBuf.v[i].pos - self.vtxCPUBuf.v[j].pos):norm()
 --print(dist)
 			if dist < vtxMergeThreshold then
 --print('merging vtxs '..i..' and '..j)
@@ -93,7 +93,7 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 			end
 		end
 	end
-	print('after merge vtx count', #self.vs, 'tri count', self.triIndexBuf.size)
+	print('after merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
 end
 
 -- fill the allOverlappingEdges table
@@ -267,7 +267,7 @@ end
 
 function Mesh:removeDegenerateTriangles()
 	for i=self.triIndexBuf.size-3,0,-3 do
-		local t = self.triIndexBuf.v + j
+		local t = self.triIndexBuf.v + i
 		for j=2,1,-1 do
 			if t[j] == t[j-1] then
 --print('removing degenerate tri '..i..' with duplicate vertices')
@@ -278,6 +278,7 @@ function Mesh:removeDegenerateTriangles()
 	end
 end
 
+-- index is 0-based in increments of 3
 function Mesh:removeTri(i)
 	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
 	for mtlname,mtl in pairs(self.mtllib) do
@@ -294,7 +295,7 @@ end
 -- decrement the indexes greater
 function Mesh:removeVertex(vi)
 	assert(vi >= 0 and vi < self.vtxCPUBuf.size)
-	self.vtxCPUBuf:erase(self.vtxCPUBuf.v + i, self.vtxCPUBuf.v + i + 1)
+	self.vtxCPUBuf:erase(self.vtxCPUBuf.v + vi, self.vtxCPUBuf.v + vi + 1)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
 	-- if you just straight up remove a vertex then the tris and faces might go out of sync

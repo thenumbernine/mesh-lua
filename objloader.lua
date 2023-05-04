@@ -27,7 +27,7 @@ local function wordsToColor(w)
 	g = g or 0
 	b = b or 0
 	a = a or 1
-	return vec4(r,g,b,a)
+	return vec4f(r,g,b,a)
 end
 
 

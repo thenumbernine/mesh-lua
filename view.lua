@@ -296,8 +296,8 @@ function App:update()
 					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
 					--Ka = mtl.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
 					Ka = {0,0,0,0},
-					Kd = mtl.Kd or {1,1,1,1},
-					Ks = mtl.Ks or {1,1,1,1},
+					Kd = mtl.Kd and mtl.Kd.s or {1,1,1,1},
+					Ks = mtl.Ks and mtl.Ks.s or {1,1,1,1},
 					Ns = mtl.Ns or 10,
 					objCOM = self.mesh.com3.s,
 					groupCOM = mtl.com3.s,
@@ -486,6 +486,9 @@ function App:updateGUI()
 			ig.luatableCheckbox('use lighting', self, 'useLighting')
 			if ig.igButton'regen normals' then
 				self.mesh:regenNormals()
+			end
+			if ig.igButton'merge vtxs' then
+				self.mesh:mergeMatchingVertexes()
 			end
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning
