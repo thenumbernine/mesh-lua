@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local table = require 'ext.table'
 local timer = require 'ext.timer'
 local gl = require 'gl'
 local GLProgram = require 'gl.program'
@@ -24,6 +25,23 @@ local App = class(require 'imguiapp.withorbit'())
 
 App.title = 'WavefrontOBJ preview'
 
+local dirnames = table{
+	'x+',
+	'x-',
+	'y+',
+	'y-',
+	'z+',
+	'z-',
+}
+local dirs = table{
+	{1,0,0},
+	{-1,0,0},
+	{0,1,0},
+	{0,-1,0},
+	{0,0,1},
+	{0,0,-1},
+}
+
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
@@ -44,13 +62,6 @@ function App:initGL(...)
 		self.mesh.com1 = self.mesh:calcCOM1()
 	end
 
-	if cmdline.alledges then
-		timer("finding edges that should've been merged by whoever made the model", function()
-			-- this is required for uvunwrap
-			self.mesh:calcAllOverlappingEdges()
-		end)
-	end
-
 	if cmdline.uvunwrap then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
@@ -68,9 +79,20 @@ function App:initGL(...)
 --[[ default camera to ortho looking down y-
 	self.view.ortho = true
 	self.view.angle:fromAngleAxis(1,0,0,-90)
+	self.updirIndex = dirnames:find'z+'
 --]]
-	self.updir = 2	-- 1=x 2=y 3=z
-	self:resetAngle(vec3d(0,0,-1))
+-- [[ default opengl mode	
+	self.updirIndex = dirnames:find'y+'
+	self:resetAngle(vec3d(0,0,-1))	-- z-back
+--]]
+	
+	if cmdline.up then
+		self.updirIndex = dirnames:find(cmdline.up)
+		self:resetAngle()
+	end
+	if cmdline.fwd then
+		self:resetAngle(vec3d(table.unpack(dirs[dirnames:find(cmdline.fwd)])))
+	end
 
 	-- gui options
 	self.useWireframe = false
@@ -407,14 +429,11 @@ function App:setCenter(center)
 end
 
 function App:resetAngle(fwd)
-	local up = vec3d()
-	up.s[self.updir-1] = 1
+	local up = vec3d(table.unpack(dirs[self.updirIndex]))
 	fwd = fwd or -self.view.angle:zAxis() 
 	-- if 'fwd' aligns with 'up' then pick another up vector 
 	if math.abs(fwd:dot(up)) > .999 then
-		print('fwd is up')
-		up.s[self.updir-1] = 0
-		up.s[self.updir%3] = 1
+		up.x, up.y, up.z = up.z, up.x, up.y
 	end
 	local back = -fwd
 	local right = up:cross(back)
@@ -424,6 +443,7 @@ function App:resetAngle(fwd)
 --print('quat', self.view.angle)
 	self:setCenter(self.mesh.com3)
 --print('qmatrix', table.unpack(self.view.angle:toMatrix()))
+-- qmatrix should match matrix if fromMatrix worked
 end
 
 function App:updateGUI()
@@ -432,16 +452,16 @@ function App:updateGUI()
 
 			ig.luatableCheckbox('ortho view', self.view, 'ortho')
 			
-			if ig.luatableRadioButton('x up', self, 'updir', 1) then self:resetAngle() end
-			if ig.luatableRadioButton('y up', self, 'updir', 2) then self:resetAngle() end
-			if ig.luatableRadioButton('z up', self, 'updir', 3) then self:resetAngle() end
-
-			if ig.igButton'reset view z-' then self:resetAngle(vec3d(0,0,-1)) end
-			if ig.igButton'reset view z+' then self:resetAngle(vec3d(0,0,1)) end
-			if ig.igButton'reset view y-' then self:resetAngle(vec3d(0,-1,0)) end
-			if ig.igButton'reset view y+' then self:resetAngle(vec3d(0,1,0)) end
-			if ig.igButton'reset view x-' then self:resetAngle(vec3d(-1,0,0)) end
-			if ig.igButton'reset view x+' then self:resetAngle(vec3d(1,0,0)) end
+			for i,name in ipairs(dirnames) do
+				if ig.luatableRadioButton('up '..name, self, 'updirIndex', i) then
+					self:resetAngle()
+				end
+			end
+			for i,name in ipairs(dirnames) do
+				if ig.igButton('reset view '..name) then
+					self:resetAngle(vec3d(table.unpack(dirs[i])))
+				end
+			end
 
 
 			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
