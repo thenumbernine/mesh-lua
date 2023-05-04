@@ -3,8 +3,6 @@ local class = require 'ext.class'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
-local quat = require 'vec.quat'
-local matrix = require 'matrix'
 local vector = require 'ffi.cpp.vector'
 local vec3f = require 'vec-ffi.vec3f'
 

@@ -6,14 +6,17 @@ local string = require 'ext.string'
 local timer = require 'ext.timer'
 local math = require 'ext.math'
 local vector = require 'ffi.cpp.vector'
-local matrix = require 'matrix'
+local vec3f = require 'vec-ffi.vec3f'
+local vec4f = require 'vec-ffi.vec4f'
 local Image = require 'image'
 local Mesh = require 'mesh'
 
 local function wordsToVec3(w)
-	return matrix{3}:lambda(function(i)
-		return tonumber(w[i]) or 0
-	end)
+	return vec3f(
+		tonumber(w[1]) or 0,
+		tonumber(w[2]) or 0,
+		tonumber(w[3]) or 0
+	)
 end
 
 -- used for colors
@@ -24,7 +27,7 @@ local function wordsToColor(w)
 	g = g or 0
 	b = b or 0
 	a = a or 1
-	return matrix{r,g,b,a}
+	return vec4(r,g,b,a)
 end
 
 
@@ -136,14 +139,14 @@ function OBJLoader:load(filename)
 				i = vtxCPUBuf.size
 				indexForVtx[k] = i
 				local dst = vtxCPUBuf:emplace_back()
-				dst.pos:set(assert(vs[tj.v]):unpack())
+				dst.pos = assert(vs[tj.v])
 				if tj.vt then
-					dst.texcoord:set(assert(vts[tj.vt]):unpack())
+					dst.texcoord = assert(vts[tj.vt])
 				else
 					dst.texcoord:set(0,0,0)
 				end
 				if tj.vn then
-					dst.normal:set(assert(vns[tj.vn]):unpack())
+					dst.normal = assert(vns[tj.vn])
 				else
 					dst.normal:set(0,0,0)
 				end
@@ -302,14 +305,17 @@ function OBJLoader:save(filename, mesh)
 	for _,mtl in ipairs(mesh.mtlFilenames) do
 		o:write('mtllib ', mtl, '\n')
 	end
-	for _,v in ipairs(mesh.vs) do
-		o:write('v ', table.concat(v, ' '), '\n')
+	for i=0,mesh.vtxCPUBuf.size-1 do
+		local v = mesh.vtxCPUBuf.v[i].pos
+		o:write('v ',v.x,' ',v.y,' ',v.z,'\n')
 	end
-	for _,vt in ipairs(mesh.vts) do
-		o:write('vt ', table.concat(vt, ' '), '\n')
+	for i=0,mesh.vtxCPUBuf.size-1 do
+		local v = mesh.vtxCPUBuf.v[i].texcoord
+		o:write('vt ',v.x,' ',v.y,' ',v.z,'\n')
 	end
-	for _,vn in ipairs(mesh.vns) do
-		o:write('vn ', table.concat(vn, ' '), '\n')
+	for i=0,mesh.vtxCPUBuf.size-1 do
+		local v = mesh.vtxCPUBuf.v[i].normal
+		o:write('vn ',v.x,' ',v.y,' ',v.z,'\n')
 	end
 	local mtlnames = table.keys(mesh.mtllib):sort()
 	assert(mtlnames[1] == '')	-- should always be there
@@ -329,9 +335,7 @@ function OBJLoader:save(filename, mesh)
 			if not vis then return end
 			writeMtlName()
 			o:write('f ', table.mapi(vis, function(vi)
-				local vs = table{vi.v, vi.vt, vi.vn}
-				for i=1,vs:maxn() do vs[i] = vs[i] or '' end
-				return vs:concat'/'
+				return table{vi, vi, vi}:concat'/'
 			end):concat' ', '\n')
 			vis = nil
 		end
