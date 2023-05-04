@@ -694,26 +694,22 @@ function Mesh:loadGL(shader)
 	}
 	assert(glreport'here')
 
-	self.vtxAttrs = {}
-	for _,info in ipairs{
+	self.vtxAttrs = table{
 		{name='pos', size=3},
 		{name='texCoord', size=3},
 		{name='normal', size=3},
 		{name='normal2', size=3},
 		{name='com', size=3},
-	} do
-		local srcAttr = shader.attrs[info.name]
-		if srcAttr then
-			self.vtxAttrs[info.name] = GLAttribute{
-				buffer = self.vtxBuf,
-				size = info.size,
-				type = gl.GL_FLOAT,
-				stride = ffi.sizeof'obj_vertex_t',
-				offset = ffi.offsetof('obj_vertex_t', info.name),
-			}
-			assert(glreport'here')
-		end
-	end
+	}:mapi(function(info)
+		if not shader.attrs[info.name] then return end
+		return GLAttribute{
+			buffer = self.vtxBuf,
+			size = info.size,
+			type = gl.GL_FLOAT,
+			stride = ffi.sizeof'obj_vertex_t',
+			offset = ffi.offsetof('obj_vertex_t', info.name),
+		}, info.name
+	end)
 	shader:use()
 	assert(glreport'here')
 	self.vao = GLVertexArray{
