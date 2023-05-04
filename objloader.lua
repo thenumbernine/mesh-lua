@@ -87,7 +87,7 @@ function OBJLoader:load(filename)
 				-- keys:
 				t.index = #tris+1	-- so far only used for debugging
 				t.mtl = mtl
-				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris end
+				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris-1 end
 				mtl.triCount = #tris - mtl.triFirstIndex + 1
 			end
 		elseif lineType == 's' then
@@ -106,7 +106,7 @@ function OBJLoader:load(filename)
 				mesh.mtllib[curmtl] = mtl
 			end
 			assert(not mtl.triFirstIndex)
-			mtl.triFirstIndex = #tris+1
+			mtl.triFirstIndex = #tris
 			mtl.triCount = 0
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
@@ -118,7 +118,7 @@ function OBJLoader:load(filename)
 
 	for _,m in pairs(mesh.mtllib) do
 		if not m.triFirstIndex then
-			m.triFirstIndex = 1
+			m.triFirstIndex = 0
 			m.triCount = 0
 		end
 	end
@@ -336,7 +336,7 @@ function OBJLoader:save(filename, mesh)
 			vis = nil
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
-			local t = mesh.triIndexBuf.v + 3*(i-1)
+			local t = mesh.triIndexBuf.v + 3*i
 			
 			local a = self.vtxCPUBuf.v[t[0]].pos
 			local b = self.vtxCPUBuf.v[t[1]].pos

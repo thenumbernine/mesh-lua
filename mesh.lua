@@ -364,10 +364,10 @@ function Mesh:getTriIndexesForMaterial(mtlname)
 		if mtl then
 			return mtl.triFirstIndex, mtl.triFirstIndex + mtl.triCount - 1
 		else
-			return 1, 0
+			return 0, -1
 		end
 	else
-		return 1, self.triIndexBuf.size/3
+		return 0, self.triIndexBuf.size/3-1
 	end
 end
 
@@ -430,7 +430,7 @@ function Mesh:calcCOM2(mtlname)
 	local totalArea = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local a, b, c = self:getTriVtxPos(3*(i-1))
+		local a, b, c = self:getTriVtxPos(3*i)
 		local com = (a + b + c) * (1/3)
 		local area = triArea(a, b, c)
 		totalCOM = totalCOM + com * area
@@ -450,7 +450,7 @@ function Mesh:calcCOM3(mtlname)
 	local totalVolume = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local a, b, c = self:getTriVtxPos(3*(i-1))
+		local a, b, c = self:getTriVtxPos(3*i)
 
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
 		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
@@ -486,7 +486,7 @@ function Mesh:regenNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
 --print('zeroing vertex normals')
-	local vtxnormals = vector('vec3f_t', #self.vs)
+	local vtxnormals = vector('vec3f_t', self.vtxCPUBuf.size)
 --print('accumulating triangle normals into vertex normals')
 	for i=0,self.triIndexBuf.size-1,3 do
 		local ia = self.triIndexBuf.v[i]
@@ -638,13 +638,10 @@ function Mesh:draw(args)
 			-- TODO store a set of unique face v/vt/vn index-vertexes
 			-- and then bake those into a unique vertex array, and store its index alongside face's other indexes
 			-- that'll be most compat with GL indexed arrays
-			if vi.vt then
-				gl.glTexCoord2f(self.vts[vi.vt]:unpack())
-			end
-			if vi.vn then
-				gl.glNormal3f(self.vns[vi.vn]:unpack())
-			end
-			gl.glVertex3f(self.vs[vi.v]:unpack())
+			local v = self.vtxCPUBuf.v[vi]
+			gl.glTexCoord2fv(v.texcoord.s)
+			gl.glNormal3fv(v.normal.s)
+			gl.glVertex3fv(self.vtxCPUBuf.v[vi].pos.s)
 		end
 		gl.glEnd()
 		--]]
@@ -675,7 +672,7 @@ function Mesh:draw(args)
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 		if mtl.triCount > 0 then
 			self.vao:use()
-			gl.glDrawElements(gl.GL_TRIANGLES, mtl.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + (mtl.triFirstIndex-1) * 3)
+			gl.glDrawElements(gl.GL_TRIANGLES, mtl.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + mtl.triFirstIndex * 3)
 			self.vao:useNone()
 		end
 		--]]
