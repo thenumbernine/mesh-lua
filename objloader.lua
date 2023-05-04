@@ -78,7 +78,11 @@ function OBJLoader:load(filename)
 			assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 			for i=2,#words-1 do
 				-- store a copy of the vertex indices per triangle index
-				local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
+				local t = {
+					table(vis[1]):setmetatable(nil),
+					table(vis[i]):setmetatable(nil),
+					table(vis[i+1]):setmetatable(nil),
+				}
 				tris:insert(t)
 				-- keys:
 				t.index = #tris+1	-- so far only used for debugging
@@ -330,6 +334,7 @@ function OBJLoader:save(filename, mesh)
 			o:write('usemtl ', mtlname, '\n')
 		end
 		local lastt
+		local lasttnormal
 		local vis
 		local function writeFaceSoFar()
 			if not vis then return end
@@ -342,24 +347,32 @@ function OBJLoader:save(filename, mesh)
 			vis = nil
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
-			local t = mesh.triIndexBuf.v
+			local t = mesh.triIndexBuf.v + 3*(i-1)
+			
+			local a = self.vtxCPUBuf.v[t[0]].pos
+			local b = self.vtxCPUBuf.v[t[1]].pos
+			local c = self.vtxCPUBuf.v[t[2]].pos
+			local area = triArea(a, b, c)
+			local normal = (b - a):cross(c - b)
+
 			-- exclude empty triangles here, or TODO elsewhere
-			--if t.area > 0 then
-			if lastt
-			and t[0] == lastt[0]
-			and t[1] == lastt[2]
-			-- same plane
-			and t.normal:dot(lastt.normal) > 1 - 1e-3
-			and math.abs((mesh.vs[t[2]+1] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
-			then
-				-- continuation of the last face
-				vis:insert(t[2])
-			else
-				writeFaceSoFar()
-				vis = table{t[0], t[1], t[2]}
+			if area > 0 then
+				if lastt
+				and t[0] == lastt[0]
+				and t[1] == lastt[2]
+				-- same plane
+				and normal:dot(lasttnormal) > 1 - 1e-3
+				and math.abs((mesh.vs[t[2]+1] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
+				then
+					-- continuation of the last face
+					vis:insert(t[2])
+				else
+					writeFaceSoFar()
+					vis = table{t[0], t[1], t[2]}
+				end
+				lastt = t
+				lasttnormal = normal
 			end
-			lastt = t
-			--end
 		end
 		writeFaceSoFar()
 	end

@@ -11,7 +11,6 @@ local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
 local quatd = require 'vec-ffi.quatd'
-local matrix = require 'matrix'
 local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
 local OBJLoader = require 'mesh.objloader'

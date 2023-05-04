@@ -19,16 +19,6 @@ typedef struct {
 } obj_vertex_t;
 ]]
 
-
-local Triangle = class()
-
--- a,b,c are face index structures (with .v .vt .vn indexes into mesh.vs .vts .vns)
-function Triangle:init(a,b,c)
-	self[1] = table(a):setmetatable(nil)
-	self[2] = table(b):setmetatable(nil)
-	self[3] = table(c):setmetatable(nil)
-end
-
 local function triArea(a,b,c)
 	local ab = b - a
 	local ac = c - a
@@ -47,29 +37,7 @@ local function tetradVolume(a,b,c)
 		- c.z * b.x * a.y) / 6
 end
 
--- calculate .normal and .area
-function Triangle:calcAux(mesh)
-	local a = matrix(mesh.vs[self[1].v])
-	local b = matrix(mesh.vs[self[2].v])
-	local c = matrix(mesh.vs[self[3].v])
-	self.area = triArea(a, b, c)
-	self.com = (a + b + c) / 3
-	-- TODO what if the tri is degenerate to a line?
-	self.normal = (b - a):cross(c - b)
-	if self.normal:norm() < 1e-7 then
-		self.normal = matrix{0,0,0}
-	else
-		self.normal = self.normal:normalize()
-		if not math.isfinite(self.normal:normSq()) then
-			self.normal = matrix{0,0,0}
-		end
-	end
-end
-
-
 local Mesh = class()
-
-Mesh.Triangle = Triangle
 
 function Mesh:init(filename)
 	-- TODO new system:
@@ -92,8 +60,6 @@ function Mesh:prepare()
 	self:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
-
-	self:calcTriAux()
 
 	-- store all edges of all triangles
 	-- ... why?  who uses this?
@@ -227,13 +193,6 @@ function Mesh:calcAllOverlappingEdges()
 --]]
 end
 
-function Mesh:calcTriAux()
-	-- store tri area
-	for _,t in ipairs(self.tris) do
-		t:calcAux(self)
-	end
-end
-
 function Mesh:findEdges()
 	-- and just for kicks, track all edges
 	timer('edges', function()
@@ -301,34 +260,32 @@ end
 function Mesh:replaceVertex(from,to)
 --print('replacing vertex ' ..from..' with '..to)
 	assert(from > to)
-	assert(from >= 1 and from <= #self.vs)
-	assert(to >= 1 and to <= #self.vs)
+	assert(from >= 0 and from <= self.vtxCPUBuf.size)
+	assert(to >= 0 and to <= self.vtxCPUBuf.size)
 	-- replace in .tris
-	for _,t in ipairs(self.tris) do
-		for i=1,3 do
-			if t[i].v == from then t[i].v = to end
+	for j=self.triIndexBuf.size-3,0,-3 do
+		local t = self.triIndexBuf.v + j
+		for i=0,2 do
+			if t[i] == from then t[i] = to end
 		end
 	end
 end
 
 function Mesh:removeDegenerateTriangles()
-	for i=#self.tris,1,-1 do
-		local t = self.tris[i]
-		for j=3,2,-1 do
-			if t[j].v == t[j-1].v then
-				table.remove(t,j)
+	for i=self.triIndexBuf.size-3,0,-3 do
+		local t = self.triIndexBuf.v + j
+		for j=2,1,-1 do
+			if t[j] == t[j-1] then
+--print('removing degenerate tri '..i..' with duplicate vertices')
+				self:removeTri(i)
 				break
 			end
-		end
-		if #t < 3 then
---print('removing degenerate tri '..i..' with duplicate vertices')
-			self:removeTri(i)
 		end
 	end
 end
 
 function Mesh:removeTri(i)
-	self.tris:remove(i)
+	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
 	for mtlname,mtl in pairs(self.mtllib) do
 		if i < mtl.triFirstIndex then
 			mtl.triFirstIndex = mtl.triFirstIndex - 1
@@ -342,54 +299,20 @@ end
 -- remove the vertex from the elf.vs[] list
 -- decrement the indexes greater
 function Mesh:removeVertex(vi)
-	assert(vi >= 1 and vi <= #self.vs)
-	self.vs:remove(vi)
+	assert(vi >= 0 and vi < self.vtxCPUBuf.size)
+	self.vtxCPUBuf:erase(self.vtxCPUBuf.v + i, self.vtxCPUBuf.v + i + 1)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
 	-- if you just straight up remove a vertex then the tris and faces might go out of sync
-	for j=#self.tris,1,-1 do
-		local t = self.tris[j]
-		for i=1,3 do
-			if t[i].v == vi then
+	for j=self.triIndexBuf.size-3,0,-3 do
+		local t = self.triIndexBuf.v + j
+		for i=0,2 do
+			if t[i] == vi then
 				--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
 				self:removeTri(j)
 				break
-			elseif t[i].v > vi then
-				t[i].v = t[i].v - 1
-			end
-		end
-	end
-end
-
--- same as removeVertex
--- removes vts[]
--- errors if a tri is still using it
-function Mesh:removeTexCoord(vti)
-	assert(vti >= 1 and vti <= #self.vts)
-	self.vts:remove(vti)
-	for j=#self.tris,1,-1 do
-		local t = self.tris[j]
-		for i=1,3 do
-			if t[i].vt == vti then
-				error("found a to-be-removed texcoord index in a tri")
-			elseif t[i].vt > vti then
-				t[i].vt = t[i].vt - 1
-			end
-		end
-	end
-end
-
--- same as removeTexCoord
-function Mesh:removeNormal(vni)
-	assert(vni >= 1 and vni <= #self.vns)
-	self.vns:remove(vni)
-	for j=#self.tris,1,-1 do
-		local t = self.tris[j]
-		for i=1,3 do
-			if t[i].vn == vni then
-				error("found a to-be-removed normal index in a tri")
-			elseif t[i].vn > vni then
-				t[i].vn = t[i].vn - 1
+			elseif t[i] > vi then
+				t[i] = t[i] - 1
 			end
 		end
 	end
@@ -414,40 +337,19 @@ end
 
 function Mesh:removeUnusedVtxs()
 	local usedVs = {}
-	local usedVts = {}
-	local usedVns = {}
 	timer('finding used vertexes', function()
-		for _,t in ipairs(self.tris) do
-			for j=1,3 do
-				usedVs[t[j].v] = true
-				if t[j].vt then usedVts[t[j].vt] = true end
-				if t[j].vn then usedVns[t[j].vn] = true end
-			end
+		for i=0,self.triIndexBuf.size-1 do
+			usedVs[self.triIndexBuf.v[j]] = true
 		end
 	end)
-
 	timer('removing unused vtxs', function()
-		print('before removing, #vs', #self.vs)
-		for i=#self.vs,1,-1 do
+		print('before removing, #vs', self.vtxCPUBuf.size)
+		for i=self.vtxCPUBuf.size-1,0,-1 do
 			if not usedVs[i] then
 				self:removeVertex(i)
 			end
 		end
-		print('after removing, #vs', #self.vs)
-		print('before removing, #vts', #self.vts)
-		for i=#self.vts,1,-1 do
-			if not usedVts[i] then
-				self:removeTexCoord(i)
-			end
-		end
-		print('after removing, #vts', #self.vts)
-		print('before removing, #vns', #self.vns)
-		for i=#self.vns,1,-1 do
-			if not usedVns[i] then
-				self:removeNormal(i)
-			end
-		end
-		print('after removing, #vns', #self.vns)
+		print('after removing, #vs', self.vtxCPUBuf.size)
 	end)
 end
 
@@ -469,7 +371,7 @@ function Mesh:getTriIndexesForMaterial(mtlname)
 			return 1, 0
 		end
 	else
-		return 1, #self.tris
+		return 1, self.triIndexBuf.size/3
 	end
 end
 
@@ -483,29 +385,6 @@ function Mesh:mtliter(mtlname)
 		else
 			for mtlname, mtl in pairs(self.mtllib) do
 				coroutine.yield(mtl, mtlname)
-			end
-		end
-	end)
-end
-
--- yields with the triangle
--- triangles have [1][2][3] as vi objects which has  .v .vt .vn as indexes into .vs[] .vts[] .vns[]
-function Mesh:triiter(mtlname)
-	return coroutine.wrap(function()
-		for mtl, mtlname in self:mtliter(mtlname) do
-			for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
-				coroutine.yield(self.tris[i], i)	-- should all pairs/ipairs yield the value first? my table.map does it.  javascript forEach does it.  hmm...
-			end
-		end
-	end)
-end
-
--- same as above, but then yield for each vi individually
-function Mesh:triindexiter(mtlname)
-	return coroutine.wrap(function()
-		for t in self:triiter(mtlname) do
-			for i=1,3 do
-				coroutine.yield(t[i])
 			end
 		end
 	end)
