@@ -32,9 +32,11 @@ local OBJLoader = class()
 
 function OBJLoader:load(filename)
 	local mesh = Mesh()
+	
 	local vs = table()
 	local vts = table()
 	local vns = table()
+	local tris = table()
 
 	mesh.relpath = file(filename):getdir()
 	mesh.mtlFilenames = table()
@@ -77,12 +79,12 @@ function OBJLoader:load(filename)
 			for i=2,#words-1 do
 				-- store a copy of the vertex indices per triangle index
 				local t = Mesh.Triangle(vis[1], vis[i], vis[i+1])
-				mesh.tris:insert(t)
+				tris:insert(t)
 				-- keys:
-				t.index = #mesh.tris+1	-- so far only used for debugging
+				t.index = #tris+1	-- so far only used for debugging
 				t.mtl = mtl
-				if not mtl.triFirstIndex then mtl.triFirstIndex = #mesh.tris end
-				mtl.triCount = #mesh.tris - mtl.triFirstIndex + 1
+				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris end
+				mtl.triCount = #tris - mtl.triFirstIndex + 1
 			end
 		elseif lineType == 's' then
 			-- TODO then smooth is on
@@ -100,7 +102,7 @@ function OBJLoader:load(filename)
 				mesh.mtllib[curmtl] = mtl
 			end
 			assert(not mtl.triFirstIndex)
-			mtl.triFirstIndex = #mesh.tris+1
+			mtl.triFirstIndex = #tris+1
 			mtl.triCount = 0
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
@@ -117,18 +119,7 @@ function OBJLoader:load(filename)
 		end
 	end
 
--- TODO in the near future, calculate vtxCPUBuf here
--- and map vertexes to unique indexes to build IndexedArrays here
-	-- for tri.normal and tri.area
-	mesh.vs = vs
-	mesh.vts = vts
-	mesh.vns = vns
-	mesh:calcTriAux()
-
-	-- TODO calc vtx normals before or after grouping redundant vtxs?
-	-- TODO this breaks .area, .com, and .normal
-	-- should I calculate them here?
-	-- should I even use .normal vs .normal2?
+	-- calc vtx normals before or after grouping redundant vtxs?
 
 	local indexForVtx = {}	-- from 'v,vt,vn'
 	local vtxCPUBuf = vector'obj_vertex_t'	-- vertex structure
@@ -136,7 +127,7 @@ function OBJLoader:load(filename)
 	local newvs = table()
 	local newvts = table()
 	local newvns = table()
-	for _,t in ipairs(mesh.tris) do
+	for _,t in ipairs(tris) do
 		for j,tj in ipairs(t) do
 			local k = table.concat({tj.v, tj.vt, tj.vn},',')
 			local i = indexForVtx[k]	-- 0-based
@@ -165,19 +156,20 @@ function OBJLoader:load(filename)
 			tj.vn = i+1
 		end
 	end
+--print('#unique vertexes', vtxCPUBuf.size)
+--print('#unique triangles', triIndexBuf.size)
+
+	-- new system
+	mesh.vtxCPUBuf = vtxCPUBuf
+	mesh.triIndexBuf = triIndexBuf
+	-- old system
 	mesh.vs = newvs
 	mesh.vts = newvts
 	mesh.vns = newvns
-print('#unique vertexes', vtxCPUBuf.size)
-print('#unique triangles', triIndexBuf.size)
+	mesh.tris = tris
 
-	mesh.vtxCPUBuf = vtxCPUBuf
-	mesh.triIndexBuf = triIndexBuf
-	
 	-- while we're here, regenerate the vs vts vns from their reduced triIndexBuf values
 
-
---print('#tris', #mesh.tris)
 	return mesh
 end
 
@@ -350,24 +342,24 @@ function OBJLoader:save(filename, mesh)
 			vis = nil
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
-			local t = mesh.tris[i]
-			-- exclude empty triangles here, or elsewhere?
-			if t.area > 0 then
-				if lastt
-				and t[1].v == lastt[1].v
-				and t[2].v == lastt[3].v
-				-- same plane
-				and t.normal:dot(lastt.normal) > 1 - 1e-3
-				and math.abs((mesh.vs[t[3].v] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
-				then
-					-- continuation of the last face
-					vis:insert(t[3])
-				else
-					writeFaceSoFar()
-					vis = table{t[1], t[2], t[3]}
-				end
-				lastt = t
+			local t = mesh.triIndexBuf.v
+			-- exclude empty triangles here, or TODO elsewhere
+			--if t.area > 0 then
+			if lastt
+			and t[0] == lastt[0]
+			and t[1] == lastt[2]
+			-- same plane
+			and t.normal:dot(lastt.normal) > 1 - 1e-3
+			and math.abs((mesh.vs[t[2]+1] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
+			then
+				-- continuation of the last face
+				vis:insert(t[2])
+			else
+				writeFaceSoFar()
+				vis = table{t[0], t[1], t[2]}
 			end
+			lastt = t
+			--end
 		end
 		writeFaceSoFar()
 	end

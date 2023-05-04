@@ -48,6 +48,9 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.mesh = OBJLoader():load(fn)
+print('#unique vertexes', self.mesh.vtxCPUBuf.size)
+print('#unique triangles', self.mesh.triIndexBuf.size/3)
+	
 	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
 
@@ -101,7 +104,6 @@ function App:initGL(...)
 	self.useDrawVertexes = false
 	self.useDrawEdges = false
 	self.useDrawPolys = true
-	self.drawStoredNormals = false
 	self.drawVertexNormals = false
 	self.drawTriNormals = false
 	self.drawUVUnwrapEdges = false
@@ -270,9 +272,6 @@ function App:update()
 
 	self.mesh:loadGL(self.shader)
 
-	if self.drawStoredNormals then
-		self.mesh:drawStoredNormals()
-	end
 	if self.drawVertexNormals then
 		self.mesh:drawVertexNormals()
 	end
@@ -301,8 +300,8 @@ function App:update()
 					Kd = mtl.Kd or {1,1,1,1},
 					Ks = mtl.Ks or {1,1,1,1},
 					Ns = mtl.Ns or 10,
-					objCOM = self.mesh.com3,
-					groupCOM = mtl.com3,
+					objCOM = self.mesh.com3.s,
+					groupCOM = mtl.com3.s,
 					groupExplodeDist = self.groupExplodeDist,
 					triExplodeDist = self.triExplodeDist,
 				}
@@ -498,7 +497,6 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')
 			ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
 			ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
-			ig.luatableCheckbox('draw stored normals', self, 'drawStoredNormals')
 			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')

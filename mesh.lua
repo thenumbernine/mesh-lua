@@ -36,14 +36,15 @@ local function triArea(a,b,c)
 	return .5 * n:norm()
 end
 
+-- volume of parallelogram with vertices at 0, a, b, c
 -- the 4th pt in the tetrad is zero.  adjust a,b,c accordingly
 local function tetradVolume(a,b,c)
-	return (a[1] * b[2] * c[3]
-		+ a[2] * b[3] * c[1]
-		+ a[3] * b[1] * c[2]
-		- c[1] * b[2] * a[3]
-		- c[2] * b[3] * a[1]
-		- c[3] * b[1] * a[2]) / 6
+	return (a.x * b.y * c.z
+		+ a.y * b.z * c.x
+		+ a.z * b.x * c.y
+		- c.x * b.y * a.z
+		- c.y * b.z * a.x
+		- c.z * b.x * a.y) / 6
 end
 
 -- calculate .normal and .area
@@ -71,14 +72,17 @@ local Mesh = class()
 Mesh.Triangle = Triangle
 
 function Mesh:init(filename)
-	-- TODO *only* store tris, 
+	-- TODO new system:
+	self.vtxCPUBuf = vector'obj_vertex_t'
+	self.triIndexBuf = vector'int32_t'
+	
 	-- or maybe store indexes too
 	-- then the rest pack/unpack upon obj save/load
 	self.vs = table()
 	self.vts = table()
 	self.vns = table()
-	
 	self.tris = table() -- triangulation of all faces
+	
 	self.mtllib = {[''] = {}}
 end
 
@@ -117,7 +121,7 @@ function Mesh:mergeMatchingVertexes()
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
-	print('before merge vtx count', #self.vs, 'tri count', #self.tris)
+	print('before merge vtx count', #self.vs, 'tri count', self.triIndexBuf.size)
 	for i=#self.vs,2,-1 do
 		for j=1,i-1 do
 			local dist = (self.vs[i] - self.vs[j]):norm()
@@ -129,7 +133,7 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 			end
 		end
 	end
-	print('after merge vtx count', #self.vs, 'tri count', #self.tris)
+	print('after merge vtx count', #self.vs, 'tri count', self.triIndexBuf.size)
 end
 
 -- fill the allOverlappingEdges table
@@ -144,23 +148,6 @@ function Mesh:calcAllOverlappingEdges()
 	self.allOverlappingEdges = table()
 	for _,t in ipairs(self.tris) do
 		t.allOverlappingEdges = table()
-	end
-	local function addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, rayPos, rayDir)
-		-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
-		assert(i2 < i1)
-		local t1 = self.tris[i1]
-		local t2 = self.tris[i2]
-		local e = {
-			tris = {t2, t1},
-			triVtxIndexes = {j2, j1},
-			intervals = {{s21,s22}, {s11,s12}},
-			dist = dist,
-			rayPos = rayPos,
-			rayDir = rayDir
-		}
-		self.allOverlappingEdges:insert(e)
-		t1.allOverlappingEdges:insert(e)
-		t2.allOverlappingEdges:insert(e)
 	end
 --for _,t in ipairs(self.tris) do
 --	print('n = '..t.normal)
@@ -194,7 +181,6 @@ function Mesh:calcAllOverlappingEdges()
 								dv = dv - rayDir * dv:dot(rayDir)		-- project onto the plane normal
 								local dist = dv:norm()
 								if dist < 1e-3 then
-
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
 									local s11 = 0	--(v11 - rayPos):dot(rayDir) -- assuming v11 is the plane origin
 									local s12 = (v12 - rayPos):dot(rayDir)
@@ -204,7 +190,21 @@ function Mesh:calcAllOverlappingEdges()
 									-- since these aren't, they have to be sorted
 									if s21 > s22 then s21, s22 = s22, s21 end
 									if s11 < s22 and s12 > s21 then
-										addEdge(i1, i2, j1, j2, dist, s11, s12, s21, s22, rayPos, rayDir)
+										-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
+										assert(i2 < i1)
+										local t1 = self.tris[i1]
+										local t2 = self.tris[i2]
+										local e = {
+											tris = {t2, t1},
+											triVtxIndexes = {j2, j1},
+											intervals = {{s21,s22}, {s11,s12}},
+											dist = dist,
+											rayPos = rayPos,
+											rayDir = rayDir
+										}
+										self.allOverlappingEdges:insert(e)
+										t1.allOverlappingEdges:insert(e)
+										t2.allOverlappingEdges:insert(e)
 									end
 								end
 							end
@@ -245,18 +245,21 @@ function Mesh:findEdges()
 				[1] = a,
 				[2] = b,
 				tris = table(),
-				length = (self.vs[a] - self.vs[b]):norm(),
+				length = (self.vtxCPUBuf.v[a-1].pos - self.vtxCPUBuf.v[b-1].pos):norm(),
 			}
 			local e = self.edges[a][b]
 			e.tris:insert(t)
 			t.edges:insert(e)
 		end
-		for _,t in ipairs(self.tris) do
+		for i=0,self.triIndexBuf.size-1,3 do
+			local a = self.triIndexBuf.v[i]
+			local b = self.triIndexBuf.v[i+1]
+			local c = self.triIndexBuf.v[i+2]
+			local t = self.tris[i/3+1]
 			t.edges = table()
-			local a,b,c = table.unpack(t)
-			addEdge(a.v, b.v, t)
-			addEdge(a.v, c.v, t)
-			addEdge(b.v, c.v, t)
+			addEdge(a+1, b+1, t)
+			addEdge(a+1, c+1, t)
+			addEdge(b+1, c+1, t)
 		end
 	end)
 end
@@ -510,7 +513,11 @@ end
 
 -- calculate COM by 0-forms (vertexes)
 function Mesh:calcCOM0()
-	local result = self.vs:sum() / #self.vs
+	local result = vec3f()
+	for i=0,self.vtxCPUBuf.size-1 do
+		result = result + self.vtxCPUBuf.v[i].pos
+	end
+	result = result / self.vtxCPUBuf.size
 	assert(math.isfinite(result:normSq()))
 	return result
 end
@@ -518,12 +525,12 @@ end
 -- calculate COM by 1-forms (edges)
 -- depend on self.edges being stored
 function Mesh:calcCOM1()
-	local totalCOM = matrix{0,0,0}
+	local totalCOM = vec3f()
 	local totalLen = 0
 	for a,bs in pairs(self.edges) do
 		for b in pairs(bs) do
-			local v1 = self.vs[a]
-			local v2 = self.vs[b]
+			local v1 = self.vtxCPUBuf.v[a-1].pos
+			local v2 = self.vtxCPUBuf.v[b-1].pos
 			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
 			-- for 1D, volume = |b-a|
 			local length = (v1 - v2):norm()
@@ -544,13 +551,15 @@ end
 -- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
 -- for 2D, volume = |(b-a)x(c-a)|
 function Mesh:calcCOM2(mtlname)
-	local totalCOM = matrix{0,0,0}
+	local totalCOM = vec3f()
 	local totalArea = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local t = self.tris[i]
-		totalCOM = totalCOM + t.com * t.area
-		totalArea = totalArea + t.area
+		local a, b, c = self:getTriVtxPos(3*(i-1))
+		local com = (a + b + c) * (1/3)
+		local area = triArea(a, b, c)
+		totalCOM = totalCOM + com * area
+		totalArea = totalArea + area
 	end
 	if totalArea == 0 then
 		return self:calcCOM1(mtlname)
@@ -562,14 +571,11 @@ end
 
 -- calculate COM by 3-forms (enclosed volume)
 function Mesh:calcCOM3(mtlname)
-	local totalCOM = matrix{0,0,0}
+	local totalCOM = vec3f()
 	local totalVolume = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local t = self.tris[i]
-		local a = self.vs[t[1].v]
-		local b = self.vs[t[2].v]
-		local c = self.vs[t[3].v]
+		local a, b, c = self:getTriVtxPos(3*(i-1))
 
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
 		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
@@ -592,13 +598,8 @@ end
 -- calculates volume bounded by triangles
 function Mesh:calcVolume()
 	local totalVolume = 0
-	for _,t in ipairs(self.tris) do
-		local i,j,k = table.unpack(t)
-		-- volume of parallelogram with vertices at 0, a, b, c
-		local a = self.vs[i.v]
-		local b = self.vs[j.v]
-		local c = self.vs[k.v]
-		totalVolume = totalVolume + tetradVolume(a,b,c)
+	for i=0,self.triIndexBuf.size-1,3 do
+		totalVolume = totalVolume + tetradVolume(self:getTriVtxPos(i))
 	end
 	if totalVolume < 0 then totalVolume = -totalVolume end
 	return totalVolume
@@ -647,15 +648,10 @@ function Mesh:regenNormals()
 --print(k, vtxnormals[i])
 	end
 
-	if self.vtxCPUBuf then
-		local e = 0
-		for i,t in ipairs(self.tris) do
-			for j,tj in ipairs(t) do
-				self.vtxCPUBuf.v[e].normal = vtxnormals.v[tj.v-1]
-				e = e + 1
-			end
-		end
-		assert(e == self.vtxCPUBuf.size)
+	for i=0,self.vtxCPUBuf.size-1 do
+		self.vtxCPUBuf.v[i].normal = vtxnormals.v[i]
+	end
+	if self.vtxBuf then
 		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxCPUBuf.size, self.vtxCPUBuf.v)
 	end
 end
@@ -690,33 +686,6 @@ function Mesh:loadGL(shader)
 
 	-- mtl will just index into this.
 	-- why does mtl store a list of tri indexes?  it should just store an offset
---print('allocating cpu buffer of obj_vertex_t of size', #self.tris * 3)
-	local vtxCPUBuf = vector('obj_vertex_t', #self.tris * 3)
-	self.vtxCPUBuf = vtxCPUBuf
-
-	for i,t in ipairs(self.tris) do
-		for j,vi in ipairs(t) do
-			local dst = vtxCPUBuf.v + (j-1) + 3 * (i-1)
-			dst.pos:set(self.vs[vi.v]:unpack())
-			if vi.vt then
-				if vi.vt < 1 or vi.vt > #self.vts then
-					print("found an oob vt "..vi.vt)
-					dst.texcoord:set(0,0,0)
-				else
-					dst.texcoord:set(self.vts[vi.vt]:unpack())
-				end
-			end
-			if vi.vn then
-				if vi.vn < 1 or vi.vn > #self.vns then
-					print("found an oob fn "..vi.vn)
-					dst.normal:set(0,0,0)
-				else
-					dst.normal:set(self.vns[vi.vn]:unpack())
-				end
-			end
-			dst.com:set(t.com:unpack())
-		end
-	end
 
 --print('creating array buffer of size', self.vtxCPUBuf.size)
 	self.vtxBuf = GLArrayBuffer{
@@ -831,7 +800,7 @@ function Mesh:draw(args)
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 		if mtl.triCount > 0 then
 			self.vao:use()
-			gl.glDrawArrays(gl.GL_TRIANGLES, (mtl.triFirstIndex-1) * 3, mtl.triCount * 3)
+			gl.glDrawElements(gl.GL_TRIANGLES, mtl.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + (mtl.triFirstIndex-1) * 3)
 			self.vao:useNone()
 		end
 		--]]
@@ -857,17 +826,19 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	for a,other in pairs(self.edges) do
 		for b,edge in pairs(other) do
 			-- avg of explode offsets of all touching tris
-			local offset = matrix{0,0,0}
-			for _,t in ipairs(edge.tris) do
+			local offset = vec3f()
+			for i,t in ipairs(edge.tris) do
+				local va, vb, vc = self:getTriVtxPos(3*(i-1))
+				local tcom = (va + vb + vc) * (1/3)
 				-- get mtl for tri, then do groupExplodeDist too
 				-- matches the shader in view.lua
 				local groupExplodeOffset = (t.mtl.com3 - self.com3) * groupExplodeDist
-				local triExplodeOffset = (t.com - t.mtl.com3) * triExplodeDist
+				local triExplodeOffset = (tcom - t.mtl.com3) * triExplodeDist
 				offset = offset + groupExplodeOffset + triExplodeOffset
 			end
 			offset = offset / #edge.tris
-			gl.glVertex3f((self.vs[a] + offset):unpack())
-			gl.glVertex3f((self.vs[b] + offset):unpack())
+			gl.glVertex3fv((self.vtxCPUBuf.v[a-1].pos + offset).s)
+			gl.glVertex3fv((self.vtxCPUBuf.v[b-1].pos + offset).s)
 		end
 	end
 	gl.glEnd()
@@ -879,61 +850,54 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glColor3f(1,1,1)
 	gl.glPointSize(3)
 	gl.glBegin(gl.GL_POINTS)
-	for i,v in ipairs(self.vs) do
+	for i=0,self.vtxCPUBuf.size-1 do
+		local v = self.vtxCPUBuf.v[i].pos
 		-- avg of explode offsets of all touching tris
-		local offset = matrix{0,0,0}
+		local offset = vec3f()
 		-- get mtl for tri, then do groupExplodeDist too
 		-- matches the shader in view.lua
 		local triExplodeOffset = (v - self.com3) * triExplodeDist
 		offset = offset + triExplodeOffset
-		gl.glVertex3f((v + offset):unpack())
+		gl.glVertex3fv((v + offset).s)
 	end
 	gl.glEnd()
 	gl.glPointSize(1)
 end
 
 
-
-function Mesh:drawStoredNormals()
-	local gl = require 'gl'
-	gl.glColor3f(0,1,1)
-	gl.glBegin(gl.GL_LINES)
-	for _,t in ipairs(self.tris) do
-		for _,vi in ipairs(t) do
-			if vi.vn then
-				local v = self.vs[vi.v]
-				local vn = self.vns[vi.vn]
-				gl.glVertex3f(t.com:unpack())
-				gl.glVertex3f((t.com + vn):unpack())
-			end
-		end
-	end
-	gl.glEnd()
-end
-
 function Mesh:drawVertexNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for mtlname,mtl in pairs(self.mtllib) do
-		if mtl.vtxCPUBuf then
-			for i=0,mtl.vtxCPUBuf.size-1,3 do
-				local v = mtl.vtxCPUBuf.v[i]
-				gl.glVertex3f(v.pos:unpack())
-				gl.glVertex3f((v.pos + v.normal):unpack())
-			end
-		end
+	for i=0,self.vtxCPUBuf.size-1 do
+		local v = self.vtxCPUBuf.v[i]
+		gl.glVertex3f(v.pos:unpack())
+		gl.glVertex3f((v.pos + v.normal):unpack())
 	end
 	gl.glEnd()
+end
+
+-- 0-based
+function Mesh:getTriVtxPos(i)
+	local ia = self.triIndexBuf.v[i]
+	local ib = self.triIndexBuf.v[i+1]
+	local ic = self.triIndexBuf.v[i+2]
+	local va = self.vtxCPUBuf.v[ia].pos
+	local vb = self.vtxCPUBuf.v[ib].pos
+	local vc = self.vtxCPUBuf.v[ic].pos
+	return va, vb, vc
 end
 
 function Mesh:drawTriNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for _,t in ipairs(self.tris) do
-		gl.glVertex3f(t.com:unpack())
-		gl.glVertex3f((t.com + t.normal):unpack())
+	for i=0,self.triIndexBuf.size-1,3 do
+		local a, b, c = self:getTriVtxPos(i)
+		local normal = (b - a):cross(c - b)
+		local com = (a + b + c) * (1/3)
+		gl.glVertex3fv(com.s)
+		gl.glVertex3fv((com + normal).s)
 	end
 	gl.glEnd()
 end
