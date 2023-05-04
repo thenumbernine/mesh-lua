@@ -43,12 +43,8 @@ function Mesh:init(filename)
 	-- TODO new system:
 	self.vtxCPUBuf = vector'obj_vertex_t'
 	self.triIndexBuf = vector'int32_t'
-	
-	-- or maybe store indexes too
-	-- then the rest pack/unpack upon obj save/load
-	self.vs = table()
-	self.vts = table()
-	self.vns = table()
+
+	-- just holds extra info per tri
 	self.tris = table() -- triangulation of all faces
 	
 	self.mtllib = {[''] = {}}
@@ -74,8 +70,8 @@ end
 function Mesh:calcBBox()
 	local box3 = require 'vec.box3'
 	self.bbox = box3(-math.huge)
-	for _,v in ipairs(self.vs) do
-		self.bbox:stretch(v)
+	for i=0,self.vtxCPUBuf.size-1 do
+		self.bbox:stretch{self.vtxCPUBuf.v[i].pos:unpack()}
 	end
 end
 
