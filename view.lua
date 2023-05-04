@@ -64,7 +64,7 @@ function App:initGL(...)
 		self.mesh.com1 = self.mesh:calcCOM1()
 	end
 
-	if cmdline.uvunwrap then
+	if cmdline.unwrapuv then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
 			-- TODO move this function out of Mesh
@@ -126,7 +126,7 @@ function App:initGL(...)
 #version 460
 
 in vec3 pos;
-in vec3 texCoord;
+in vec3 texcoord;
 in vec3 normal;
 in vec3 com;
 
@@ -143,7 +143,7 @@ uniform mat4 modelViewMatrix;
 uniform mat4 projectionMatrix;
 
 out vec3 fragPosv;	// position in view space
-out vec3 texCoordv;
+out vec3 texcoordv;
 out vec3 normalv;
 out vec4 Kav;
 out vec4 Kdv;
@@ -151,8 +151,8 @@ out vec4 Ksv;
 out float Nsv;
 
 void main() {
-	texCoordv = texCoord;
-	if (useFlipTexture) texCoordv.y = 1. - texCoordv.y;
+	texcoordv = texcoord;
+	if (useFlipTexture) texcoordv.y = 1. - texcoordv.y;
 	normalv = (modelViewMatrix * vec4(normal, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
@@ -175,7 +175,7 @@ uniform vec3 lightDir;
 uniform bool useTextures;
 
 in vec3 fragPosv;
-in vec3 texCoordv;
+in vec3 texcoordv;
 in vec3 normalv;
 in vec4 Kav;
 in vec4 Kdv;
@@ -189,7 +189,7 @@ void main() {
 	fragColor = Kav;
 	vec4 diffuseColor = Kdv;
 	if (useTextures) {
-		diffuseColor *= texture(map_Kd, texCoordv.xy);
+		diffuseColor *= texture(map_Kd, texcoordv.xy);
 	}
 	fragColor += diffuseColor;
 	if (useLighting) {
@@ -320,12 +320,12 @@ function App:update()
 		self.mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
 	end
 	if self.hoverVtx then
-		local v = self.mesh.vs[self.hoverVtx]
+		local v = self.mesh.vtxCPUBuf.v[self.hoverVtx].pos
 		if v then
 			gl.glColor3f(1,0,0)
 			gl.glPointSize(3)
 			gl.glBegin(gl.GL_POINTS)
-			gl.glVertex3f(v:unpack())	-- TODO consider exploding?
+			gl.glVertex3fv(v.s)	
 			gl.glEnd()
 			gl.glPointSize(1)
 		end
@@ -375,9 +375,9 @@ function App:findClosestVtxToMouse()
 	local cosEpsAngle = math.cos(math.rad(10 / self.height * self.view.fovY))
 	local pos, dir = self:mouseRay()
 	return self.mesh:findClosestVertexToMouseRay(
-		matrix{pos:unpack()},
-		matrix{dir:unpack()},
-		-matrix{self.view.angle:zAxis():unpack()},
+		pos,
+		dir,
+		-self.view.angle:zAxis(),
 		cosEpsAngle)
 end
 
@@ -390,7 +390,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 		local i = self.dragVtx
 		if i then
 			local pos, dir = self:mouseRay()
-			local dist = -self.view.angle:zAxis():dot(vec3f(self.mesh.vs[i]:unpack()) - pos)
+			local dist = -self.view.angle:zAxis():dot(self.mesh.vtxCPUBuf.v[i].pos - pos)
 			if not shiftDown then
 				local tanFovY = math.tan(math.rad(self.view.fovY / 2))
 				local screenDelta = vec3d(
@@ -399,23 +399,13 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 					0
 				)
 				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
-				mesh.vs[i] = mesh.vs[i] + matrix{vtxDelta:unpack()}
+				mesh.vtxCPUBuf.v[i] = mesh.vtxCPUBuf.v[i] + vtxDelta
 			else
-				mesh.vs[i] = mesh.vs[i] + matrix{self.view.angle:rotate(vec3d(0, 0, dy)):unpack()}
+				mesh.vtxCPUBuf.v[i] = mesh.vtxCPUBuf.v[i] + self.view.angle:rotate(vec3d(0, 0, dy))
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
-				-- the vtxcpubuf is indexed by tri ...
-				local index = 0
-				for k,t in ipairs(mesh.tris) do
-					for j=1,3 do
-						if t[j].v == i then
-							mesh.vtxCPUBuf.v[index].pos:set(mesh.vs[i]:unpack())
-							mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * index + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[index].pos.s)
-						end
-						index = index + 1
-					end
-				end
+				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[i].pos.s)
 			end
 		end
 	end

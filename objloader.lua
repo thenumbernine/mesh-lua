@@ -133,6 +133,9 @@ function OBJLoader:load(filename)
 	local indexForVtx = {}	-- from 'v,vt,vn'
 	local vtxCPUBuf = vector'obj_vertex_t'	-- vertex structure
 	local triIndexBuf = vector'int32_t'		-- triangle indexes
+	local newvs = table()
+	local newvts = table()
+	local newvns = table()
 	for _,t in ipairs(mesh.tris) do
 		for j,tj in ipairs(t) do
 			local k = table.concat({tj.v, tj.vt, tj.vn},',')
@@ -142,23 +145,36 @@ function OBJLoader:load(filename)
 				indexForVtx[k] = i
 				local dst = vtxCPUBuf:emplace_back()
 				dst.pos:set(assert(vs[tj.v]):unpack())
+				newvs:insert(matrix{dst.pos:unpack()})
 				if tj.vt then
-					dst.texCoord:set(assert(vts[tj.vt]):unpack())
+					dst.texcoord:set(assert(vts[tj.vt]):unpack())
 				else
-					dst.texCoord:set(0,0,0)
+					dst.texcoord:set(0,0,0)
 				end
+				newvts:insert(matrix{dst.texcoord:unpack()})
 				if tj.vn then
 					dst.normal:set(assert(vns[tj.vn]):unpack())
 				else
 					dst.normal:set(0,0,0)
 				end
+				newvns:insert(matrix{dst.normal:unpack()})
 			end
 			triIndexBuf:push_back(i)
+			tj.v = i+1
+			tj.vt = i+1
+			tj.vn = i+1
 		end
 	end
+	mesh.vs = newvs
+	mesh.vts = newvts
+	mesh.vns = newvns
+print('#unique vertexes', vtxCPUBuf.size)
+print('#unique triangles', triIndexBuf.size)
 
-	self.vtxCPUBuf = vtxCPUBuf
-	self.triIndexBuf = triIndexBuf
+	mesh.vtxCPUBuf = vtxCPUBuf
+	mesh.triIndexBuf = triIndexBuf
+	
+	-- while we're here, regenerate the vs vts vns from their reduced triIndexBuf values
 
 
 --print('#tris', #mesh.tris)

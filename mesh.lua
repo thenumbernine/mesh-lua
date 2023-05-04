@@ -11,7 +11,7 @@ local vec3f = require 'vec-ffi.vec3f'
 ffi.cdef[[
 typedef struct {
 	vec3f_t pos;
-	vec3f_t texCoord;
+	vec3f_t texcoord;
 	vec3f_t normal;
 
 	// per-triangle stats (duplicated 3x per-vertex)
@@ -110,6 +110,7 @@ function Mesh:calcBBox()
 end
 
 function Mesh:mergeMatchingVertexes()
+	if not self.bbox then self:calcBBox() end
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
@@ -609,30 +610,48 @@ function Mesh:regenNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
 --print('zeroing vertex normals')
-	local vtxnormals = self.vs:mapi(function(v)
-		return matrix{0,0,0}
-	end)
+	local vtxnormals = vector('vec3f_t', #self.vs)
 --print('accumulating triangle normals into vertex normals')
-	for t in self:triiter(mtlname) do
-		if math.isfinite(t.normal:normSq()) then
-			for _,vi in ipairs(t) do
-				vtxnormals[vi.v] = vtxnormals[vi.v] + t.normal * t.area
+	for i=0,self.triIndexBuf.size-1,3 do
+		local ia = self.triIndexBuf.v[i]
+		local ib = self.triIndexBuf.v[i+1]
+		local ic = self.triIndexBuf.v[i+2]
+		-- not sure what i'm doing with these ...
+		-- cache or regen?
+		local a = self.vtxCPUBuf.v[ia].pos
+		local b = self.vtxCPUBuf.v[ib].pos
+		local c = self.vtxCPUBuf.v[ic].pos
+		local area = triArea(a, b, c)
+		local normal = (b - a):cross(c - b)
+		if normal:norm() < 1e-7 then
+			normal = vec3f(0,0,0)
+		else
+			normal = normal:normalize()
+			if not math.isfinite(normal:normSq()) then
+				normal = vec3f(0,0,0)
 			end
+		end
+
+		if math.isfinite(normal:normSq()) then
+			local normalArea = normal * area
+			vtxnormals.v[ia] = vtxnormals.v[ia] + normalArea
+			vtxnormals.v[ib] = vtxnormals.v[ib] + normalArea
+			vtxnormals.v[ic] = vtxnormals.v[ic] + normalArea
 		end
 	end
 --print('normals vertex normals')
-	for k=1,#vtxnormals do
-		if vtxnormals[k]:normSq() > 1e-3 then
-			vtxnormals[k] = vtxnormals[k]:normalize()
+	for i=0,vtxnormals.size-1 do
+		if vtxnormals.v[i]:norm() > 1e-7 then
+			vtxnormals.v[i] = vtxnormals.v[i]:normalize()
 		end
---print(k, vtxnormals[k])
+--print(k, vtxnormals[i])
 	end
 
 	if self.vtxCPUBuf then
 		local e = 0
 		for i,t in ipairs(self.tris) do
 			for j,tj in ipairs(t) do
-				self.vtxCPUBuf.v[e].normal:set(vtxnormals[tj.v]:unpack())
+				self.vtxCPUBuf.v[e].normal = vtxnormals.v[tj.v-1]
 				e = e + 1
 			end
 		end
@@ -682,9 +701,9 @@ function Mesh:loadGL(shader)
 			if vi.vt then
 				if vi.vt < 1 or vi.vt > #self.vts then
 					print("found an oob vt "..vi.vt)
-					dst.texCoord:set(0,0,0)
+					dst.texcoord:set(0,0,0)
 				else
-					dst.texCoord:set(self.vts[vi.vt]:unpack())
+					dst.texcoord:set(self.vts[vi.vt]:unpack())
 				end
 			end
 			if vi.vn then
@@ -709,7 +728,7 @@ function Mesh:loadGL(shader)
 
 	self.vtxAttrs = table{
 		{name='pos', size=3},
-		{name='texCoord', size=3},
+		{name='texcoord', size=3},
 		{name='normal', size=3},
 		{name='com', size=3},
 	}:mapi(function(info)
@@ -787,7 +806,7 @@ function Mesh:draw(args)
 		--]]
 		--[[ vertex client arrays
 		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texcoord.s)
 		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
@@ -799,14 +818,14 @@ function Mesh:draw(args)
 		--]]
 		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
 		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texCoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texCoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texcoord.s)
 		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
-		gl.glEnableVertexAttribArray(args.shader.attrs.texCoord.loc)
+		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
 		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
 		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
-		gl.glDisableVertexAttribArray(args.shader.attrs.texCoord.loc)
+		gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
 		--]]
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
@@ -924,7 +943,8 @@ function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
 	--dir = dir:normalize()
 	local dirlen = dir:norm()
 	local bestdot, besti, bestdepth
-	for i,v in ipairs(self.vs) do
+	for i=0,self.vtxCPUBuf.size-1 do
+		local v = self.vtxCPUBuf.v[i].pos
 		local delta = v - pos
 		local depth = delta:dot(fwd)
 		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
