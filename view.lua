@@ -462,6 +462,9 @@ function App:updateGUI()
 			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
 
 			ig.igColorPicker3('background color', self.bgcolor.s, 0)
+			if ig.igButton'set to origin' then
+				self:setCenter(vec3f(0,0,0))
+			end
 			if ig.igButton'set to vtx center' then
 				self:setCenter(self.mesh.com0)
 			end

@@ -44,7 +44,7 @@ function OBJLoader:load(filename)
 	mesh.relpath = file(filename):getdir()
 	mesh.mtlFilenames = table()
 
---timer('loading', function()
+timer('loading', function()
 
 	-- map of materials
 	mesh.mtllib = {}
@@ -117,42 +117,85 @@ function OBJLoader:load(filename)
 			self:loadMtl(words:concat' ', mesh)
 		end
 	end
+end)
 
---end)
-
-	for _,m in pairs(mesh.mtllib) do
-		if not m.triFirstIndex then
-			m.triFirstIndex = 0
-			m.triCount = 0
+print('removing unused materials...')
+	for _,k in ipairs(table.keys(mesh.mtllib):sort()) do
+		local m = mesh.mtllib[k]
+		if k == '' then
+			if not m.triFirstIndex then m.triFirstIndex = 0 end
+			if not m.triCount then m.triCount = 0 end
+		else
+			if not m.triFirstIndex or m.triCount == 0 then
+				mesh.mtllib[k] = nil
+			end
 		end
 	end
 
-	-- calc vtx normals before or after grouping redundant vertexes?
-
-	local indexForVtx = {}	-- from 'v,vt,vn'
-	local vtxs = vector'obj_vertex_t'	-- vertex structure
-	local triIndexBuf = vector'int32_t'		-- triangle indexes
-	for _,t in ipairs(tris) do
-		for j,tj in ipairs(t) do
-			local k = table.concat({tj.v, tj.vt, tj.vn},',')
-			local i = indexForVtx[k]	-- 0-based
-			if not i then
-				i = vtxs.size
-				indexForVtx[k] = i
+print'allocating vertex and index buffers...'
+	local vtxs = vector('obj_vertex_t', 3*#tris)	-- vertex structure
+	local triIndexBuf = vector('int32_t', 3*#tris)		-- triangle indexes
+	-- hmm init capacity arg?
+	vtxs:resize(0)
+	triIndexBuf:resize(0)
+print'calculating vertex and index buffers...'
+	--[=[ lazy
+	do
+		local e = 0
+		for ti,t in ipairs(tris) do
+			for j,tj in ipairs(t) do
 				local dst = vtxs:emplace_back()
-				dst.pos = assert(vs[tj.v])
+				dst.pos:set(assert(vs[tj.v]):unpack())
 				if tj.vt then
-					dst.texcoord = assert(vts[tj.vt])
+					dst.texcoord:set(assert(vts[tj.vt]):unpack())
 				else
 					dst.texcoord:set(0,0,0)
 				end
 				if tj.vn then
-					dst.normal = assert(vns[tj.vn])
+					dst.normal:set(assert(vns[tj.vn]):unpack())
+				else
+					dst.normal:set(0,0,0)
+				end			
+				triIndexBuf:push_back(e)
+				e = e + 1
+			end
+		end
+	end
+	--]=]
+	-- [=[ optimize?
+	local indexForVtx = {}	-- from 'v,vt,vn'
+	for ti,t in ipairs(tris) do
+		for j,tj in ipairs(t) do
+			local k = tj.v..','..(tj.vt or '0')..','..(tj.vn or '0')
+			-- [[ allocating way too much ...
+			local i = indexForVtx[k]	-- 0-based
+			--]]
+			--[[
+			for ti2=1,ti do
+				local t2 = tris[ti2]
+				for j2=1,(ti==ti2 and j-1 or 3) do
+					local tj2 = t2[j2]
+					... how would this be any less memory? but lots slower.
+				end
+			end
+			--]]
+			if not i then
+				i = vtxs.size
+				indexForVtx[k] = i
+				local dst = vtxs:emplace_back()
+				dst.pos:set(assert(vs[tj.v]):unpack())
+				if tj.vt then
+					dst.texcoord:set(assert(vts[tj.vt]):unpack())
+				else
+					dst.texcoord:set(0,0,0)
+				end
+				if tj.vn then
+					dst.normal:set(assert(vns[tj.vn]):unpack())
 				else
 					dst.normal:set(0,0,0)
 				end
 			end
-			triIndexBuf:push_back(i)
+			triIndexBuf:emplace_back()[0] = i
 			tj.v = i+1
 			tj.vt = i+1
 			tj.vn = i+1
@@ -160,6 +203,7 @@ function OBJLoader:load(filename)
 	end
 --print('#unique vertexes', vtxs.size)
 --print('#unique triangles', triIndexBuf.size)
+	--]=]
 
 	mesh.vtxs = vtxs
 	mesh.triIndexBuf = triIndexBuf
@@ -167,10 +211,12 @@ function OBJLoader:load(filename)
 	-- while we're here, regenerate the vs vts vns from their reduced triIndexBuf values
 	mesh.tris = tris
 
+print'done'
 	return mesh
 end
 
 function OBJLoader:loadMtl(filename, mesh)
+timer('loading mtl file', function()
 	mesh.mtlFilenames:insert(filename)
 	local mtl
 	filename = file(mesh.relpath)(filename).path
@@ -297,6 +343,7 @@ function OBJLoader:loadMtl(filename, mesh)
 		-- and don't forget textre map options
 		end
 	end
+end)
 end
 
 -- only saves the .obj, not the .mtl
