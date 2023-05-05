@@ -306,27 +306,38 @@ function OBJLoader:save(filename, mesh)
 		o:write('mtllib ', mtl, '\n')
 	end
 	
-	-- map from the vtxs to unique indexes
-	local indexForV = {}
-	for i=0,mesh.vtxs.size-1 do
-		local v = mesh.vtxs.v[i].pos
-		local dsti
-		for j=0,i-1 do
-			if (v - mesh.vtxs.v[j].pos):norm() < 1e-7 then
-				dsti = j
-				break
+	local function outputUnique(symbol, field)
+		-- map from the vtxs to unique indexes
+		local uniquevs = table()
+		-- used by tris.
+		-- map from all vtxs.v[] to unique indexes
+		-- keys are 0-based, values are 1-based
+		local indexToUniqueV = {}
+		for i=0,mesh.vtxs.size-1 do
+			local v = mesh.vtxs.v[i][field]
+			local found
+			for j,ov in ipairs(uniquevs) do
+				if (v - ov):norm() < 1e-7 then
+					indexToUniqueV[i] = j
+					found = true
+					break
+				end
+			end
+			if not found then
+				uniquevs:insert(v)
+				indexToUniqueV[i] = #uniquevs
 			end
 		end
-		o:write('v ',v.x,' ',v.y,' ',v.z,'\n')
+		print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+		for _,v in ipairs(uniquevs) do
+			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
+		end
+		return indexToUniqueV
 	end
-	for i=0,mesh.vtxs.size-1 do
-		local v = mesh.vtxs.v[i].texcoord
-		o:write('vt ',v.x,' ',v.y,' ',v.z,'\n')
-	end
-	for i=0,mesh.vtxs.size-1 do
-		local v = mesh.vtxs.v[i].normal
-		o:write('vn ',v.x,' ',v.y,' ',v.z,'\n')
-	end
+	local indexToUniqueV = outputUnique('v', 'pos')
+	local indexToUniqueVt = outputUnique('vt', 'texcoord')
+	local indexToUniqueVn = outputUnique('vn', 'normal')
+
 	local mtlnames = table.keys(mesh.mtllib):sort()
 	assert(mtlnames[1] == '')	-- should always be there
 	for _,mtlname in ipairs(mtlnames) do
@@ -345,7 +356,11 @@ function OBJLoader:save(filename, mesh)
 			if not vis then return end
 			writeMtlName()
 			o:write('f ', table.mapi(vis, function(vi)
-				return table{vi+1, vi+1, vi+1}:concat'/'
+				return table{
+					indexToUniqueV[vi],
+					indexToUniqueVt[vi],
+					indexToUniqueVn[vi],
+				}:concat'/'
 			end):concat' ', '\n')
 			vis = nil
 		end

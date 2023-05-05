@@ -403,7 +403,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
-				mesh.vtxGLBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
+				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
 			end
 		end
 	end

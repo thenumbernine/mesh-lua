@@ -559,8 +559,8 @@ function Mesh:regenNormals()
 	for i=0,self.vtxs.size-1 do
 		self.vtxs.v[i].normal = vtxnormals.v[i]
 	end
-	if self.vtxGLBuf then
-		self.vtxGLBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
+	if self.vtxBuf then
+		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
 	end
 end
 
@@ -596,7 +596,7 @@ function Mesh:loadGL(shader)
 	-- why does mtl store a list of tri indexes?  it should just store an offset
 
 --print('creating array buffer of size', self.vtxs.size)
-	self.vtxGLBuf = GLArrayBuffer{
+	self.vtxBuf = GLArrayBuffer{
 		size = self.vtxs.size * ffi.sizeof'obj_vertex_t',
 		data = self.vtxs.v,
 		usage = gl.GL_STATIC_DRAW,
@@ -611,7 +611,7 @@ function Mesh:loadGL(shader)
 	}:mapi(function(info)
 		if not shader.attrs[info.name] then return end
 		return GLAttribute{
-			buffer = self.vtxGLBuf,
+			buffer = self.vtxBuf,
 			size = info.size,
 			type = gl.GL_FLOAT,
 			stride = ffi.sizeof'obj_vertex_t',
