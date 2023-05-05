@@ -66,7 +66,7 @@ timer('filtering faces', function()
 			for i=i2,i1,-1 do
 				mesh.tris:remove(i+1)
 			end
-			mesh.triIndexBuf.erase(mesh.triIndexBuf.v + i1, mesh.triIndexBuf.v + i2 + 1)
+			mesh.triIndexBuf:erase(mesh.triIndexBuf.v + 3*i1, mesh.triIndexBuf.v + 3*(i2+1))
 			for mtlname2,mtl2 in pairs(mesh.mtllib) do
 				if mtlname ~= mtlname2 then
 					if i2 < mtl2.triFirstIndex then
@@ -107,5 +107,4 @@ print('before merging vertexes, #tris', mesh.triIndexBuf.size/3)
 mesh:mergeMatchingVertexes()
 print('after merging vertexes, #tris', mesh.triIndexBuf.size/3)
 
-mesh:calcTriAux()	-- needed for save()
 loader:save(outfn, mesh)
