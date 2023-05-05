@@ -52,7 +52,7 @@ function App:initGL(...)
 	self.mesh = OBJLoader():load(fn)
 print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexBuf.size/3)
-	
+
 	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
 
@@ -88,11 +88,11 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	self.view.angle:fromAngleAxis(1,0,0,-90)
 	self.updirIndex = dirnames:find'z+'
 --]]
--- [[ default opengl mode	
+-- [[ default opengl mode
 	self.updirIndex = dirnames:find'y+'
 	self:resetAngle(vec3d(0,0,-1))	-- z-back
 --]]
-	
+
 	if cmdline.up then
 		self.updirIndex = dirnames:find(cmdline.up)
 		self:resetAngle()
@@ -249,7 +249,7 @@ function App:update()
 	gl.glColor3f(0,0,1) gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
 	gl.glEnd()
 	gl.glDepthMask(gl.GL_TRUE)
-	
+
 	gl.glViewport(0, 0, self.width, self.height)
 	self.view.ortho = pushOrtho
 	self.view:setup(self.width / self.height)
@@ -326,7 +326,7 @@ function App:update()
 			gl.glColor3f(1,0,0)
 			gl.glPointSize(3)
 			gl.glBegin(gl.GL_POINTS)
-			gl.glVertex3fv(v.s)	
+			gl.glVertex3fv(v.s)
 			gl.glEnd()
 			gl.glPointSize(1)
 		end
@@ -344,32 +344,6 @@ function App:update()
 	gl.glEnd()
 --]]
 
-	App.super.update(self)
-
-	if self.editMode == 1 then
-		self.hoverVtx = nil
-	else
-		self.hoverVtx = self:findClosestVtxToMouse()
-		if self.mouse.leftPress then
-			self.dragVtx = self.hoverVtx
-		end
-	end
-
-	if self.mouse.leftPress then
-		local i, bestDist = self:findClosestTriToMouse()
-		local bestmtl
-		if i then
-			for mtlname,mtl in pairs(self.mesh.mtllib) do
-				if i >= 3*mtl.triFirstIndex and i < 3*(mtl.triFirstIndex + mtl.triCount) then
-					bestmtl = mtlname
-				end
-			end
-			print('clicked on material', bestmtl, 'tri', i, 'dist', bestDist)
-			
-			local pos, dir = self:mouseRay()
-			self.bestTriPt = pos + dir * bestDist
-		end
-	end
 	if self.bestTriPt then
 		gl.glPointSize(3)
 		gl.glColor3f(1,0,0)
@@ -377,6 +351,35 @@ function App:update()
 		gl.glVertex3f(self.bestTriPt:unpack())
 		gl.glEnd()
 		gl.glPointSize(1)
+	end
+
+	App.super.update(self)
+
+	if self.editMode == 3 then
+		if self.mouse.leftPress then
+			local i, bestDist = self:findClosestTriToMouse()
+			local bestmtl
+			if i then
+				for mtlname,mtl in pairs(self.mesh.mtllib) do
+					if i >= 3*mtl.triFirstIndex and i < 3*(mtl.triFirstIndex + mtl.triCount) then
+						bestmtl = mtlname
+					end
+				end
+				print('clicked on material', bestmtl, 'tri', i, 'dist', bestDist)
+
+				local pos, dir = self:mouseRay()
+				self.bestTriPt = pos + dir * bestDist
+			end
+		end
+	end
+
+	if self.editMode == 1 then
+		self.hoverVtx = nil
+	elseif self.editMode == 2 then
+		self.hoverVtx = self:findClosestVtxToMouse()
+		if self.mouse.leftPress then
+			self.dragVtx = self.hoverVtx
+		end
 	end
 
 	require 'gl.report''here'
@@ -461,8 +464,8 @@ end
 
 function App:resetAngle(fwd)
 	local up = vec3d(table.unpack(dirs[self.updirIndex]))
-	fwd = fwd or -self.view.angle:zAxis() 
-	-- if 'fwd' aligns with 'up' then pick another up vector 
+	fwd = fwd or -self.view.angle:zAxis()
+	-- if 'fwd' aligns with 'up' then pick another up vector
 	if math.abs(fwd:dot(up)) > .999 then
 		up.x, up.y, up.z = up.z, up.x, up.y
 	end
@@ -490,7 +493,7 @@ function App:updateGUI()
 			ig.luatableInputFloat('view znear', self.view, 'znear')
 			ig.luatableInputFloat('view zfar', self.view, 'zfar')
 			ig.luatableCheckbox('ortho view', self.view, 'ortho')
-			
+
 			for i,name in ipairs(dirnames) do
 				if ig.luatableRadioButton('up '..name, self, 'updirIndex', i) then
 					self:resetAngle()
@@ -504,7 +507,7 @@ function App:updateGUI()
 
 			if ig.igButton'set to origin' then
 				self:setCenter(vec3f(0,0,0))
-			end	
+			end
 			if ig.igButton'set to vtx center' then
 				self:setCenter(self.mesh.com0)
 			end
@@ -516,7 +519,7 @@ function App:updateGUI()
 			end
 			if ig.igButton'set to volume center' then
 				self:setCenter(self.mesh.com3)
-			end		
+			end
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Mesh' then
@@ -545,7 +548,7 @@ function App:updateGUI()
 			if ig.igButton'break triangles' then
 				self.mesh:breakTriangles()
 			end
-			
+
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Display' then
@@ -582,12 +585,13 @@ function App:updateGUI()
 		if ig.igBeginMenu'Edit' then
 			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
 			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
-			
+			ig.luatableRadioButton('edit tri mode', self, 'editMode', 3)
+
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Settings' then
 			ig.igColorPicker3('background color', self.bgcolor.s, 0)
-			
+
 			ig.igEndMenu()
 		end
 		ig.igEndMainMenuBar()
