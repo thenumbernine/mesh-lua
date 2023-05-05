@@ -18,81 +18,24 @@ for mtlname in pairs(keepers) do
 	print(mtlname, mesh:getTriIndexesForMaterial(mtlname))
 end
 
-local ms = table.map(mesh.mtllib, function(m,i,t)
-	return m, #t+1
-end)
-
--- verify material tri index have no overlaps
-for i=1,#ms-1 do
-	local i1,i2 = mesh:getTriIndexesForMaterial(ms[i].name)
-	if i2 >= i1 then
-		for j=i+1,#ms do
-			local j1,j2 = mesh:getTriIndexesForMaterial(ms[j].name)
-			if j2 > j1 then
-				if not (i2 < j1 or i1 > j2) then
-					error("overlapping meshes "..ms[i].name.." and "..ms[j].name
-						.." with ranges "
-						..require'ext.tolua'{[ms[i].name]={i1,i2},[ms[j].name]={j1,j2}})
-				end
-			end
-		end
-	end
-end
-
--- verify material tri count == mesh tri count
-local totalMtlTris = ms:mapi(function(m)
-	print('mtl '..m.name..' first tri '..m.triFirstIndex..' count '..m.triCount..' tris')
-	return m.triCount
-end):sum()
-if totalMtlTris ~= mesh.triIndexBuf.size/3 then
-	error("expected "..totalMtlTris .." == " .. mesh.triIndexBuf.size/3)
-end
-
-print('before filtering faces, #tris', mesh.triIndexBuf.size/3)
 -- TODO change removeTri() to removeTriRange()
 timer('filtering faces', function()
-	for mtlname,mtl in pairs(mesh.mtllib) do
+	for _,mtlname in ipairs(table.keys(mesh.mtllib):sort()) do
+		local mtl = mesh.mtllib[mtlname]
 		if keepers[mtlname] then
 			print('keeping material '..mtlname)
 		else
-			print('remove material '..mtlname)
-			local triCount = mtl.triCount
-			print('material has num tris '..triCount)
-			local numTrisBefore = mesh.triIndexBuf.size/3
-			print('before #tris', numTrisBefore)
-			
-			-- [[ removeMaterial:	
-			local i1, i2 = mesh:getTriIndexesForMaterial(mtlname)
-			for i=i2,i1,-1 do
-				mesh.tris:remove(i+1)
-			end
-			mesh.triIndexBuf:erase(mesh.triIndexBuf.v + 3*i1, mesh.triIndexBuf.v + 3*(i2+1))
-			for mtlname2,mtl2 in pairs(mesh.mtllib) do
-				if mtlname ~= mtlname2 then
-					if i2 < mtl2.triFirstIndex then
-						mtl2.triFirstIndex = mtl2.triFirstIndex - mtl.triCount
-					end
-				end
-			end
-			mtl.triCount = 0
-			--]]
-			
-			local numTrisAfter = mesh.triIndexBuf.size/3
-			print('after #tris', numTrisAfter)
-			if numTrisBefore - numTrisAfter ~= triCount then
-				error("expected to lose "..triCount.." but lost "..(numTrisBefore - numTrisAfter))
+			if mtlname == '' then
+				mesh.mtllib[mtlname].triFirstIndex = 0
+				mesh.mtllib[mtlname].triCount = 0
+			else
+				mesh.mtllib[mtlname] = nil
 			end
 		end
 	end
 end)
-print('after filtering faces, #tris', mesh.triIndexBuf.size/3)
 
--- filter unused material
-for _,mtlname in ipairs(table.keys(mesh.mtllib)) do
-	local m = mesh.mtllib[mtlname]
-	if m.triCount == 0 and m.name ~= '' then
-		mesh.mtllib[mtlname] = nil
-	end
-end
-
-loader:save(outfn, mesh)
+-- save will remove the rest
+timer('saving', function()
+	loader:save(outfn, mesh)
+end)

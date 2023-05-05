@@ -67,7 +67,7 @@ function Mesh:init(filename)
 
 	-- just holds extra info per tri
 	self.tris = table() -- triangulation of all faces
-	
+
 	self.mtllib = {[''] = {}}
 end
 
@@ -439,7 +439,10 @@ function Mesh:calcCOM0()
 		result = result + self.vtxs.v[i].pos
 	end
 	result = result / self.vtxs.size
-	assert(math.isfinite(result:normSq()))
+	if not math.isfinite(result:normSq()) then
+io.stderr:write("couldn't even find the com0\n")
+		return vec3f()
+	end
 	return result
 end
 
@@ -553,7 +556,7 @@ function Mesh:breakTriangles()
 			index = i,
 		}
 	end)
-	
+
 	self.edges = nil
 	self.allOverlappingEdges = nil
 
@@ -808,7 +811,7 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 	gl.glDrawArrays(gl.GL_POINTS, 0, self.vtxs.size)
 	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
-	
+
 	gl.glPointSize(1)
 end
 

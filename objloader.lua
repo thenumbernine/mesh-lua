@@ -353,7 +353,21 @@ function OBJLoader:save(filename, mesh)
 	for _,mtl in ipairs(mesh.mtlFilenames) do
 		o:write('mtllib ', mtl, '\n')
 	end
-	
+
+	-- keep track of all used indexes by tris
+	local usedIndexes = {}
+	for i=0,mesh.triIndexBuf.size-3,3 do
+		local t = mesh.triIndexBuf.v + i
+		local a,b,c = mesh:triVtxPos(i)
+		local area = mesh.triArea(a,b,c)
+		-- make sure this condition matches the tri write cond down below
+		if area > 0 then
+			usedIndexes[t[0]] = true
+			usedIndexes[t[1]] = true
+			usedIndexes[t[2]] = true
+		end
+	end
+
 	local function outputUnique(symbol, field)
 		-- map from the vtxs to unique indexes
 		local uniquevs = table()
@@ -361,19 +375,22 @@ function OBJLoader:save(filename, mesh)
 		-- map from all vtxs.v[] to unique indexes
 		-- keys are 0-based, values are 1-based
 		local indexToUniqueV = {}
+		-- maps from a key (from rounded vec3f) to uniquevs index
+		-- goes a *lot* faster than the old way
+		local keyToUnique = {}
+		local prec = 1e-5
 		for i=0,mesh.vtxs.size-1 do
-			local v = mesh.vtxs.v[i][field]
-			local found
-			for j,ov in ipairs(uniquevs) do
-				if (v - ov):norm() < 1e-7 then
+			if usedIndexes[i] then
+				local v = mesh.vtxs.v[i][field]
+				local k = tostring(v:map(function(x) return math.round(x / prec) * prec end))
+				local j = keyToUnique[k]
+				if j then
 					indexToUniqueV[i] = j
-					found = true
-					break
+				else
+					uniquevs:insert(v)
+					keyToUnique[k] = #uniquevs
+					indexToUniqueV[i] = #uniquevs
 				end
-			end
-			if not found then
-				uniquevs:insert(v)
-				indexToUniqueV[i] = #uniquevs
 			end
 		end
 print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
