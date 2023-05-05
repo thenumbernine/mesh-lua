@@ -2,6 +2,7 @@ local ffi = require 'ffi'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local math = require 'ext.math'
+local range = require 'ext.range'
 local timer = require 'ext.timer'
 local vector = require 'ffi.cpp.vector'
 local vec3f = require 'vec-ffi.vec3f'
@@ -124,7 +125,7 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 end
 
 -- 0-based, index-array so 3x from unique tri
-function Mesh:getTriVtxPos(i)
+function Mesh:triVtxPos(i)
 	local t = self.triIndexBuf.v + i
 	return self.vtxs.v[t[0]].pos,
 			self.vtxs.v[t[1]].pos,
@@ -133,7 +134,7 @@ end
 
 function Mesh:removeEmptyTris()
 	for i=self.triIndexBuf.size-3,0,-3 do
-		local a,b,c = self:getTriVtxPos(i)
+		local a,b,c = self:triVtxPos(i)
 		local area = triArea(a,b,c)
 		if area < 1e-7 then
 			self:removeTri(i)
@@ -161,8 +162,8 @@ function Mesh:calcAllOverlappingEdges()
 		local t1 = self.tris[i1]
 		for j1=1,3 do
 			-- t1's j1'th edge
-			local v11 = self.vs[t1[j1].v]
-			local v12 = self.vs[t1[j1%3+1].v]
+			local v11 = self.vtxs.v[t1[j1].v-1].pos
+			local v12 = self.vtxs.v[t1[j1%3+1].v-1].pos
 --print('tri', i1, 'pos', j1, '=', v11)
 			local n1 = v12 - v11
 			local n1NormSq = n1:normSq()
@@ -171,8 +172,8 @@ function Mesh:calcAllOverlappingEdges()
 				for i2=i1-1,1,-1 do
 					local t2 = self.tris[i2]
 					for j2=1,3 do
-						local v21 = self.vs[t2[j2].v]
-						local v22 = self.vs[t2[j2%3+1].v]
+						local v21 = self.vtxs.v[t2[j2].v-1].pos
+						local v22 = self.vtxs.v[t2[j2%3+1].v-1].pos
 						local n2 = v22 - v21
 						local n2NormSq = n2:normSq()
 						if n2NormSq  > 1e-3 then
@@ -250,9 +251,10 @@ function Mesh:findEdges()
 			t.edges:insert(e)
 		end
 		for i=0,self.triIndexBuf.size-1,3 do
-			local a = self.triIndexBuf.v[i]
-			local b = self.triIndexBuf.v[i+1]
-			local c = self.triIndexBuf.v[i+2]
+			local tp = self.triIndexBuf.v + i
+			local a = tp[0]
+			local b = tp[1]
+			local c = tp[2]
 			local t = self.tris[i/3+1]
 			t.edges = table()
 			addEdge(a+1, b+1, t)
@@ -474,7 +476,7 @@ function Mesh:calcCOM2(mtlname)
 	local totalArea = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local a, b, c = self:getTriVtxPos(3*i)
+		local a, b, c = self:triVtxPos(3*i)
 		local com = (a + b + c) * (1/3)
 		local area = triArea(a, b, c)
 		totalCOM = totalCOM + com * area
@@ -494,7 +496,7 @@ function Mesh:calcCOM3(mtlname)
 	local totalVolume = 0
 	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
 	for i=i1,i2 do
-		local a, b, c = self:getTriVtxPos(3*i)
+		local a, b, c = self:triVtxPos(3*i)
 
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
 		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
@@ -518,12 +520,47 @@ end
 function Mesh:calcVolume()
 	local totalVolume = 0
 	for i=0,self.triIndexBuf.size-1,3 do
-		totalVolume = totalVolume + tetradVolume(self:getTriVtxPos(i))
+		totalVolume = totalVolume + tetradVolume(self:triVtxPos(i))
 	end
 	if totalVolume < 0 then totalVolume = -totalVolume end
 	return totalVolume
 end
 
+function Mesh:clearNormals()
+	for i=0,self.vtxs.size-1 do
+		self.vtxs.v[i].normal:set(0,0,0)
+	end
+end
+
+function Mesh:breakTriangles()
+	print('before breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
+	local nvtxs = vector('obj_vertex_t', self.triIndexBuf.size)
+	local ntris = vector('uint32_t', self.triIndexBuf.size)
+	for i=0,self.triIndexBuf.size-1 do
+		nvtxs.v[i] = self.vtxs.v[self.triIndexBuf.v[i]]
+		ntris.v[i] = i
+	end
+	self.vtxs = nvtxs
+	self.triIndexBuf = ntris
+	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
+
+	self.tris = range(self.triIndexBuf.size/3):mapi(function(i)
+		local function vis(i) return {v=i, vt=i, vn=i} end
+		return {
+			vis(3*(i-1)+1),
+			vis(3*(i-1)+2),
+			vis(3*(i-1)+3),
+			index = i,
+		}
+	end)
+	
+	self.edges = nil
+	self.allOverlappingEdges = nil
+
+	self:calcBBox()
+	self:findEdges()
+	self:calcCOMs()
+end
 
 -- regenerate the vertex normals based on the face normals, weighted average by face area
 function Mesh:regenNormals()
@@ -733,7 +770,7 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 			-- avg of explode offsets of all touching tris
 			local offset = vec3f()
 			for i,t in ipairs(edge.tris) do
-				local va, vb, vc = self:getTriVtxPos(3*(i-1))
+				local va, vb, vc = self:triVtxPos(3*(i-1))
 				local tcom = (va + vb + vc) * (1/3)
 				-- get mtl for tri, then do groupExplodeDist too
 				-- matches the shader in view.lua
@@ -787,7 +824,7 @@ function Mesh:drawTriNormals()
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
 	for i=0,self.triIndexBuf.size-1,3 do
-		local a, b, c = self:getTriVtxPos(i)
+		local a, b, c = self:triVtxPos(i)
 		local normal = triNormal(a,b,c)
 		local com = triCOM(a,b,c)
 		gl.glVertex3fv(com.s)

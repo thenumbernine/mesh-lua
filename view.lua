@@ -333,17 +333,23 @@ function App:update()
 	gl.glDisable(gl.GL_BLEND)
 	gl.glDisable(gl.GL_CULL_FACE)
 
+--[[ verify mouseray works
 	local pos, dir = self:mouseRay()
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
 	gl.glVertex3f((pos + dir * 10):unpack())
 	gl.glEnd()
+--]]
 
 	App.super.update(self)
 
-	self.hoverVtx = self:findClosestVtxToMouse()
-	if self.mouse.leftPress then
-		self.dragVtx = self.hoverVtx
+	if self.editMode == 1 then
+		self.hoverVtx = nil
+	else
+		self.hoverVtx = self:findClosestVtxToMouse()
+		if self.mouse.leftPress then
+			self.dragVtx = self.hoverVtx
+		end
 	end
 
 	require 'gl.report''here'
@@ -487,8 +493,14 @@ function App:updateGUI()
 			if ig.igButton'regen normals' then
 				self.mesh:regenNormals()
 			end
+			if ig.igButton'clear normals' then
+				self.mesh:clearNormals()
+			end
 			if ig.igButton'merge vertexes' then
 				self.mesh:mergeMatchingVertexes()
+			end
+			if ig.igButton'break triangles' then
+				self.mesh:breakTriangles()
 			end
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning

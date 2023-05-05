@@ -52,7 +52,7 @@ function OBJLoader:load(filename)
 	mesh.mtllib[curmtl] = {
 		name = curmtl,
 	}
-	assert(file(filename):exists(), "failed to find material file "..filename)
+	assert(file(filename):exists(), "failed to find WavefrontObj file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
@@ -81,6 +81,7 @@ function OBJLoader:load(filename)
 			assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 			for i=2,#words-1 do
 				-- store a copy of the vertex indices per triangle index
+				-- v vt vn are 1-based
 				local t = {
 					table(vis[1]):setmetatable(nil),
 					table(vis[i]):setmetatable(nil),
@@ -175,7 +176,7 @@ function OBJLoader:loadMtl(filename, mesh)
 	filename = file(mesh.relpath)(filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
 	if not file(filename):exists() then
-		io.stderr:write("failed to find material file "..filename..'\n')
+		io.stderr:write("failed to find WavefrontObj material file "..filename..'\n')
 		return
 	end
 	for line in io.lines(filename) do
@@ -328,7 +329,7 @@ function OBJLoader:save(filename, mesh)
 				indexToUniqueV[i] = #uniquevs
 			end
 		end
-	print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		for _,v in ipairs(uniquevs) do
 			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
 		end
@@ -368,7 +369,7 @@ function OBJLoader:save(filename, mesh)
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
 			local t = mesh.triIndexBuf.v + 3*i
-			local a,b,c = mesh:getTriVtxPos(3*i)
+			local a,b,c = mesh:triVtxPos(3*i)
 			local area = mesh.triArea(a,b,c)
 			if area > 0 then
 				local normal = mesh.triNormal(a,b,c)
