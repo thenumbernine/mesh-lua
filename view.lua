@@ -46,6 +46,9 @@ local dirs = table{
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
+	self.view.znear = .1
+	self.view.zfar = 40000
+
 	self.mesh = OBJLoader():load(fn)
 print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexBuf.size/3)
@@ -444,6 +447,14 @@ function App:updateGUI()
 	if ig.igBeginMainMenuBar() then
 		if ig.igBeginMenu'View' then
 
+			for _,x in ipairs{'x', 'y', 'z'} do
+				ig.luatableInputFloatAsText('view pos '..x, self.view.pos, x)
+			end
+			for _,x in ipairs{'x', 'y', 'z', 'w'} do
+				ig.luatableInputFloatAsText('view angle '..x, self.view.angle, x)
+			end
+			ig.luatableInputFloat('view znear', self.view, 'znear')
+			ig.luatableInputFloat('view zfar', self.view, 'zfar')
 			ig.luatableCheckbox('ortho view', self.view, 'ortho')
 			
 			for i,name in ipairs(dirnames) do
@@ -457,14 +468,9 @@ function App:updateGUI()
 				end
 			end
 
-
-			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
-			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
-
-			ig.igColorPicker3('background color', self.bgcolor.s, 0)
 			if ig.igButton'set to origin' then
 				self:setCenter(vec3f(0,0,0))
-			end
+			end	
 			if ig.igButton'set to vtx center' then
 				self:setCenter(self.mesh.com0)
 			end
@@ -476,8 +482,39 @@ function App:updateGUI()
 			end
 			if ig.igButton'set to volume center' then
 				self:setCenter(self.mesh.com3)
+			end		
+			ig.igEndMenu()
+		end
+		if ig.igBeginMenu'Mesh' then
+			if ig.igButton'recenter com0' then
+				self.mesh:recenter(self.mesh.com0)
+			end
+			if ig.igButton'recenter com1' then
+				self.mesh:recenter(self.mesh.com1)
+			end
+			if ig.igButton'recenter com2' then
+				self.mesh:recenter(self.mesh.com2)
+			end
+			if ig.igButton'recenter com3' then
+				self.mesh:recenter(self.mesh.com3)
 			end
 
+			if ig.igButton'regen normals' then
+				self.mesh:regenNormals()
+			end
+			if ig.igButton'clear normals' then
+				self.mesh:clearNormals()
+			end
+			if ig.igButton'merge vertexes' then
+				self.mesh:mergeMatchingVertexes()
+			end
+			if ig.igButton'break triangles' then
+				self.mesh:breakTriangles()
+			end
+			
+			ig.igEndMenu()
+		end
+		if ig.igBeginMenu'Display' then
 			ig.luatableCheckbox('use cull face', self, 'useCullFace')
 			ig.luatableCheckbox('use depth test', self, 'useDepthTest')
 			ig.luatableCheckbox('use blend', self, 'useBlend')
@@ -493,18 +530,6 @@ function App:updateGUI()
 				end
 			end
 			ig.luatableCheckbox('use lighting', self, 'useLighting')
-			if ig.igButton'regen normals' then
-				self.mesh:regenNormals()
-			end
-			if ig.igButton'clear normals' then
-				self.mesh:clearNormals()
-			end
-			if ig.igButton'merge vertexes' then
-				self.mesh:mergeMatchingVertexes()
-			end
-			if ig.igButton'break triangles' then
-				self.mesh:breakTriangles()
-			end
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning
 			-- TODO per-tri exploding as well
@@ -517,6 +542,17 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
+
+			ig.igEndMenu()
+		end
+		if ig.igBeginMenu'Edit' then
+			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
+			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
+			
+			ig.igEndMenu()
+		end
+		if ig.igBeginMenu'Settings' then
+			ig.igColorPicker3('background color', self.bgcolor.s, 0)
 			
 			ig.igEndMenu()
 		end

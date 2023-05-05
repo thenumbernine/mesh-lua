@@ -601,6 +601,17 @@ function Mesh:regenNormals()
 	end
 end
 
+function Mesh:recenter(newOrigin)
+	for i=0,self.vtxs.size-1 do
+		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
+	end
+	if self.vtxBuf then
+		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
+	end
+	-- recalculate coms
+	self:calcCOMs()
+end
+
 -- all the draw functionality is tied tightly with view.lua so ...
 -- idk if i should move it from one or the other
 
@@ -791,18 +802,13 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
 	gl.glColor3f(1,1,1)
 	gl.glPointSize(3)
-	gl.glBegin(gl.GL_POINTS)
-	for i=0,self.vtxs.size-1 do
-		local v = self.vtxs.v[i].pos
-		-- avg of explode offsets of all touching tris
-		local offset = vec3f()
-		-- get mtl for tri, then do groupExplodeDist too
-		-- matches the shader in view.lua
-		local triExplodeOffset = (v - self.com3) * triExplodeDist
-		offset = offset + triExplodeOffset
-		gl.glVertex3fv((v + offset).s)
-	end
-	gl.glEnd()
+
+	-- TODO shader that does the explode stuff
+	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', self.vtxs.v[0].pos.s)
+	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
+	gl.glDrawArrays(gl.GL_POINTS, 0, self.vtxs.size)
+	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
+	
 	gl.glPointSize(1)
 end
 
