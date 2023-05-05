@@ -433,10 +433,8 @@ print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
 			local t = mesh.triIndexBuf.v + 3*i
-			local a,b,c = mesh:triVtxPos(3*i)
-			local area = mesh.triArea(a,b,c)
+			local normal, area = mesh.triNormal(mesh:triVtxPos(3*i))
 			if area > 0 then
-				local normal = mesh.triNormal(a,b,c)
 				if lastt
 				and t[0] == lastt[0]
 				and t[1] == lastt[2]

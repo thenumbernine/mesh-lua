@@ -18,7 +18,6 @@ for mtlname in pairs(keepers) do
 	print(mtlname, mesh:getTriIndexesForMaterial(mtlname))
 end
 
--- TODO change removeTri() to removeTriRange()
 timer('filtering faces', function()
 	for _,mtlname in ipairs(table.keys(mesh.mtllib):sort()) do
 		local mtl = mesh.mtllib[mtlname]

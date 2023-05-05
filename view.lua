@@ -355,6 +355,30 @@ function App:update()
 		end
 	end
 
+	if self.mouse.leftPress then
+		local i, bestDist = self:findClosestTriToMouse()
+		local bestmtl
+		if i then
+			for mtlname,mtl in pairs(self.mesh.mtllib) do
+				if i >= 3*mtl.triFirstIndex and i < 3*(mtl.triFirstIndex + mtl.triCount) then
+					bestmtl = mtlname
+				end
+			end
+			print('clicked on material', bestmtl, 'tri', i, 'dist', bestDist)
+			
+			local pos, dir = self:mouseRay()
+			self.bestTriPt = pos + dir * bestDist
+		end
+	end
+	if self.bestTriPt then
+		gl.glPointSize(3)
+		gl.glColor3f(1,0,0)
+		gl.glBegin(gl.GL_POINTS)
+		gl.glVertex3f(self.bestTriPt:unpack())
+		gl.glEnd()
+		gl.glPointSize(1)
+	end
+
 	require 'gl.report''here'
 end
 
@@ -382,6 +406,16 @@ function App:findClosestVtxToMouse()
 	local cosEpsAngle = math.cos(math.rad(10 / self.height * self.view.fovY))
 	local pos, dir = self:mouseRay()
 	return self.mesh:findClosestVertexToMouseRay(
+		pos,
+		dir,
+		-self.view.angle:zAxis(),
+		cosEpsAngle)
+end
+
+function App:findClosestTriToMouse()
+	local cosEpsAngle = math.cos(math.rad(10 / self.height * self.view.fovY))
+	local pos, dir = self:mouseRay()
+	return self.mesh:findClosestTriToMouseRay(
 		pos,
 		dir,
 		-self.view.angle:zAxis(),

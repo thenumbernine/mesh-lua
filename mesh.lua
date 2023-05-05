@@ -35,9 +35,9 @@ local function triNormal(a,b,c)
 	local n = ab:cross(bc)
 	local len = n:norm()
 	if len < 1e-7 or not math.isfinite(len) then
-		return vec3f(0,0,0)
+		return vec3f(0,0,0), len
 	else
-		return n / len
+		return n / len, len * .5	-- returns the unit normal, triangle area
 	end
 end
 Mesh.triNormal = triNormal
@@ -59,6 +59,14 @@ local function tetradVolume(a,b,c)
 		- c.z * b.x * a.y) / 6
 end
 Mesh.tetradVolume = tetradVolume
+
+local function rayPlaneIntersect(rayPos, rayDir, planeNormal, planePt)
+	-- ((rayPos + s * rayDir) - planePt) dot planeNormal = 0
+	-- rayPos dot planeNormal + s * rayDir dot planeNormal - planePt dot planeNormal = 0
+	-- s = ((planePt - rayPos) dot planeNormal) / (rayDir dot planeNormal)
+	local s = (planePt - rayPos):dot(planeNormal) / rayDir:dot(planeNormal)
+	return rayPos + rayDir * s, s
+end
 
 function Mesh:init(filename)
 	-- TODO new system:
@@ -581,8 +589,7 @@ function Mesh:regenNormals()
 		local a = self.vtxs.v[ia].pos
 		local b = self.vtxs.v[ib].pos
 		local c = self.vtxs.v[ic].pos
-		local area = triArea(a, b, c)
-		local normal = triNormal(a,b,c)
+		local normal, area = triNormal(a,b,c)
 		local normalArea = normal * area
 		vtxnormals.v[ia] = vtxnormals.v[ia] + normalArea
 		vtxnormals.v[ib] = vtxnormals.v[ib] + normalArea
@@ -842,6 +849,7 @@ function Mesh:drawTriNormals()
 	gl.glEnd()
 end
 
+-- 'fwd' is used for depth calculation, 'dir' is the ray direction
 function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
 	-- assumes dir is 1 unit fwd along the view fwd
 	--dir = dir:normalize()
@@ -864,6 +872,47 @@ function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
 		end
 	end
 	return besti, bestdepth
+end
+
+function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local besti, bestdist
+	for i=0,self.triIndexBuf.size-3,3 do
+		local a,b,c = self:triVtxPos(i)
+		
+		local planePt = a
+		local triNormal, area = triNormal(a,b,c)
+		if area > 1e-7 then
+			-- make sure it's pointing towards the ray origin
+			if triNormal:dot(dir) < 0 then triNormal = -triNormal end
+			
+			local p, s = rayPlaneIntersect(pos, dir, triNormal, planePt)
+			if s >= 0 and (not bestdist or s < bestdist) then
+			
+				-- barycentric coordinates
+				local oob
+				local vs = {a,b,c}
+				for j=0,2 do
+					local v1 = vs[j+1]
+					local v2 = vs[(j+1)%3+1]
+					local tocom = (v2 - v1):cross(triNormal)
+					-- will only work on front-facing triangles
+					if (p - v1):dot(tocom) < 0 then
+						oob = true
+						break
+					end
+				end
+				
+				if not oob then
+					besti = i
+					bestdist = s
+				end
+			end
+		end
+	end
+	return besti, bestdist
 end
 
 return Mesh
