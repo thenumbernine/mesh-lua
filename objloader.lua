@@ -90,7 +90,7 @@ timer('loading', function()
 				tris:insert(t)
 				-- keys:
 				t.index = #tris+1	-- so far only used for debugging
-				t.mtl = mtl
+				t.mtl = assert(mtl)
 				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris-1 end
 				mtl.triCount = #tris - mtl.triFirstIndex
 			end

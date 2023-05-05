@@ -555,15 +555,12 @@ function Mesh:breakTriangles()
 	self.triIndexBuf = ntris
 	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
 
-	self.tris = range(self.triIndexBuf.size/3):mapi(function(i)
+	for i,t in ipairs(self.tris) do
 		local function vis(i) return {v=i, vt=i, vn=i} end
-		return {
-			vis(3*(i-1)+1),
-			vis(3*(i-1)+2),
-			vis(3*(i-1)+3),
-			index = i,
-		}
-	end)
+		for j=1,3 do
+			t[j] = vis(3*(i-1)+j)
+		end
+	end
 
 	self.edges = nil
 	self.allOverlappingEdges = nil

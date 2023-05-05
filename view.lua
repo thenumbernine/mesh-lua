@@ -46,6 +46,8 @@ local dirs = table{
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
+	self.unwrapAngleThreshold = 5
+
 	self.view.znear = .1
 	self.view.zfar = 40000
 
@@ -72,7 +74,10 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	if cmdline.unwrapuv then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
-			unwrapUVs(self.mesh)
+			unwrapUVs{
+				mesh = self.mesh,
+				angleThreshold = self.unwrapAngleThreshold,
+			}
 		end)
 	end
 --]]
@@ -590,10 +595,18 @@ function App:updateGUI()
 			if ig.igButton'break triangles' then
 				mesh:breakTriangles()
 			end
+			
+			ig.igEndMenu()
+		end
+		if ig.igBeginMenu'UV' then
+			ig.luatableInputFloat('unwrap angle threshold', self, 'unwrapAngleThreshold')
 
 			if ig.igButton'unwrap uvs' then
 				timer('unwrapping uvs', function()
-					unwrapUVs(self.mesh)
+					unwrapUVs{
+						mesh = self.mesh,
+						angleThreshold = self.unwrapAngleThreshold,
+					}
 				end)
 				if mesh.loadedGL then
 					mesh.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * mesh.vtxs.size, mesh.vtxs.v)

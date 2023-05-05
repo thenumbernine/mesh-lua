@@ -5,7 +5,10 @@ local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local quatf = require 'vec-ffi.quatf'
 
-local function unwrapUVs(mesh)
+local function unwrapUVs(args)
+	local mesh = assert(args.mesh)
+	local angleThreshold = args.angleThreshold or 5
+
 	mesh:breakTriangles()
 	mesh:calcAllOverlappingEdges()
 
@@ -428,7 +431,7 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 		end
 	end
 
-	local cosThetaThreshold = math.cos(math.rad(5))
+	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
 
 	-- walls
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
@@ -449,7 +452,7 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 --print('flood fill testing', math.deg(math.acos(math.clamp(t.normal:dot(t2.normal), -1, 1))))
 						local tnormal = mesh.triNormal(mesh:triVtxPos(3*(t.index-1)))
 						local t2normal = mesh.triNormal(mesh:triVtxPos(3*(t2.index-1)))
-						if tnormal:dot(t2normal) > cosThetaThreshold then
+						if tnormal:dot(t2normal) > cosAngleThreshold then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						else
 							alreadyFilled:insertUnique(t2)
