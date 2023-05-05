@@ -17,12 +17,35 @@ typedef struct {
 } obj_vertex_t;
 ]]
 
+local Mesh = class()
+
 local function triArea(a,b,c)
+	-- TODO check nans here?
 	local ab = b - a
 	local ac = c - a
 	local n = ab:cross(ac)
 	return .5 * n:norm()
 end
+Mesh.triArea = triArea
+
+local function triNormal(a,b,c)
+	local ab = b - a
+	local bc = c - b
+	local n = ab:cross(bc)
+	local len = n:norm()
+	if len < 1e-7 or not math.isfinite(len) then
+		return vec3f(0,0,0)
+	else
+		return n / len
+	end
+end
+Mesh.triNormal = triNormal
+
+local function triCOM(a,b,c)
+	-- TODO check nans here?
+	return (a + b + c) * (1/3)
+end
+Mesh.triCOM = triCOM
 
 -- volume of parallelogram with vertices at 0, a, b, c
 -- the 4th pt in the tetrad is zero.  adjust a,b,c accordingly
@@ -34,8 +57,7 @@ local function tetradVolume(a,b,c)
 		- c.y * b.z * a.x
 		- c.z * b.x * a.y) / 6
 end
-
-local Mesh = class()
+Mesh.tetradVolume = tetradVolume
 
 function Mesh:init(filename)
 	-- TODO new system:
@@ -83,10 +105,15 @@ function Mesh:mergeMatchingVertexes()
 print('vtxMergeThreshold', vtxMergeThreshold)
 	print('before merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
 	for i=self.vtxCPUBuf.size-1,1,-1 do
+		local vi = self.vtxCPUBuf.v[i]
 		for j=0,i-1 do
-			local dist = (self.vtxCPUBuf.v[i].pos - self.vtxCPUBuf.v[j].pos):norm()
+			local vj = self.vtxCPUBuf.v[j]
+			local dist = (vi.pos - vj.pos):norm()
 --print(dist)
-			if dist < vtxMergeThreshold then
+			if dist < vtxMergeThreshold
+			and (vi.texcoord - vj.texcoord):norm() < 1e-7
+			and (vi.normal - vj.normal):norm() < 1e-7
+			then
 --print('merging vtxs '..i..' and '..j)
 				self:mergeVertex(i,j)
 				break
@@ -94,6 +121,24 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 		end
 	end
 	print('after merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
+end
+
+-- 0-based, index-array so 3x from unique tri
+function Mesh:getTriVtxPos(i)
+	local t = self.triIndexBuf.v + i
+	return self.vtxCPUBuf.v[t[0]].pos,
+			self.vtxCPUBuf.v[t[1]].pos,
+			self.vtxCPUBuf.v[t[2]].pos
+end
+
+function Mesh:removeEmptyTris()
+	for i=self.triIndexBuf.size-3,0,-3 do
+		local a,b,c = self:getTriVtxPos(i)
+		local area = triArea(a,b,c)
+		if area < 1e-7 then
+			self:removeTri(i)
+		end
+	end
 end
 
 -- fill the allOverlappingEdges table
@@ -334,7 +379,7 @@ function Mesh:removeUnusedVtxs()
 	local usedVs = {}
 	timer('finding used vertexes', function()
 		for i=0,self.triIndexBuf.size-1 do
-			usedVs[self.triIndexBuf.v[j]] = true
+			usedVs[self.triIndexBuf.v[i]] = true
 		end
 	end)
 	timer('removing unused vtxs', function()
@@ -497,22 +542,11 @@ function Mesh:regenNormals()
 		local b = self.vtxCPUBuf.v[ib].pos
 		local c = self.vtxCPUBuf.v[ic].pos
 		local area = triArea(a, b, c)
-		local normal = (b - a):cross(c - b)
-		if normal:norm() < 1e-7 then
-			normal = vec3f(0,0,0)
-		else
-			normal = normal:normalize()
-			if not math.isfinite(normal:normSq()) then
-				normal = vec3f(0,0,0)
-			end
-		end
-
-		if math.isfinite(normal:normSq()) then
-			local normalArea = normal * area
-			vtxnormals.v[ia] = vtxnormals.v[ia] + normalArea
-			vtxnormals.v[ib] = vtxnormals.v[ib] + normalArea
-			vtxnormals.v[ic] = vtxnormals.v[ic] + normalArea
-		end
+		local normal = triNormal(a,b,c)
+		local normalArea = normal * area
+		vtxnormals.v[ia] = vtxnormals.v[ia] + normalArea
+		vtxnormals.v[ib] = vtxnormals.v[ib] + normalArea
+		vtxnormals.v[ic] = vtxnormals.v[ic] + normalArea
 	end
 --print('normals vertex normals')
 	for i=0,vtxnormals.size-1 do
@@ -748,25 +782,14 @@ function Mesh:drawVertexNormals()
 	gl.glEnd()
 end
 
--- 0-based
-function Mesh:getTriVtxPos(i)
-	local ia = self.triIndexBuf.v[i]
-	local ib = self.triIndexBuf.v[i+1]
-	local ic = self.triIndexBuf.v[i+2]
-	local va = self.vtxCPUBuf.v[ia].pos
-	local vb = self.vtxCPUBuf.v[ib].pos
-	local vc = self.vtxCPUBuf.v[ic].pos
-	return va, vb, vc
-end
-
 function Mesh:drawTriNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
 	for i=0,self.triIndexBuf.size-1,3 do
 		local a, b, c = self:getTriVtxPos(i)
-		local normal = (b - a):cross(c - b)
-		local com = (a + b + c) * (1/3)
+		local normal = triNormal(a,b,c)
+		local com = triCOM(a,b,c)
 		gl.glVertex3fv(com.s)
 		gl.glVertex3fv((com + normal).s)
 	end

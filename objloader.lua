@@ -341,21 +341,16 @@ function OBJLoader:save(filename, mesh)
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
 			local t = mesh.triIndexBuf.v + 3*i
-			
-			local a = self.vtxCPUBuf.v[t[0]].pos
-			local b = self.vtxCPUBuf.v[t[1]].pos
-			local c = self.vtxCPUBuf.v[t[2]].pos
-			local area = triArea(a, b, c)
-			local normal = (b - a):cross(c - b)
-
-			-- exclude empty triangles here, or TODO elsewhere
+			local a,b,c = mesh:getTriVtxPos(3*i)
+			local area = mesh.triArea(a,b,c)
 			if area > 0 then
+				local normal = mesh.triNormal(a,b,c)
 				if lastt
 				and t[0] == lastt[0]
 				and t[1] == lastt[2]
 				-- same plane
 				and normal:dot(lasttnormal) > 1 - 1e-3
-				and math.abs((mesh.vs[t[2]+1] - mesh.vs[lastt[2].v]):dot(t.normal)) < 1e-3
+				and math.abs((mesh.vtxCPUBuf.v[t[2]].pos - mesh.vtxCPUBuf.v[lastt[2]].pos):dot(normal)) < 1e-3
 				then
 					-- continuation of the last face
 					vis:insert(t[2])
