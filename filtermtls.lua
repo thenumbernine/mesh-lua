@@ -13,7 +13,7 @@ end):setmetatable(nil)
 print('keeping '..require'ext.tolua'(keepers))
 
 local mesh = loader:load(infn)
-
+print('mesh has '..(mesh.triIndexBuf.size/3)..' triangles')
 for mtlname in pairs(keepers) do
 	print(mtlname, mesh:getTriIndexesForMaterial(mtlname))
 end
@@ -40,12 +40,15 @@ for i=1,#ms-1 do
 end
 
 -- verify material tri count == mesh tri count
-local totalMtlTris = ms:mapi(function(m) return m.triCount end):sum()
-if totalMtlTris ~= #mesh.tris then
-	error("expected "..totalMtlTris .." == " .. #mesh.tris)
+local totalMtlTris = ms:mapi(function(m)
+	print('mtl '..m.name..' first tri '..m.triFirstIndex..' count '..m.triCount..' tris')
+	return m.triCount
+end):sum()
+if totalMtlTris ~= mesh.triIndexBuf.size/3 then
+	error("expected "..totalMtlTris .." == " .. mesh.triIndexBuf.size/3)
 end
 
-print('before filtering faces, #tris', #mesh.tris)
+print('before filtering faces, #tris', mesh.triIndexBuf.size/3)
 -- TODO change removeTri() to removeTriRange()
 timer('filtering faces', function()
 	for mtlname,mtl in pairs(mesh.mtllib) do
@@ -55,14 +58,15 @@ timer('filtering faces', function()
 			print('remove material '..mtlname)
 			local triCount = mtl.triCount
 			print('material has num tris '..triCount)
-			local numTrisBefore = #mesh.tris
+			local numTrisBefore = mesh.triIndexBuf.size/3
 			print('before #tris', numTrisBefore)
 			
 			-- [[ removeMaterial:	
 			local i1, i2 = mesh:getTriIndexesForMaterial(mtlname)
 			for i=i2,i1,-1 do
-				mesh.tris:remove(i)
+				mesh.tris:remove(i+1)
 			end
+			mesh.triIndexBuf.erase(mesh.triIndexBuf.v + i1, mesh.triIndexBuf.v + i2 + 1)
 			for mtlname2,mtl2 in pairs(mesh.mtllib) do
 				if mtlname ~= mtlname2 then
 					if i2 < mtl2.triFirstIndex then
@@ -73,7 +77,7 @@ timer('filtering faces', function()
 			mtl.triCount = 0
 			--]]
 			
-			local numTrisAfter = #mesh.tris
+			local numTrisAfter = mesh.triIndexBuf.size/3
 			print('after #tris', numTrisAfter)
 			if numTrisBefore - numTrisAfter ~= triCount then
 				error("expected to lose "..triCount.." but lost "..(numTrisBefore - numTrisAfter))
@@ -81,7 +85,7 @@ timer('filtering faces', function()
 		end
 	end
 end)
-print('after filtering faces, #tris', #mesh.tris)
+print('after filtering faces, #tris', mesh.triIndexBuf.size/3)
 
 -- filter unused material
 for _,mtlname in ipairs(table.keys(mesh.mtllib)) do
@@ -91,17 +95,17 @@ for _,mtlname in ipairs(table.keys(mesh.mtllib)) do
 	end
 end
 
-print('before removing unused vertexes, #tris', #mesh.tris)
+print('before removing unused vertexes, #tris', mesh.triIndexBuf.size/3)
 mesh:removeUnusedVtxs()
-print('after removing unused vertexes, #tris', #mesh.tris)
+print('after removing unused vertexes, #tris', mesh.triIndexBuf.size/3)
 
 -- now remove any vertexes not used ...
 -- ... and make it a function
 
 mesh:calcBBox()	-- needed for threshold for mergeMatchingVertexes
-print('before merging vertexes, #tris', #mesh.tris)
+print('before merging vertexes, #tris', mesh.triIndexBuf.size/3)
 mesh:mergeMatchingVertexes()
-print('after merging vertexes, #tris', #mesh.tris)
+print('after merging vertexes, #tris', mesh.triIndexBuf.size/3)
 
 mesh:calcTriAux()	-- needed for save()
 loader:save(outfn, mesh)

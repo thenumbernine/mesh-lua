@@ -92,7 +92,7 @@ function OBJLoader:load(filename)
 				t.index = #tris+1	-- so far only used for debugging
 				t.mtl = mtl
 				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris-1 end
-				mtl.triCount = #tris - mtl.triFirstIndex + 1
+				mtl.triCount = #tris - mtl.triFirstIndex
 			end
 		elseif lineType == 's' then
 			-- TODO then smooth is on
