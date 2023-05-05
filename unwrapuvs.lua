@@ -560,7 +560,7 @@ print('number to initialize with', #todo)
 				-- needed for basic walls to look good
 				if math.abs(edgeDir:normalize():dot(vec3f(0,1,0))) < 1e-5 then
 				--]] do
-					local edgeCenter = (b + a) * .5					
+					local edgeCenter = (b + a) * .5
 					local comToEdge = edgeCenter - tcom
 --print('comToEdge', comToEdge)
 					-- [[ exclude tops.  necessary for roofs.  helps walls too.
@@ -762,7 +762,16 @@ function drawUVUnwrapEdges(mesh)
 		else
 			gl.glColor3f(0,1,0)
 		end
-		gl.glVertex3f((ta.com + eps * ta.normal):unpack())
+
+		local taa, tab, tac = mesh:triVtxPos(3*(ta.index-1))
+		local tacom = (taa + tab + tac) * (1/3)
+		local tanormal = mesh.triNormal(taa, tab, tac)
+
+		local tba, tbb, tbc = mesh:triVtxPos(3*(tb.index-1))
+		local tbcom = (tba + tbb + tbc) * (1/3)
+		local tbnormal = mesh.triNormal(tba, tbb, tbc)
+
+		gl.glVertex3f((tacom + tanormal * eps):unpack())
 
 		-- [=[
 		if not info.floodFill == true then
@@ -787,7 +796,7 @@ function drawUVUnwrapEdges(mesh)
 		local s = .5 * (lmin + lmax)
 		-- find its ratio along the fixed interval of the 2nd tri's edge
 		local t = s / l
-		local edgeCom = ((v21 * (1 - t) + v22 * t) + eps * (ta.normal + tb.normal):normalize())
+		local edgeCom = ((v21 * (1 - t) + v22 * t) + (tanormal + tbnormal):normalize() * eps)
 		gl.glVertex3f(edgeCom:unpack())
 		gl.glVertex3f(edgeCom:unpack())
 		--]=]
@@ -795,7 +804,7 @@ function drawUVUnwrapEdges(mesh)
 		if not info.floodFill == true then
 			gl.glColor3f(1,0,0)
 		end
-		gl.glVertex3f((tb.com + eps * tb.normal):unpack())
+		gl.glVertex3f((tbcom + tbnormal * eps):unpack())
 	end
 	gl.glEnd()
 	gl.glPointSize(3)

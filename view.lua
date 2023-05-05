@@ -72,7 +72,6 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	if cmdline.unwrapuv then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
-			-- TODO move this function out of Mesh
 			unwrapUVs(self.mesh)
 		end)
 	end
@@ -104,6 +103,7 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	-- gui options
 	self.useWireframe = false
 	self.useDrawVertexes = false
+	self.useDrawBBox = false
 	self.useDrawEdges = false
 	self.useDrawPolys = true
 	self.drawVertexNormals = false
@@ -227,6 +227,8 @@ App.modelViewMatrix = matrix_ffi.zeros{4,4}
 App.projectionMatrix = matrix_ffi.zeros{4,4}
 
 function App:update()
+	local mesh = self.mesh
+
 	gl.glClearColor(self.bgcolor:unpack())
 	gl.glClear(bit.bor(gl.GL_COLOR_BUFFER_BIT, gl.GL_DEPTH_BUFFER_BIT))
 
@@ -272,13 +274,13 @@ function App:update()
 	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.modelViewMatrix.ptr)
 	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
 
-	self.mesh:loadGL(self.shader)
+	mesh:loadGL(self.shader)
 
 	if self.drawVertexNormals then
-		self.mesh:drawVertexNormals()
+		mesh:drawVertexNormals()
 	end
 	if self.drawTriNormals then
-		self.mesh:drawTriNormals()
+		mesh:drawTriNormals()
 	end
 	if self.useDrawPolys then
 		self.shader:use()
@@ -289,7 +291,7 @@ function App:update()
 			modelViewMatrix = self.modelViewMatrix.ptr,
 			projectionMatrix = self.projectionMatrix.ptr,
 		}
-		self.mesh:draw{
+		mesh:draw{
 			-- TODO option for calculated normals?
 			-- TODO shader options?
 			shader = self.shader,
@@ -302,7 +304,7 @@ function App:update()
 					Kd = mtl.Kd and mtl.Kd.s or {1,1,1,1},
 					Ks = mtl.Ks and mtl.Ks.s or {1,1,1,1},
 					Ns = mtl.Ns or 10,
-					objCOM = self.mesh.com3.s,
+					objCOM = mesh.com3.s,
 					groupCOM = mtl.com3.s,
 					groupExplodeDist = self.groupExplodeDist,
 					triExplodeDist = self.triExplodeDist,
@@ -312,16 +314,37 @@ function App:update()
 		self.shader:useNone()
 	end
 	if self.drawUVUnwrapEdges then
-		drawUVUnwrapEdges(self.mesh)
+		drawUVUnwrapEdges(mesh)
 	end
 	if self.useDrawEdges then
-		self.mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
+		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
 	end
 	if self.useDrawVertexes then
-		self.mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
+		mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
+	end
+	if self.useDrawBBox then
+		if not mesh.bbox then mesh:calcBBox() end
+		gl.glColor3f(1,0,1)
+		gl.glLineWidth(3)
+		gl.glBegin(gl.GL_LINES)
+		for i=0,7 do
+			for j=0,2 do
+				local k = bit.bxor(i, bit.lshift(1, j))
+				for _,o in ipairs{i,k} do
+					local v = {}
+					for l=1,3 do
+						local minmax = bit.band(bit.rshift(o, l-1), 1) == 1
+						v[l] = minmax and mesh.bbox.min[l] or mesh.bbox.max[l]
+					end
+					gl.glVertex3f(table.unpack(v))
+				end
+			end
+		end
+		gl.glEnd()
+		gl.glLineWidth(1)
 	end
 	if self.hoverVtx then
-		local v = self.mesh.vtxs.v[self.hoverVtx].pos
+		local v = mesh.vtxs.v[self.hoverVtx].pos
 		if v then
 			gl.glColor3f(1,0,0)
 			gl.glPointSize(3)
@@ -360,7 +383,7 @@ function App:update()
 			local i, bestDist = self:findClosestTriToMouse()
 			local bestmtl
 			if i then
-				for mtlname,mtl in pairs(self.mesh.mtllib) do
+				for mtlname,mtl in pairs(mesh.mtllib) do
 					if i >= 3*mtl.triFirstIndex and i < 3*(mtl.triFirstIndex + mtl.triCount) then
 						bestmtl = mtlname
 					end
@@ -459,7 +482,7 @@ function App:setCenter(center)
 	if not self.mesh.bbox then self.mesh:calcBBox() end	-- TODO always keep this updated?  or dirty bit?
 	local size = (self.mesh.bbox.max - self.mesh.bbox.min):norm()
 	self.view.orbit:set(center:unpack())
-	self.view.pos = self.view.angle:zAxis() * size+ self.view.orbit
+	self.view.pos = self.view.angle:zAxis() * size + self.view.orbit
 end
 
 function App:resetAngle(fwd)
@@ -481,6 +504,7 @@ function App:resetAngle(fwd)
 end
 
 function App:updateGUI()
+	local mesh = self.mesh
 	if ig.igBeginMainMenuBar() then
 		if ig.igBeginMenu'View' then
 
@@ -509,44 +533,71 @@ function App:updateGUI()
 				self:setCenter(vec3f(0,0,0))
 			end
 			if ig.igButton'set to vtx center' then
-				self:setCenter(self.mesh.com0)
+				self:setCenter(mesh.com0)
 			end
 			if ig.igButton'set to line center' then
-				self:setCenter(self.mesh.com1)
+				self:setCenter(mesh.com1)
 			end
 			if ig.igButton'set to face center' then
-				self:setCenter(self.mesh.com2)
+				self:setCenter(mesh.com2)
 			end
 			if ig.igButton'set to volume center' then
-				self:setCenter(self.mesh.com3)
+				self:setCenter(mesh.com3)
 			end
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Mesh' then
 			if ig.igButton'recenter com0' then
-				self.mesh:recenter(self.mesh.com0)
+				mesh:recenter(mesh.com0)
 			end
 			if ig.igButton'recenter com1' then
-				self.mesh:recenter(self.mesh.com1)
+				mesh:recenter(mesh.com1)
 			end
 			if ig.igButton'recenter com2' then
-				self.mesh:recenter(self.mesh.com2)
+				mesh:recenter(mesh.com2)
 			end
 			if ig.igButton'recenter com3' then
-				self.mesh:recenter(self.mesh.com3)
+				mesh:recenter(mesh.com3)
+			end
+
+			self.rescale = self.rescale or {1,1,1}
+			ig.luatableInputFloat('scale x', self.rescale, 1)
+			ig.luatableInputFloat('scale y', self.rescale, 2)
+			ig.luatableInputFloat('scale z', self.rescale, 3)
+			if ig.igButton'rescale' then
+				for i=0,mesh.vtxs.size-1 do
+					local v = mesh.vtxs.v[i].pos
+					for j=0,2 do
+						v.s[j] = v.s[j] * self.rescale[j+1]
+					end
+				end
+				mesh:calcCOMs()
+				mesh:calcBBox()
+				if mesh.loadedGL then
+					mesh.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * mesh.vtxs.size, mesh.vtxs.v)
+				end
 			end
 
 			if ig.igButton'regen normals' then
-				self.mesh:regenNormals()
+				mesh:regenNormals()
 			end
 			if ig.igButton'clear normals' then
-				self.mesh:clearNormals()
+				mesh:clearNormals()
 			end
 			if ig.igButton'merge vertexes' then
-				self.mesh:mergeMatchingVertexes()
+				mesh:mergeMatchingVertexes()
 			end
 			if ig.igButton'break triangles' then
-				self.mesh:breakTriangles()
+				mesh:breakTriangles()
+			end
+
+			if ig.igButton'unwrap uvs' then
+				timer('unwrapping uvs', function()
+					unwrapUVs(self.mesh)
+				end)
+				if mesh.loadedGL then
+					mesh.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * mesh.vtxs.size, mesh.vtxs.v)
+				end
 			end
 
 			ig.igEndMenu()
@@ -558,7 +609,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('use textures', self, 'useTextures')
 			ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
 			if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
-				for mtlname, mtl in pairs(self.mesh.mtllib) do
+				for mtlname, mtl in pairs(mesh.mtllib) do
 					if mtl.tex_Kd then
 						mtl.tex_Kd:bind()
 						mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
@@ -572,6 +623,7 @@ function App:updateGUI()
 			-- TODO per-tri exploding as well
 			ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
 			ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
+			ig.luatableCheckbox('draw bbox', self, 'useDrawBBox')
 			ig.luatableCheckbox('wireframe', self, 'useWireframe')
 			ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')
 			ig.luatableCheckbox('draw edges', self, 'useDrawEdges')
