@@ -328,7 +328,7 @@ function OBJLoader:save(filename, mesh)
 				indexToUniqueV[i] = #uniquevs
 			end
 		end
-		print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+	print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		for _,v in ipairs(uniquevs) do
 			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
 		end
@@ -338,6 +338,7 @@ function OBJLoader:save(filename, mesh)
 	local indexToUniqueVt = outputUnique('vt', 'texcoord')
 	local indexToUniqueVn = outputUnique('vn', 'normal')
 
+	local numtriindexes = 0
 	local mtlnames = table.keys(mesh.mtllib):sort()
 	assert(mtlnames[1] == '')	-- should always be there
 	for _,mtlname in ipairs(mtlnames) do
@@ -362,6 +363,7 @@ function OBJLoader:save(filename, mesh)
 					indexToUniqueVn[vi],
 				}:concat'/'
 			end):concat' ', '\n')
+			numtriindexes = numtriindexes + #vis
 			vis = nil
 		end
 		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
@@ -389,6 +391,7 @@ function OBJLoader:save(filename, mesh)
 		end
 		writeFaceSoFar()
 	end
+print('tri indexes reduced from '..mesh.triIndexBuf.size..' to '..numtriindexes)
 	o:close()
 end
 
