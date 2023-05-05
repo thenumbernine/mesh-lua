@@ -126,19 +126,19 @@ function OBJLoader:load(filename)
 		end
 	end
 
-	-- calc vtx normals before or after grouping redundant vtxs?
+	-- calc vtx normals before or after grouping redundant vertexes?
 
 	local indexForVtx = {}	-- from 'v,vt,vn'
-	local vtxCPUBuf = vector'obj_vertex_t'	-- vertex structure
+	local vtxs = vector'obj_vertex_t'	-- vertex structure
 	local triIndexBuf = vector'int32_t'		-- triangle indexes
 	for _,t in ipairs(tris) do
 		for j,tj in ipairs(t) do
 			local k = table.concat({tj.v, tj.vt, tj.vn},',')
 			local i = indexForVtx[k]	-- 0-based
 			if not i then
-				i = vtxCPUBuf.size
+				i = vtxs.size
 				indexForVtx[k] = i
-				local dst = vtxCPUBuf:emplace_back()
+				local dst = vtxs:emplace_back()
 				dst.pos = assert(vs[tj.v])
 				if tj.vt then
 					dst.texcoord = assert(vts[tj.vt])
@@ -157,10 +157,10 @@ function OBJLoader:load(filename)
 			tj.vn = i+1
 		end
 	end
---print('#unique vertexes', vtxCPUBuf.size)
+--print('#unique vertexes', vtxs.size)
 --print('#unique triangles', triIndexBuf.size)
 
-	mesh.vtxCPUBuf = vtxCPUBuf
+	mesh.vtxs = vtxs
 	mesh.triIndexBuf = triIndexBuf
 
 	-- while we're here, regenerate the vs vts vns from their reduced triIndexBuf values
@@ -305,16 +305,26 @@ function OBJLoader:save(filename, mesh)
 	for _,mtl in ipairs(mesh.mtlFilenames) do
 		o:write('mtllib ', mtl, '\n')
 	end
-	for i=0,mesh.vtxCPUBuf.size-1 do
-		local v = mesh.vtxCPUBuf.v[i].pos
+	
+	-- map from the vtxs to unique indexes
+	local indexForV = {}
+	for i=0,mesh.vtxs.size-1 do
+		local v = mesh.vtxs.v[i].pos
+		local dsti
+		for j=0,i-1 do
+			if (v - mesh.vtxs.v[j].pos):norm() < 1e-7 then
+				dsti = j
+				break
+			end
+		end
 		o:write('v ',v.x,' ',v.y,' ',v.z,'\n')
 	end
-	for i=0,mesh.vtxCPUBuf.size-1 do
-		local v = mesh.vtxCPUBuf.v[i].texcoord
+	for i=0,mesh.vtxs.size-1 do
+		local v = mesh.vtxs.v[i].texcoord
 		o:write('vt ',v.x,' ',v.y,' ',v.z,'\n')
 	end
-	for i=0,mesh.vtxCPUBuf.size-1 do
-		local v = mesh.vtxCPUBuf.v[i].normal
+	for i=0,mesh.vtxs.size-1 do
+		local v = mesh.vtxs.v[i].normal
 		o:write('vn ',v.x,' ',v.y,' ',v.z,'\n')
 	end
 	local mtlnames = table.keys(mesh.mtllib):sort()
@@ -335,7 +345,7 @@ function OBJLoader:save(filename, mesh)
 			if not vis then return end
 			writeMtlName()
 			o:write('f ', table.mapi(vis, function(vi)
-				return table{vi, vi, vi}:concat'/'
+				return table{vi+1, vi+1, vi+1}:concat'/'
 			end):concat' ', '\n')
 			vis = nil
 		end
@@ -350,7 +360,7 @@ function OBJLoader:save(filename, mesh)
 				and t[1] == lastt[2]
 				-- same plane
 				and normal:dot(lasttnormal) > 1 - 1e-3
-				and math.abs((mesh.vtxCPUBuf.v[t[2]].pos - mesh.vtxCPUBuf.v[lastt[2]].pos):dot(normal)) < 1e-3
+				and math.abs((mesh.vtxs.v[t[2]].pos - mesh.vtxs.v[lastt[2]].pos):dot(normal)) < 1e-3
 				then
 					-- continuation of the last face
 					vis:insert(t[2])

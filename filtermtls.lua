@@ -91,17 +91,17 @@ for _,mtlname in ipairs(table.keys(mesh.mtllib)) do
 	end
 end
 
-print('before removing unused vtxs, #tris', #mesh.tris)
+print('before removing unused vertexes, #tris', #mesh.tris)
 mesh:removeUnusedVtxs()
-print('after removing unused vtxs, #tris', #mesh.tris)
+print('after removing unused vertexes, #tris', #mesh.tris)
 
 -- now remove any vertexes not used ...
 -- ... and make it a function
 
 mesh:calcBBox()	-- needed for threshold for mergeMatchingVertexes
-print('before merging vtxs, #tris', #mesh.tris)
+print('before merging vertexes, #tris', #mesh.tris)
 mesh:mergeMatchingVertexes()
-print('after merging vtxs, #tris', #mesh.tris)
+print('after merging vertexes, #tris', #mesh.tris)
 
 mesh:calcTriAux()	-- needed for save()
 loader:save(outfn, mesh)

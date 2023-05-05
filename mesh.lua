@@ -61,7 +61,7 @@ Mesh.tetradVolume = tetradVolume
 
 function Mesh:init(filename)
 	-- TODO new system:
-	self.vtxCPUBuf = vector'obj_vertex_t'
+	self.vtxs = vector'obj_vertex_t'
 	self.triIndexBuf = vector'int32_t'
 
 	-- just holds extra info per tri
@@ -72,7 +72,7 @@ end
 
 function Mesh:prepare()
 -- [[ calculate bbox.
--- do this before merging vtxs.
+-- do this before merging vertexes
 	self:calcBBox()
 --]]
 -- TODO maybe calc bounding radius? Here or later?  That takes COM, which, for COM2/COM3 takes tris.  COM1 takes edges... should COM1 consider merged edges always?  probably...
@@ -90,8 +90,8 @@ end
 function Mesh:calcBBox()
 	local box3 = require 'vec.box3'
 	self.bbox = box3(-math.huge)
-	for i=0,self.vtxCPUBuf.size-1 do
-		self.bbox:stretch{self.vtxCPUBuf.v[i].pos:unpack()}
+	for i=0,self.vtxs.size-1 do
+		self.bbox:stretch{self.vtxs.v[i].pos:unpack()}
 	end
 end
 
@@ -103,32 +103,32 @@ function Mesh:mergeMatchingVertexes()
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
-	print('before merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
-	for i=self.vtxCPUBuf.size-1,1,-1 do
-		local vi = self.vtxCPUBuf.v[i]
+	print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+	for i=self.vtxs.size-1,1,-1 do
+		local vi = self.vtxs.v[i]
 		for j=0,i-1 do
-			local vj = self.vtxCPUBuf.v[j]
+			local vj = self.vtxs.v[j]
 			local dist = (vi.pos - vj.pos):norm()
 --print(dist)
 			if dist < vtxMergeThreshold
 			and (vi.texcoord - vj.texcoord):norm() < 1e-7
 			and (vi.normal - vj.normal):norm() < 1e-7
 			then
---print('merging vtxs '..i..' and '..j)
+--print('merging vertex '..i..' and '..j)
 				self:mergeVertex(i,j)
 				break
 			end
 		end
 	end
-	print('after merge vtx count', self.vtxCPUBuf.size, 'tri count', self.triIndexBuf.size)
+	print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
 end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:getTriVtxPos(i)
 	local t = self.triIndexBuf.v + i
-	return self.vtxCPUBuf.v[t[0]].pos,
-			self.vtxCPUBuf.v[t[1]].pos,
-			self.vtxCPUBuf.v[t[2]].pos
+	return self.vtxs.v[t[0]].pos,
+			self.vtxs.v[t[1]].pos,
+			self.vtxs.v[t[2]].pos
 end
 
 function Mesh:removeEmptyTris()
@@ -243,7 +243,7 @@ function Mesh:findEdges()
 				[1] = a,
 				[2] = b,
 				tris = table(),
-				length = (self.vtxCPUBuf.v[a-1].pos - self.vtxCPUBuf.v[b-1].pos):norm(),
+				length = (self.vtxs.v[a-1].pos - self.vtxs.v[b-1].pos):norm(),
 			}
 			local e = self.edges[a][b]
 			e.tris:insert(t)
@@ -286,7 +286,7 @@ function Mesh:calcCOMs()
 	end)
 	print('com3 = '..self.com3)
 	-- can only do this with com2 and com3 since they use tris, which are stored per-material
-	-- ig i could with edges and vtxs too if I flag them per-material
+	-- ig i could with edges and vertexes too if I flag them per-material
 	timer('mtl com2/3', function()
 		for mtlname,mtl in pairs(self.mtllib) do
 			mtl.com2 = self:calcCOM2(mtlname)
@@ -299,8 +299,8 @@ end
 function Mesh:replaceVertex(from,to)
 --print('replacing vertex ' ..from..' with '..to)
 	assert(from > to)
-	assert(from >= 0 and from <= self.vtxCPUBuf.size)
-	assert(to >= 0 and to <= self.vtxCPUBuf.size)
+	assert(from >= 0 and from <= self.vtxs.size)
+	assert(to >= 0 and to <= self.vtxs.size)
 	-- replace in .tris
 	for j=self.triIndexBuf.size-3,0,-3 do
 		local t = self.triIndexBuf.v + j
@@ -339,8 +339,8 @@ end
 -- remove the vertex from the elf.vs[] list
 -- decrement the indexes greater
 function Mesh:removeVertex(vi)
-	assert(vi >= 0 and vi < self.vtxCPUBuf.size)
-	self.vtxCPUBuf:erase(self.vtxCPUBuf.v + vi, self.vtxCPUBuf.v + vi + 1)
+	assert(vi >= 0 and vi < self.vtxs.size)
+	self.vtxs:erase(self.vtxs.v + vi, self.vtxs.v + vi + 1)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
 	-- if you just straight up remove a vertex then the tris and faces might go out of sync
@@ -382,14 +382,14 @@ function Mesh:removeUnusedVtxs()
 			usedVs[self.triIndexBuf.v[i]] = true
 		end
 	end)
-	timer('removing unused vtxs', function()
-		print('before removing, #vs', self.vtxCPUBuf.size)
-		for i=self.vtxCPUBuf.size-1,0,-1 do
+	timer('removing unused vertexes', function()
+		print('before removing, #vs', self.vtxs.size)
+		for i=self.vtxs.size-1,0,-1 do
 			if not usedVs[i] then
 				self:removeVertex(i)
 			end
 		end
-		print('after removing, #vs', self.vtxCPUBuf.size)
+		print('after removing, #vs', self.vtxs.size)
 	end)
 end
 
@@ -433,10 +433,10 @@ end
 -- calculate COM by 0-forms (vertexes)
 function Mesh:calcCOM0()
 	local result = vec3f()
-	for i=0,self.vtxCPUBuf.size-1 do
-		result = result + self.vtxCPUBuf.v[i].pos
+	for i=0,self.vtxs.size-1 do
+		result = result + self.vtxs.v[i].pos
 	end
-	result = result / self.vtxCPUBuf.size
+	result = result / self.vtxs.size
 	assert(math.isfinite(result:normSq()))
 	return result
 end
@@ -448,8 +448,8 @@ function Mesh:calcCOM1()
 	local totalLen = 0
 	for a,bs in pairs(self.edges) do
 		for b in pairs(bs) do
-			local v1 = self.vtxCPUBuf.v[a-1].pos
-			local v2 = self.vtxCPUBuf.v[b-1].pos
+			local v1 = self.vtxs.v[a-1].pos
+			local v2 = self.vtxs.v[b-1].pos
 			-- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a)
 			-- for 1D, volume = |b-a|
 			local length = (v1 - v2):norm()
@@ -530,7 +530,7 @@ function Mesh:regenNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
 --print('zeroing vertex normals')
-	local vtxnormals = vector('vec3f_t', self.vtxCPUBuf.size)
+	local vtxnormals = vector('vec3f_t', self.vtxs.size)
 --print('accumulating triangle normals into vertex normals')
 	for i=0,self.triIndexBuf.size-1,3 do
 		local ia = self.triIndexBuf.v[i]
@@ -538,9 +538,9 @@ function Mesh:regenNormals()
 		local ic = self.triIndexBuf.v[i+2]
 		-- not sure what i'm doing with these ...
 		-- cache or regen?
-		local a = self.vtxCPUBuf.v[ia].pos
-		local b = self.vtxCPUBuf.v[ib].pos
-		local c = self.vtxCPUBuf.v[ic].pos
+		local a = self.vtxs.v[ia].pos
+		local b = self.vtxs.v[ib].pos
+		local c = self.vtxs.v[ic].pos
 		local area = triArea(a, b, c)
 		local normal = triNormal(a,b,c)
 		local normalArea = normal * area
@@ -556,11 +556,11 @@ function Mesh:regenNormals()
 --print(k, vtxnormals[i])
 	end
 
-	for i=0,self.vtxCPUBuf.size-1 do
-		self.vtxCPUBuf.v[i].normal = vtxnormals.v[i]
+	for i=0,self.vtxs.size-1 do
+		self.vtxs.v[i].normal = vtxnormals.v[i]
 	end
-	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxCPUBuf.size, self.vtxCPUBuf.v)
+	if self.vtxGLBuf then
+		self.vtxGLBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
 	end
 end
 
@@ -595,10 +595,10 @@ function Mesh:loadGL(shader)
 	-- mtl will just index into this.
 	-- why does mtl store a list of tri indexes?  it should just store an offset
 
---print('creating array buffer of size', self.vtxCPUBuf.size)
-	self.vtxBuf = GLArrayBuffer{
-		size = self.vtxCPUBuf.size * ffi.sizeof'obj_vertex_t',
-		data = self.vtxCPUBuf.v,
+--print('creating array buffer of size', self.vtxs.size)
+	self.vtxGLBuf = GLArrayBuffer{
+		size = self.vtxs.size * ffi.sizeof'obj_vertex_t',
+		data = self.vtxs.v,
 		usage = gl.GL_STATIC_DRAW,
 	}
 	assert(glreport'here')
@@ -611,7 +611,7 @@ function Mesh:loadGL(shader)
 	}:mapi(function(info)
 		if not shader.attrs[info.name] then return end
 		return GLAttribute{
-			buffer = self.vtxBuf,
+			buffer = self.vtxGLBuf,
 			size = info.size,
 			type = gl.GL_FLOAT,
 			stride = ffi.sizeof'obj_vertex_t',
@@ -671,33 +671,33 @@ function Mesh:draw(args)
 			-- TODO store a set of unique face v/vt/vn index-vertexes
 			-- and then bake those into a unique vertex array, and store its index alongside face's other indexes
 			-- that'll be most compat with GL indexed arrays
-			local v = self.vtxCPUBuf.v[vi]
+			local v = self.vtxs.v[vi]
 			gl.glTexCoord2fv(v.texcoord.s)
 			gl.glNormal3fv(v.normal.s)
-			gl.glVertex3fv(self.vtxCPUBuf.v[vi].pos.s)
+			gl.glVertex3fv(self.vtxs.v[vi].pos.s)
 		end
 		gl.glEnd()
 		--]]
 		--[[ vertex client arrays
-		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texcoord.s)
-		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
+		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].pos.s)
+		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].texcoord.s)
+		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxs.size)
 		gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
 		--]]
 		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
-		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].texcoord.s)
-		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxCPUBuf.v[0].normal.s)
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].texcoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxCPUBuf.size)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxs.size)
 		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
@@ -742,8 +742,8 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 				offset = offset + groupExplodeOffset + triExplodeOffset
 			end
 			offset = offset / #edge.tris
-			gl.glVertex3fv((self.vtxCPUBuf.v[a-1].pos + offset).s)
-			gl.glVertex3fv((self.vtxCPUBuf.v[b-1].pos + offset).s)
+			gl.glVertex3fv((self.vtxs.v[a-1].pos + offset).s)
+			gl.glVertex3fv((self.vtxs.v[b-1].pos + offset).s)
 		end
 	end
 	gl.glEnd()
@@ -755,8 +755,8 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glColor3f(1,1,1)
 	gl.glPointSize(3)
 	gl.glBegin(gl.GL_POINTS)
-	for i=0,self.vtxCPUBuf.size-1 do
-		local v = self.vtxCPUBuf.v[i].pos
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
 		-- avg of explode offsets of all touching tris
 		local offset = vec3f()
 		-- get mtl for tri, then do groupExplodeDist too
@@ -774,8 +774,8 @@ function Mesh:drawVertexNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for i=0,self.vtxCPUBuf.size-1 do
-		local v = self.vtxCPUBuf.v[i]
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i]
 		gl.glVertex3f(v.pos:unpack())
 		gl.glVertex3f((v.pos + v.normal):unpack())
 	end
@@ -801,8 +801,8 @@ function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
 	--dir = dir:normalize()
 	local dirlen = dir:norm()
 	local bestdot, besti, bestdepth
-	for i=0,self.vtxCPUBuf.size-1 do
-		local v = self.vtxCPUBuf.v[i].pos
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
 		local delta = v - pos
 		local depth = delta:dot(fwd)
 		--local dot = dir:dot(delta) / (delta:norm() * dirlen)

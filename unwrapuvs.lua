@@ -89,7 +89,7 @@ do--	else
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
 		local v = matrix{3,3}:lambda(function(i,j)
-			return mesh.vtxCPUBuf.v[t[i].v-1].pos.s[j-1]
+			return mesh.vtxs.v[t[i].v-1].pos.s[j-1]
 		end)
 --print('v\n'..v)
 		local d1 = v[2] - v[1]
@@ -299,7 +299,7 @@ tsrc.v1*-------*
 			--	error("how can we fold a line when the src tri doesn't have uv coords for it?")
 			--end
 			t.uvorigin2D = matrix(tsrc[isrc].uv)			-- copy matching uv from edge neighbor
-			t.uvorigin3D = matrix{mesh.vtxCPUBuf.v[tsrc[isrc].v-1].pos:unpack()}	-- copy matching 3D position
+			t.uvorigin3D = matrix{mesh.vtxs.v[tsrc[isrc].v-1].pos:unpack()}	-- copy matching 3D position
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
 
@@ -472,13 +472,13 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 		-- i really want only those with flat edges at the base
 		notDoneYet:sort(function(a,b)
 			return math.min(
-				mesh.vtxCPUBuf.v[a[1].v-1].pos.y,
-				mesh.vtxCPUBuf.v[a[2].v-1].pos.y,
-				mesh.vtxCPUBuf.v[a[3].v-1].pos.y
+				mesh.vtxs.v[a[1].v-1].pos.y,
+				mesh.vtxs.v[a[2].v-1].pos.y,
+				mesh.vtxs.v[a[3].v-1].pos.y
 			) < math.min(
-				mesh.vtxCPUBuf.v[b[1].v-1].pos.y,
-				mesh.vtxCPUBuf.v[b[2].v-1].pos.y,
-				mesh.vtxCPUBuf.v[b[3].v-1].pos.y
+				mesh.vtxs.v[b[1].v-1].pos.y,
+				mesh.vtxs.v[b[2].v-1].pos.y,
+				mesh.vtxs.v[b[3].v-1].pos.y
 			)
 		end)
 		local todo = table{notDoneYet:remove(1)}
@@ -486,10 +486,10 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 		--[[ same as above but pick the lowest *edge* , not *vtx*, cuz we want the base edges aligned with the bottom
 		notDoneYet:sort(function(a,b)
 			local aEdgeYMin = matrix{3}:lambda(function(i)
-				return .5 * (mesh.vtxCPUBuf.v[a[i].v-1].pos.y + mesh.vtxCPUBuf.v[a[i%3+1].v-1].pos.y)
+				return .5 * (mesh.vtxs.v[a[i].v-1].pos.y + mesh.vtxs.v[a[i%3+1].v-1].pos.y)
 			end):min()
 			local bEdgeYMin = matrix{3}:lambda(function(i)
-				return .5 * (mesh.vtxCPUBuf.v[b[i].v-1].pos.y + mesh.vtxCPUBuf.v[b[i%3+1].v-1].pos.y)
+				return .5 * (mesh.vtxs.v[b[i].v-1].pos.y + mesh.vtxs.v[b[i%3+1].v-1].pos.y)
 			end):min()
 			return aEdgeYMin < bEdgeYMin
 		end)
@@ -504,30 +504,30 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 		end
 		-- convert set of keys to list
 		vtxsNotDoneYet = table.keys(vtxsNotDoneYet):sort(function(a,b)
-			return mesh.vtxCPUBuf.v[a-1].pos.y < mesh.vtxCPUBuf.v[b-1].pos.y	-- sort by y axis
+			return mesh.vtxs.v[a-1].pos.y < mesh.vtxs.v[b-1].pos.y	-- sort by y axis
 		end)
 		local eps = (mesh.bbox.max[2] - mesh.bbox.min[2]) * 1e-5
-		local ymin = mesh.vtxCPUBuf.v[vtxsNotDoneYet[1]-1].pos.y
+		local ymin = mesh.vtxs.v[vtxsNotDoneYet[1]-1].pos.y
 		print('y min', ymin)
 		-- now go thru all tris not done yet
-		-- if any have 2/3 vtxs at the min then add them
+		-- if any have 2/3 vertexes at the min then add them
 		local todo = table()
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
 			local mincount = 0
 			for j=1,3 do
-				if mesh.vtxCPUBuf.v[t[j].v-1].pos.y < ymin + eps then mincount = mincount + 1 end
+				if mesh.vtxs.v[t[j].v-1].pos.y < ymin + eps then mincount = mincount + 1 end
 			end
 			if mincount >= 2 then
 				todo:insert(notDoneYet:remove(i))
 			end
 		end
-		-- if none were added then add one with 1/3 vtxs at the min
+		-- if none were added then add one with 1/3 vertexes at the min
 		if #todo == 0 then
 			for i=#notDoneYet,1,-1 do
 				local t = notDoneYet[i]
 				for j=1,3 do
-					if mesh.vtxCPUBuf.v[t[j].v-1].pos.y < ymin + eps then
+					if mesh.vtxs.v[t[j].v-1].pos.y < ymin + eps then
 						todo:insert(notDoneYet:remove(i))
 						break
 					end
@@ -544,8 +544,8 @@ print('number to initialize with', #todo)
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
 			for j=1,3 do
-				local a = matrix{mesh.vtxCPUBuf.v[t[j].v-1].pos:unpack()}
-				local b = matrix{mesh.vtxCPUBuf.v[t[j%3+1].v-1].pos:unpack()}
+				local a = matrix{mesh.vtxs.v[t[j].v-1].pos:unpack()}
+				local b = matrix{mesh.vtxs.v[t[j%3+1].v-1].pos:unpack()}
 				local edgeDir = b - a
 				-- [[ if the edges is in the xz plane ...
 				-- needed for basic walls to look good
@@ -587,15 +587,15 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		--]=]
 		-- [[ sort 'todo'
 		todo:sort(function(ta,tb)
-			local a1 = mesh.vtxCPUBuf.v[ta[1].v-1].pos
-			local a2 = mesh.vtxCPUBuf.v[ta[2].v-1].pos
-			local a3 = mesh.vtxCPUBuf.v[ta[3].v-1].pos
+			local a1 = mesh.vtxs.v[ta[1].v-1].pos
+			local a2 = mesh.vtxs.v[ta[2].v-1].pos
+			local a3 = mesh.vtxs.v[ta[3].v-1].pos
 			local minax = math.min(a1.x, a2.x, a3.x)
 			local minay = math.min(a1.y, a2.y, a3.y)
 			local minaz = math.min(a1.z, a2.z, a3.z)
-			local b1 = mesh.vtxCPUBuf.v[tb[1].v-1].pos
-			local b2 = mesh.vtxCPUBuf.v[tb[2].v-1].pos
-			local b3 = mesh.vtxCPUBuf.v[tb[3].v-1].pos
+			local b1 = mesh.vtxs.v[tb[1].v-1].pos
+			local b2 = mesh.vtxs.v[tb[2].v-1].pos
+			local b3 = mesh.vtxs.v[tb[3].v-1].pos
 			local minbx = math.min(b1.x, b2.x, b3.x)
 			local minby = math.min(b1.y, b2.y, b3.y)
 			local minbz = math.min(b1.z, b2.z, b3.z)
@@ -765,10 +765,10 @@ function drawUVUnwrapEdges(mesh)
 		local vi12 = t1[e.triVtxIndexes[1]%3+1].v
 		local vi21 = t2[e.triVtxIndexes[2]].v
 		local vi22 = t2[e.triVtxIndexes[2]%3+1].v
-		local v11 = matrix{mesh.vtxCPUBuf.v[vi11-1].pos:unpack()}	-- this's intervals is along the opposing tri's edge
-		local v12 = matrix{mesh.vtxCPUBuf.v[vi12-1].pos:unpack()}
-		local v21 = matrix{mesh.vtxCPUBuf.v[vi21-1].pos:unpack()}	-- e.intervals[2][1] is always 0
-		local v22 = matrix{mesh.vtxCPUBuf.v[vi22-1].pos:unpack()}	-- e.intervals[2][2] is always its edge length
+		local v11 = matrix{mesh.vtxs.v[vi11-1].pos:unpack()}	-- this's intervals is along the opposing tri's edge
+		local v12 = matrix{mesh.vtxs.v[vi12-1].pos:unpack()}
+		local v21 = matrix{mesh.vtxs.v[vi21-1].pos:unpack()}	-- e.intervals[2][1] is always 0
+		local v22 = matrix{mesh.vtxs.v[vi22-1].pos:unpack()}	-- e.intervals[2][2] is always its edge length
 		local l = e.intervals[2][2]
 		-- pick the subset of intervals in common
 		local lmin = math.max(e.intervals[1][1], e.intervals[2][1])

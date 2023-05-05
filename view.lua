@@ -47,7 +47,7 @@ function App:initGL(...)
 	App.super.initGL(self, ...)
 
 	self.mesh = OBJLoader():load(fn)
-print('#unique vertexes', self.mesh.vtxCPUBuf.size)
+print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	
 	-- TODO how to request this?  dirty bits?
@@ -318,7 +318,7 @@ function App:update()
 		self.mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
 	end
 	if self.hoverVtx then
-		local v = self.mesh.vtxCPUBuf.v[self.hoverVtx].pos
+		local v = self.mesh.vtxs.v[self.hoverVtx].pos
 		if v then
 			gl.glColor3f(1,0,0)
 			gl.glPointSize(3)
@@ -388,7 +388,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 		local i = self.dragVtx
 		if i then
 			local pos, dir = self:mouseRay()
-			local dist = -self.view.angle:zAxis():dot(self.mesh.vtxCPUBuf.v[i].pos - pos)
+			local dist = -self.view.angle:zAxis():dot(self.mesh.vtxs.v[i].pos - pos)
 			if not shiftDown then
 				local tanFovY = math.tan(math.rad(self.view.fovY / 2))
 				local screenDelta = vec3d(
@@ -397,13 +397,13 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 					0
 				)
 				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
-				mesh.vtxCPUBuf.v[i] = mesh.vtxCPUBuf.v[i] + vtxDelta
+				mesh.vtxs.v[i] = mesh.vtxs.v[i] + vtxDelta
 			else
-				mesh.vtxCPUBuf.v[i] = mesh.vtxCPUBuf.v[i] + self.view.angle:rotate(vec3d(0, 0, dy))
+				mesh.vtxs.v[i] = mesh.vtxs.v[i] + self.view.angle:rotate(vec3d(0, 0, dy))
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
-				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxCPUBuf.v[i].pos.s)
+				mesh.vtxGLBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
 			end
 		end
 	end
@@ -487,7 +487,7 @@ function App:updateGUI()
 			if ig.igButton'regen normals' then
 				self.mesh:regenNormals()
 			end
-			if ig.igButton'merge vtxs' then
+			if ig.igButton'merge vertexes' then
 				self.mesh:mergeMatchingVertexes()
 			end
 
