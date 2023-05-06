@@ -458,4 +458,34 @@ print('tri indexes reduced from '..mesh.triIndexBuf.size..' to '..numtriindexes)
 	o:close()
 end
 
+-- TODO
+-- use .mtlFilenames to determine filename?
+-- or ... why store mtlFilenames at all? 
+-- why not require it upon request for :save() ?
+-- and if store, why not store the .obj filename too?
+-- or why not combine :saveMtl and :save like i do :loadMtl and :load
+function OBJLoader:saveMtl(filename, mesh)
+	local o = assert(file(filename):open'w')
+	local mtlnames = table.keys(mesh.mtllib):sort()
+	assert(mtlnames:remove(1) == '')
+	for _,mtlname in ipairs(mtlnames) do
+		local m = mesh.mtllib[mtlname]
+		o:write('newmtl ', mtlname,'\n')
+		for _,k in ipairs{
+			'Ka', 'Kd', 'Ks', 'Ns', 'map_Kd', 
+			--'map_Ks', 'map_Ns', 'map_bump', 'disp', 'decal',
+		} do
+			local v = m[k]
+			if v then
+				if vec4f:isa(v) then
+					o:write(k,' ',table{v:unpack()}:concat' ','\n')
+				else
+					o:write(k,' ',tostring(v),'\n')
+				end
+			end
+		end
+	end
+	o:close()
+end
+
 return OBJLoader
