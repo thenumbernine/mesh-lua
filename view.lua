@@ -167,9 +167,9 @@ void main() {
 	Kdv = Kd;
 	Ksv = Ks;
 	Nsv = Ns;
-	vec3 groupExplodeOffset = (groupCOM - objCOM) * groupExplodeDist;
-	vec3 triExplodeOffset = (com - groupCOM) * triExplodeDist;
-	vec3 vertex = pos + groupExplodeOffset + triExplodeOffset;
+	vec3 vertex = pos;
+	vertex = mix(vertex, com, triExplodeDist);
+	vertex = mix(vertex, groupCOM, groupExplodeDist);
 	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
 	fragPosv = fragPos.xyz;
 	gl_Position = projectionMatrix * fragPos;
@@ -634,8 +634,8 @@ function App:updateGUI()
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning
 			-- TODO per-tri exploding as well
-			ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 2)
-			ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 2)
+			ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 1)
+			ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 1)
 			ig.luatableCheckbox('draw bbox', self, 'useDrawBBox')
 			ig.luatableCheckbox('wireframe', self, 'useWireframe')
 			ig.luatableCheckbox('draw vertexes', self, 'useDrawVertexes')

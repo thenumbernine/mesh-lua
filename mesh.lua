@@ -565,10 +565,21 @@ function Mesh:breakTriangles()
 	self.triIndexBuf = ntris
 	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
 
+	-- TODO update the mesh ranges as well
+	-- assert they do not overlap before
+	-- then sort them
+	-- then remap them as we break tris
+
 	for i,t in ipairs(self.tris) do
 		local function vis(i) return {v=i, vt=i, vn=i} end
 		for j=1,3 do
 			t[j] = vis(3*(i-1)+j)
+		end
+		-- update vertex COMs
+		-- they are only valid now
+		local com = self.triCOM(self:triVtxPos(3*(i-1)))
+		for j=0,2 do
+			nvtxs.v[3*(i-1)+j].com = com
 		end
 	end
 

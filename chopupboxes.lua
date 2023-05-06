@@ -19,7 +19,7 @@ print('bbox after rounding', mesh.bbox)
 mesh:breakTriangles()
 
 -- 1) bin all triangles
-local comEps = .01
+local comEps = .1
 local normalStepEps = .01
 local trisForBox = {}
 local mini = vec3i(999,999,999)
@@ -39,12 +39,21 @@ for i=0,mesh.triIndexBuf.size-3,3 do
 		v = v * (1 - comEps) + com * comEps - normal * normalStepEps
 		local iv = vec3i()
 		for k=0,2 do
-			-- TODO maybe pull slightly towards tri com and against normal
+			-- pull slightly towards tri com and against normal
+			--[[ just using the vtx and pushing/pulling isn't working
+			-- binning too coarse or too fine
+			mini.s[k] = math.min(mini.s[k], math.floor(v.s[k] + eps))
+			maxi.s[k] = math.max(maxi.s[k], math.floor(v.s[k] - eps))
+			tmini.s[k] = math.min(tmini.s[k], math.floor(v.s[k] + eps))
+			tmaxi.s[k] = math.max(tmaxi.s[k], math.floor(v.s[k] - eps))
+			--]]
+			-- [[ so instead, push towards tri com and push back from the fwd-facing normal 
 			iv.s[k] = math.floor(v.s[k])
 			mini.s[k] = math.min(mini.s[k], iv.s[k])
 			maxi.s[k] = math.max(maxi.s[k], iv.s[k])
 			tmini.s[k] = math.min(tmini.s[k], iv.s[k])
 			tmaxi.s[k] = math.max(tmaxi.s[k], iv.s[k])
+			--]]
 		end
 		tboxes:insert{tmini, tmaxi}
 		
@@ -192,6 +201,7 @@ for i,tbox in ipairs(tboxes) do
 	for _,j in ipairs(tris) do
 		for k=0,2 do
 			mesh.triIndexBuf:push_back(j+k)
+			-- since our tris are already broken up, we can manipulate the vtx without it messing up any other tris
 		end
 	end
 end
