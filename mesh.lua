@@ -572,6 +572,11 @@ function Mesh:breakTriangles()
 		end
 	end
 
+	-- tell the next draw to regen the buffer
+	-- can I resize a gl arraybuffer?
+	self.loadedGL = false
+	self.vtxBuf = nil
+
 	self.edges = nil
 	self.allOverlappingEdges = nil
 
@@ -648,7 +653,9 @@ function Mesh:loadGL(shader)
 
 	-- load textures
 	for mtlname, mtl in pairs(self.mtllib) do
-		if mtl.image_Kd then
+		if mtl.image_Kd
+		and not mtl.tex_Kd
+		then
 			mtl.tex_Kd = GLTex2D{
 				image = mtl.image_Kd,
 				minFilter = gl.GL_NEAREST,
@@ -661,37 +668,39 @@ function Mesh:loadGL(shader)
 	-- why does mtl store a list of tri indexes?  it should just store an offset
 
 --print('creating array buffer of size', self.vtxs.size)
-	self.vtxBuf = GLArrayBuffer{
-		size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
-		data = self.vtxs.v,
-		usage = gl.GL_STATIC_DRAW,
-	}
-	assert(glreport'here')
+	if not self.vtxBuf then
+		self.vtxBuf = GLArrayBuffer{
+			size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
+			data = self.vtxs.v,
+			usage = gl.GL_STATIC_DRAW,
+		}
+		assert(glreport'here')
 
-	self.vtxAttrs = table{
-		{name='pos', size=3},
-		{name='texcoord', size=3},
-		{name='normal', size=3},
-		{name='com', size=3},
-	}:mapi(function(info)
-		if not shader.attrs[info.name] then return end
-		return GLAttribute{
-			buffer = self.vtxBuf,
-			size = info.size,
-			type = gl.GL_FLOAT,
-			stride = ffi.sizeof'MeshVertex_t',
-			offset = ffi.offsetof('MeshVertex_t', info.name),
-		}, info.name
-	end)
-	shader:use()
-	assert(glreport'here')
-	self.vao = GLVertexArray{
-		program = shader,
-		attrs = self.vtxAttrs,
-	}
-	shader:setAttrs(self.vtxAttrs)
-	shader:useNone()
-	assert(glreport'here')
+		self.vtxAttrs = table{
+			{name='pos', size=3},
+			{name='texcoord', size=3},
+			{name='normal', size=3},
+			{name='com', size=3},
+		}:mapi(function(info)
+			if not shader.attrs[info.name] then return end
+			return GLAttribute{
+				buffer = self.vtxBuf,
+				size = info.size,
+				type = gl.GL_FLOAT,
+				stride = ffi.sizeof'MeshVertex_t',
+				offset = ffi.offsetof('MeshVertex_t', info.name),
+			}, info.name
+		end)
+		shader:use()
+		assert(glreport'here')
+		self.vao = GLVertexArray{
+			program = shader,
+			attrs = self.vtxAttrs,
+		}
+		shader:setAttrs(self.vtxAttrs)
+		shader:useNone()
+		assert(glreport'here')
+	end
 end
 
 function Mesh:draw(args)
@@ -790,7 +799,7 @@ end
 -- they are per-tri, which is per-face, which is per-material, but there can be multiple materials per edge.
 function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
-	gl.glLineWidth(3)
+	--gl.glLineWidth(3)
 	gl.glColor3f(1,1,0)
 	
 	-- TODO shader that does the explode stuff
@@ -799,7 +808,7 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	gl.glDrawElements(gl.GL_LINES, self.edgeIndexBuf.size, gl.GL_UNSIGNED_INT, self.edgeIndexBuf.v)
 	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
 
-	gl.glLineWidth(1)
+	--gl.glLineWidth(1)
 end
 
 function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)

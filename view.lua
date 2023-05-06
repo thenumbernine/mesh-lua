@@ -246,7 +246,7 @@ function App:update()
 	local pushOrtho = self.view.ortho
 	self.view.ortho = false
 	self.view:setup(1)
-	local aa = self.view.angle:toAngleAxis()
+	local aa = self.view.angle:conjugate():toAngleAxis()
 	gl.glLoadIdentity()
 	gl.glTranslatef(0,0,-2)
 	gl.glRotatef(aa.w, aa.x, aa.y, aa.z)
