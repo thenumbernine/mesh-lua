@@ -243,18 +243,28 @@ end
 
 function Mesh:findEdges()
 	-- and just for kicks, track all edges
+	if not self.edgeIndexBuf then
+		self.edgeIndexBuf = vector('int32_t', 6 * #self.tris)
+	end
+	self.edgeIndexBuf:resize(0)
 	timer('edges', function()
 		self.edges = {}
 		local function addEdge(a,b,t)
 			if a > b then return addEdge(b,a,t) end
 			self.edges[a] = self.edges[a] or {}
-			self.edges[a][b] = self.edges[a][b] or {
-				[1] = a,
-				[2] = b,
-				tris = table(),
-				length = (self.vtxs.v[a-1].pos - self.vtxs.v[b-1].pos):norm(),
-			}
 			local e = self.edges[a][b]
+			if not e then
+				-- new edge?  add it to the index buffer
+				self.edgeIndexBuf:push_back(a-1)
+				self.edgeIndexBuf:push_back(b-1)
+				e = {
+					[1] = a,
+					[2] = b,
+					tris = table(),
+					length = (self.vtxs.v[a-1].pos - self.vtxs.v[b-1].pos):norm(),
+				}
+				self.edges[a][b] = e
+			end
 			e.tris:insert(t)
 			t.edges:insert(e)
 		end
@@ -782,26 +792,13 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
 	gl.glLineWidth(3)
 	gl.glColor3f(1,1,0)
-	gl.glBegin(gl.GL_LINES)
-	for a,other in pairs(self.edges) do
-		for b,edge in pairs(other) do
-			-- avg of explode offsets of all touching tris
-			local offset = vec3f()
-			for i,t in ipairs(edge.tris) do
-				local va, vb, vc = self:triVtxPos(3*(i-1))
-				local tcom = (va + vb + vc) * (1/3)
-				-- get mtl for tri, then do groupExplodeDist too
-				-- matches the shader in view.lua
-				local groupExplodeOffset = (t.mtl.com3 - self.com3) * groupExplodeDist
-				local triExplodeOffset = (tcom - t.mtl.com3) * triExplodeDist
-				offset = offset + groupExplodeOffset + triExplodeOffset
-			end
-			offset = offset / #edge.tris
-			gl.glVertex3fv((self.vtxs.v[a-1].pos + offset).s)
-			gl.glVertex3fv((self.vtxs.v[b-1].pos + offset).s)
-		end
-	end
-	gl.glEnd()
+	
+	-- TODO shader that does the explode stuff
+	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
+	gl.glDrawElements(gl.GL_LINES, self.edgeIndexBuf.size, gl.GL_UNSIGNED_INT, self.edgeIndexBuf.v)
+	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
+
 	gl.glLineWidth(1)
 end
 
