@@ -15,7 +15,7 @@ typedef struct {
 
 	// per-triangle stats (duplicated 3x per-vertex)
 	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
-} obj_vertex_t;
+} MeshVertex_t;
 ]]
 
 local Mesh = class()
@@ -68,9 +68,9 @@ local function rayPlaneIntersect(rayPos, rayDir, planeNormal, planePt)
 	return rayPos + rayDir * s, s
 end
 
-function Mesh:init(filename)
+function Mesh:init()
 	-- TODO new system:
-	self.vtxs = vector'obj_vertex_t'
+	self.vtxs = vector'MeshVertex_t'
 	self.triIndexBuf = vector'int32_t'
 
 	-- just holds extra info per tri
@@ -545,7 +545,7 @@ end
 
 function Mesh:breakTriangles()
 	print('before breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
-	local nvtxs = vector('obj_vertex_t', self.triIndexBuf.size)
+	local nvtxs = vector('MeshVertex_t', self.triIndexBuf.size)
 	local ntris = vector('uint32_t', self.triIndexBuf.size)
 	for i=0,self.triIndexBuf.size-1 do
 		nvtxs.v[i] = self.vtxs.v[self.triIndexBuf.v[i]]
@@ -604,7 +604,7 @@ function Mesh:regenNormals()
 		self.vtxs.v[i].normal = vtxnormals.v[i]
 	end
 	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
+		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end
 end
 
@@ -613,7 +613,7 @@ function Mesh:recenter(newOrigin)
 		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
 	end
 	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * self.vtxs.size, self.vtxs.v)
+		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end
 	-- recalculate coms
 	self:calcCOMs()
@@ -652,7 +652,7 @@ function Mesh:loadGL(shader)
 
 --print('creating array buffer of size', self.vtxs.size)
 	self.vtxBuf = GLArrayBuffer{
-		size = self.vtxs.size * ffi.sizeof'obj_vertex_t',
+		size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
 		data = self.vtxs.v,
 		usage = gl.GL_STATIC_DRAW,
 	}
@@ -669,8 +669,8 @@ function Mesh:loadGL(shader)
 			buffer = self.vtxBuf,
 			size = info.size,
 			type = gl.GL_FLOAT,
-			stride = ffi.sizeof'obj_vertex_t',
-			offset = ffi.offsetof('obj_vertex_t', info.name),
+			stride = ffi.sizeof'MeshVertex_t',
+			offset = ffi.offsetof('MeshVertex_t', info.name),
 		}, info.name
 	end)
 	shader:use()
@@ -734,9 +734,9 @@ function Mesh:draw(args)
 		gl.glEnd()
 		--]]
 		--[[ vertex client arrays
-		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].pos.s)
-		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].texcoord.s)
-		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].normal.s)
+		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].pos.s)
+		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].texcoord.s)
+		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
@@ -746,9 +746,9 @@ function Mesh:draw(args)
 		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
 		--]]
 		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
-		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].texcoord.s)
-		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'obj_vertex_t', mtl.vtxs.v[0].normal.s)
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].texcoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
@@ -811,7 +811,7 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glPointSize(3)
 
 	-- TODO shader that does the explode stuff
-	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'obj_vertex_t', self.vtxs.v[0].pos.s)
+	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
 	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 	gl.glDrawArrays(gl.GL_POINTS, 0, self.vtxs.size)
 	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)

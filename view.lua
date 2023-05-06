@@ -477,7 +477,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
-				mesh.vtxBuf:updateData(ffi.sizeof'obj_vertex_t' * i + ffi.offsetof('obj_vertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
+				mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
 			end
 		end
 	end
@@ -579,7 +579,7 @@ function App:updateGUI()
 				mesh:calcCOMs()
 				mesh:calcBBox()
 				if mesh.loadedGL then
-					mesh.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * mesh.vtxs.size, mesh.vtxs.v)
+					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
 				end
 			end
 
@@ -609,7 +609,7 @@ function App:updateGUI()
 					}
 				end)
 				if mesh.loadedGL then
-					mesh.vtxBuf:updateData(0, ffi.sizeof'obj_vertex_t' * mesh.vtxs.size, mesh.vtxs.v)
+					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
 				end
 			end
 

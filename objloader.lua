@@ -133,7 +133,7 @@ print('removing unused materials...')
 	end
 
 print'allocating vertex and index buffers...'
-	local vtxs = vector('obj_vertex_t', 3*#tris)	-- vertex structure
+	local vtxs = vector('MeshVertex_t', 3*#tris)	-- vertex structure
 	local triIndexBuf = vector('int32_t', 3*#tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
