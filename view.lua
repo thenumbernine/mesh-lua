@@ -300,17 +300,18 @@ function App:update()
 			-- TODO option for calculated normals?
 			-- TODO shader options?
 			shader = self.shader,
-			beginMtl = function(mtl)
-				if mtl.tex_Kd then mtl.tex_Kd:bind() end
+			beginGroup = function(g)
+				if g.tex_Kd then g.tex_Kd:bind() end
 				self.shader:setUniforms{
-					useTextures = self.useTextures and mtl.tex_Kd and 1 or 0,
-					--Ka = mtl.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
+					useTextures = self.useTextures and g.tex_Kd and 1 or 0,
+					--Ka = g.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
 					Ka = {0,0,0,0},
-					Kd = mtl.Kd and mtl.Kd.s or {1,1,1,1},
-					Ks = mtl.Ks and mtl.Ks.s or {1,1,1,1},
-					Ns = mtl.Ns or 10,
-					objCOM = mesh.com3.s,
-					groupCOM = mtl.com3.s,
+					Kd = g.Kd and g.Kd.s or {1,1,1,1},
+					Ks = g.Ks and g.Ks.s or {1,1,1,1},
+					Ns = g.Ns or 10,
+					-- com3 is best for closed meshes
+					objCOM = mesh.com2.s,
+					groupCOM = g.com2.s,
 					groupExplodeDist = self.groupExplodeDist,
 					triExplodeDist = self.triExplodeDist,
 				}
@@ -386,14 +387,14 @@ function App:update()
 	if self.editMode == 3 then
 		if self.mouse.leftPress then
 			local i, bestDist = self:findClosestTriToMouse()
-			local bestmtl
+			local bestgroup
 			if i then
-				for mtlname,mtl in pairs(mesh.mtllib) do
-					if i >= 3*mtl.triFirstIndex and i < 3*(mtl.triFirstIndex + mtl.triCount) then
-						bestmtl = mtlname
+				for j,g in ipairs(mesh.groups) do
+					if i >= 3*g.triFirstIndex and i < 3*(g.triFirstIndex + g.triCount) then
+						bestgroup = g.name
 					end
 				end
-				print('clicked on material', bestmtl, 'tri', i, 'dist', bestDist)
+				print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
 
 				local pos, dir = self:mouseRay()
 				self.bestTriPt = pos + dir * bestDist
@@ -503,7 +504,7 @@ function App:resetAngle(fwd)
 	self.view.angle:fromMatrix{right, up, back}
 --print('matrix', right, up, back)
 --print('quat', self.view.angle)
-	self:setCenter(self.mesh.com3)
+	self:setCenter(self.mesh.com2)
 --print('qmatrix', table.unpack(self.view.angle:toMatrix()))
 -- qmatrix should match matrix if fromMatrix worked
 end
@@ -622,11 +623,11 @@ function App:updateGUI()
 			ig.luatableCheckbox('use textures', self, 'useTextures')
 			ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
 			if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
-				for mtlname, mtl in pairs(mesh.mtllib) do
-					if mtl.tex_Kd then
-						mtl.tex_Kd:bind()
-						mtl.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
-						mtl.tex_Kd:unbind()
+				for _,g in ipairs(mesh.groups) do
+					if g.tex_Kd then
+						g.tex_Kd:bind()
+						g.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
+						g.tex_Kd:unbind()
 					end
 				end
 			end
@@ -634,7 +635,7 @@ function App:updateGUI()
 
 			-- TODO max dependent on bounding radius of model, same with COM camera positioning
 			-- TODO per-tri exploding as well
-			ig.luatableSliderFloat('mtl explode dist', self, 'groupExplodeDist', 0, 1)
+			ig.luatableSliderFloat('group explode dist', self, 'groupExplodeDist', 0, 1)
 			ig.luatableSliderFloat('tri explode dist', self, 'triExplodeDist', 0, 1)
 			ig.luatableCheckbox('draw bbox', self, 'useDrawBBox')
 			ig.luatableCheckbox('wireframe', self, 'useWireframe')

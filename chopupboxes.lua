@@ -1,11 +1,13 @@
 #!/usr/bin/env luajit
 local table = require 'ext.table'
+local file = require 'ext.file'
 local timer = require 'ext.timer'
 local vec3i = require 'vec-ffi.vec3i'
 local vec4f = require 'vec-ffi.vec4f'
+local Mesh = require 'mesh'
 
 local infn, outfn = ...
-assert(infn, "expected "..arg[0].." input-filename")
+assert(infn and outfn, "expected "..arg[0].." input-filename output-filename")
 
 local loader = require 'mesh.objloader'()
 local mesh = loader:load(infn)
@@ -175,21 +177,16 @@ print('ibounds', mini, maxi)
 
 -- now convert tboxes tris into unique materials
 -- and export
-mesh.mtllib = {
-	[''] =  {
-		name = '',
-		triFirstIndex = 0,
-		triCount = 0,
-	}
-}
+mesh.groups = table()
 mesh.triIndexBuf:resize(0)
+local origMtlFn = mesh.mtlFilenames[1]
 mesh.mtlFilenames = {(outfn:gsub('%.obj$', '.mtl'))}
 for i,tbox in ipairs(tboxes) do
 	local x,y,z = tbox[1]:unpack()
 	local tris = table.keys(trisForBox[x][y][z]):sort()
-	local mtlname = 'm'..i
-	mesh.mtllib[mtlname] = {
-		name = mtlname,
+	local groupname = 'm'..i
+	mesh.groups:insert{
+		name = groupname,
 		triFirstIndex = mesh.triIndexBuf.size / 3,
 		triCount = #tris,
 		Kd = vec4f(
@@ -204,6 +201,41 @@ for i,tbox in ipairs(tboxes) do
 			-- since our tris are already broken up, we can manipulate the vtx without it messing up any other tris
 		end
 	end
+end
+
+-- now comes a new trick ...
+-- filling in missing faces on a mesh.
+-- tough problem
+-- easy solution: use planes and clip
+-- harder solution ... extrude.
+file'blocks':mkdir()
+assert(file'blocks':isdir())
+
+for tboxIndex,tbox in ipairs(tboxes) do
+	local m = Mesh()
+	local x,y,z = tbox[1]:unpack()
+	local tris = table.keys(trisForBox[x][y][z]):sort()
+	for _,i in ipairs(tris) do
+		for j=0,2 do
+			m.triIndexBuf:push_back(m.vtxs.size)
+			m.vtxs:push_back(mesh.vtxs.v[i+j])
+		end
+	end
+	assert(m.triIndexBuf.size == m.vtxs.size)
+	for i=0,m.triIndexBuf.size-1 do
+		assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
+	end
+	-- [[ TODO fix up the mtl part of Mesh
+	m.mtlFilenames = {origMtlFn}
+	m.groups = table{
+		{
+			name = 'm',
+			triFirstIndex = 0,
+			triCount = m.triIndexBuf.size/3,
+		},
+	}
+	--]]
+	loader:save('blocks/'..tboxIndex..'.obj', m)
 end
 
 loader:save(outfn, mesh)

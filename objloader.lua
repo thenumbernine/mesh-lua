@@ -39,19 +39,29 @@ function OBJLoader:load(filename)
 	local vs = table()
 	local vts = table()
 	local vns = table()
-	local tris = table()
-
-	mesh.relpath = file(filename):getdir()
-	mesh.mtlFilenames = table()
+	
+	-- TODO get rid of this old method	
+	mesh.tris = table()
 
 timer('loading', function()
 
-	-- map of materials
-	mesh.mtllib = {}
-	local curmtl = ''
-	mesh.mtllib[curmtl] = {
-		name = curmtl,
-	}
+	-- mesh groups / materials
+	local group
+	
+	mesh.relpath = file(filename):getdir()
+	mesh.mtlFilenames = table()
+
+	local function ensureGroup()
+		if group then return end
+		-- make default
+		group = {
+			name = '',
+			triFirstIndex = #mesh.tris,
+			triCount = 0,
+		}
+		mesh.groups:insert(group)
+	end
+
 	assert(file(filename):exists(), "failed to find WavefrontObj file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
@@ -76,8 +86,7 @@ timer('loading', function()
 				if vti then foundVT = true end
 				vis:insert{v=vi, vt=vti, vn=vni}
 			end
-			local mtl = mesh.mtllib[curmtl]
-			mtl.name = curmtl
+			ensureGroup()
 			assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
 			for i=2,#words-1 do
 				-- store a copy of the vertex indices per triangle index
@@ -87,12 +96,11 @@ timer('loading', function()
 					table(vis[i]):setmetatable(nil),
 					table(vis[i+1]):setmetatable(nil),
 				}
-				tris:insert(t)
+				mesh.tris:insert(t)
 				-- keys:
-				t.index = #tris+1	-- so far only used for debugging
-				t.mtl = assert(mtl)
-				if not mtl.triFirstIndex then mtl.triFirstIndex = #tris-1 end
-				mtl.triCount = #tris - mtl.triFirstIndex
+				t.index = #mesh.tris+1	-- so far only used for debugging
+				t.group = assert(group)
+				group.triCount = #mesh.tris - group.triFirstIndex
 			end
 		elseif lineType == 's' then
 			-- TODO then smooth is on
@@ -102,16 +110,8 @@ timer('loading', function()
 		elseif lineType == 'o' then
 			-- TODO then we start a new named object
 		elseif lineType == 'usemtl' then
-			curmtl = assert(words[1])
-			local mtl = mesh.mtllib[curmtl]
-			if not mtl then
-				print("failed to find material "..curmtl)
-				mtl = {}
-				mesh.mtllib[curmtl] = mtl
-			end
-			assert(not mtl.triFirstIndex)
-			mtl.triFirstIndex = #tris
-			mtl.triCount = 0
+			local mtlname = assert(words[1])
+			group = self:makeOrFindGroup(mtlname, mesh)
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
 			self:loadMtl(words:concat' ', mesh)
@@ -120,21 +120,16 @@ timer('loading', function()
 end)
 
 print('removing unused materials...')
-	for _,k in ipairs(table.keys(mesh.mtllib):sort()) do
-		local m = mesh.mtllib[k]
-		if k == '' then
-			if not m.triFirstIndex then m.triFirstIndex = 0 end
-			if not m.triCount then m.triCount = 0 end
-		else
-			if not m.triFirstIndex or m.triCount == 0 then
-				mesh.mtllib[k] = nil
-			end
+	for i=#mesh.groups,1,-1 do
+		local g = mesh.groups[i]
+		if not g.triCount or g.triCount == 0 then
+			mesh.groups:remove(i)
 		end
 	end
 
 print'allocating vertex and index buffers...'
-	local vtxs = vector('MeshVertex_t', 3*#tris)	-- vertex structure
-	local triIndexBuf = vector('int32_t', 3*#tris)		-- triangle indexes
+	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
+	local triIndexBuf = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
 	triIndexBuf:resize(0)
@@ -142,7 +137,7 @@ print'calculating vertex and index buffers...'
 	--[=[ lazy
 	do
 		local e = 0
-		for ti,t in ipairs(tris) do
+		for ti,t in ipairs(mesh.tris) do
 			for j,tj in ipairs(t) do
 				local dst = vtxs:emplace_back()
 				dst.pos:set(assert(vs[tj.v]):unpack())
@@ -164,7 +159,7 @@ print'calculating vertex and index buffers...'
 	--]=]
 	-- [=[ optimize?
 	local indexForVtx = {}	-- from 'v,vt,vn'
-	for ti,t in ipairs(tris) do
+	for ti,t in ipairs(mesh.tris) do
 		for j,tj in ipairs(t) do
 			local k = tj.v..','..(tj.vt or '0')..','..(tj.vn or '0')
 			-- [[ allocating way too much ...
@@ -172,7 +167,7 @@ print'calculating vertex and index buffers...'
 			--]]
 			--[[
 			for ti2=1,ti do
-				local t2 = tris[ti2]
+				local t2 = mesh.tris[ti2]
 				for j2=1,(ti==ti2 and j-1 or 3) do
 					local tj2 = t2[j2]
 					... how would this be any less memory? but lots slower.
@@ -208,17 +203,16 @@ print'calculating vertex and index buffers...'
 	mesh.vtxs = vtxs
 	mesh.triIndexBuf = triIndexBuf
 
-	-- while we're here, regenerate the vs vts vns from their reduced triIndexBuf values
-	mesh.tris = tris
-
 print'done'
 	return mesh
 end
 
 function OBJLoader:loadMtl(filename, mesh)
 timer('loading mtl file', function()
+	-- TODO don't store mtlFilenames
 	mesh.mtlFilenames:insert(filename)
-	local mtl
+	
+	local group
 	filename = file(mesh.relpath)(filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
 	if not file(filename):exists() then
@@ -229,11 +223,8 @@ timer('loading mtl file', function()
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
 		if lineType == 'newmtl' then
-			mtl = {}
-			mtl.name = assert(words[1])
-			-- TODO if a mtllib comes after a face then this'll happen:
-			if mesh.mtllib[mtl.name] then print("warning: found two mtls of the name "..mtl.name) end
-			mesh.mtllib[mtl.name] = mtl
+			local mtlname = assert(words[1])
+			group = self:makeOrFindGroup(mtlname, mesh, true)
 		-- elseif lineType == 'illum' then
 		--[[
 			0. Color on and Ambient off
@@ -249,17 +240,17 @@ timer('loading mtl file', function()
 			10. Casts shadows onto invisible surfaces
 		--]]
 		elseif lineType == 'ka' then	-- ambient color
-			assert(mtl)
-			mtl.Ka = wordsToColor(words)
+			assert(group)
+			group.Ka = wordsToColor(words)
 		elseif lineType == 'kd' then	-- diffuse color
-			assert(mtl)
-			mtl.Kd = wordsToColor(words)
+			assert(group)
+			group.Kd = wordsToColor(words)
 		elseif lineType == 'ks' then	-- specular color
-			assert(mtl)
-			mtl.Ks = wordsToColor(words)
+			assert(group)
+			group.Ks = wordsToColor(words)
 		elseif lineType == 'ns' then	-- specular exponent
-			assert(mtl)
-			mtl.Ns = tonumber(words[1]) or 1
+			assert(group)
+			group.Ns = tonumber(words[1]) or 1
 		-- 'd' = alpha
 		-- 'Tr' = 1 - d = opacity
 		-- 'Tf' = "transmission filter color"
@@ -267,7 +258,7 @@ timer('loading mtl file', function()
 		-- 'Tf spectral filename.rfl [factor]'
 		-- 'Ni' = index of refraction aka optical density
 		elseif lineType == 'map_kd' then	-- diffuse map
-			assert(mtl)
+			assert(group)
 			local function getTexOpts(w)
 				local opts = {}
 				local found
@@ -323,14 +314,14 @@ timer('loading mtl file', function()
 			if not path:exists() then
 				print("couldn't load map_Kd "..tostring(path))
 			else
-				mtl.map_Kd = path.path
+				group.map_Kd = path.path
 				-- TODO
 				-- load textures?
 				-- what if the caller isn't using GL?
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
-				mtl.image_Kd = Image(mtl.map_Kd)
---print('loaded map_Kd '..mtl.map_Kd..' as '..mtl.image_Kd.width..' x '..mtl.image_Kd.height..' x '..mtl.image_Kd.channels..' ('..mtl.image_Kd.format..')')
+				group.image_Kd = Image(group.map_Kd)
+--print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
 				-- manually?  upon first draw?  both?
@@ -346,12 +337,54 @@ timer('loading mtl file', function()
 end)
 end
 
+function OBJLoader:makeOrFindGroup(name, mesh, inUseMtl)
+	local i, group = mesh.groups:find(nil, function(g)
+		return g.name == name
+	end)
+	if group then
+		if not inUseMtl then
+			if not group.triFirstIndex then
+				group.triFirstIndex = #mesh.tris
+				assert(not group.triCount)
+				group.triCount = 0
+			end
+		end
+		--[[
+		make sure the last triangle on the group is the last recorded
+		this means no doing the following:
+			usemtl a
+			f 1 2 3
+			usemtl b
+			f 4 5 6
+			usemtl a
+			f 7 8 9
+			...
+		--]]
+		if group.triFirstIndex + group.triCount ~= #mesh.tris then
+			print("found group ",name)
+			print("but its end-of-tris is ", group.triFirstIndex+group.triCount)
+			print("and the number of tris is ", #mesh.tris)
+			error('here')
+		end
+	else
+		group = {
+			name = name,
+			triFirstIndex = not inUseMtl and #mesh.tris or nil,
+			triCount = not inUseMtl and 0 or nil,
+		}
+		mesh.groups:insert(group)
+	end
+	return group
+end
+
 -- only saves the .obj, not the .mtl
 function OBJLoader:save(filename, mesh)
 	local o = assert(file(filename):open'w')
 	-- TODO write smooth flag, groups, etc
-	for _,mtl in ipairs(mesh.mtlFilenames) do
-		o:write('mtllib ', mtl, '\n')
+	if mesh.mtlFilenames then
+		for _,mtlname in ipairs(mesh.mtlFilenames) do
+			o:write('mtllib ', mtlname, '\n')
+		end
 	end
 
 	-- keep track of all used indexes by tris
@@ -404,16 +437,13 @@ print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 	local indexToUniqueVn = outputUnique('vn', 'normal')
 
 	local numtriindexes = 0
-	local mtlnames = table.keys(mesh.mtllib):sort()
-	assert(mtlnames[1] == '')	-- should always be there
-	for _,mtlname in ipairs(mtlnames) do
-		local mtl = mesh.mtllib[mtlname]
+	for i,group in ipairs(mesh.groups) do
 		local usemtlWritten = false
 		local function writeMtlName()
-			if mtlname == '' then return end
+			if group.name == '' then return end
 			if usemtlWritten then return end
 			usemtlWritten = true
-			o:write('usemtl ', mtlname, '\n')
+			o:write('usemtl ', group.name, '\n')
 		end
 		local lastt
 		local lasttnormal
@@ -431,7 +461,8 @@ print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 			numtriindexes = numtriindexes + #vis
 			vis = nil
 		end
-		for i=mtl.triFirstIndex,mtl.triFirstIndex+mtl.triCount-1 do
+		for i=group.triFirstIndex,group.triFirstIndex+group.triCount-1 do
+			assert(3*i >= 0 and 3*i < mesh.triIndexBuf.size)
 			local t = mesh.triIndexBuf.v + 3*i
 			local normal, area = mesh.triNormal(mesh:triVtxPos(3*i))
 			if area > 0 then
@@ -466,21 +497,20 @@ end
 -- or why not combine :saveMtl and :save like i do :loadMtl and :load
 function OBJLoader:saveMtl(filename, mesh)
 	local o = assert(file(filename):open'w')
-	local mtlnames = table.keys(mesh.mtllib):sort()
-	assert(mtlnames:remove(1) == '')
-	for _,mtlname in ipairs(mtlnames) do
-		local m = mesh.mtllib[mtlname]
-		o:write('newmtl ', mtlname,'\n')
-		for _,k in ipairs{
-			'Ka', 'Kd', 'Ks', 'Ns', 'map_Kd', 
-			--'map_Ks', 'map_Ns', 'map_bump', 'disp', 'decal',
-		} do
-			local v = m[k]
-			if v then
-				if vec4f:isa(v) then
-					o:write(k,' ',table{v:unpack()}:concat' ','\n')
-				else
-					o:write(k,' ',tostring(v),'\n')
+	for i,group in ipairs(mesh.groups) do
+		if group.name ~= '' then
+			o:write('newmtl ', group.name,'\n')
+			for _,k in ipairs{
+				'Ka', 'Kd', 'Ks', 'Ns', 'map_Kd', 
+				--'map_Ks', 'map_Ns', 'map_bump', 'disp', 'decal',
+			} do
+				local v = group[k]
+				if v then
+					if vec4f:isa(v) then
+						o:write(k,' ',table{v:unpack()}:concat' ','\n')
+					else
+						o:write(k,' ',tostring(v),'\n')
+					end
 				end
 			end
 		end

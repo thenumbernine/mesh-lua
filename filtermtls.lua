@@ -14,22 +14,17 @@ print('keeping '..require'ext.tolua'(keepers))
 
 local mesh = loader:load(infn)
 print('mesh has '..(mesh.triIndexBuf.size/3)..' triangles')
-for mtlname in pairs(keepers) do
-	print(mtlname, mesh:getTriIndexesForMaterial(mtlname))
+for i,groupname in ipairs(keepers) do
+	print(groupname, mesh:getTriIndexesForMaterial(groupname))
 end
 
 timer('filtering faces', function()
-	for _,mtlname in ipairs(table.keys(mesh.mtllib):sort()) do
-		local mtl = mesh.mtllib[mtlname]
-		if keepers[mtlname] then
-			print('keeping material '..mtlname)
+	for i=#mesh.groups,1,-1 do
+		local g = mesh.groups[i]
+		if keepers[g.name] then
+			print('keeping material '..g.name)
 		else
-			if mtlname == '' then
-				mesh.mtllib[mtlname].triFirstIndex = 0
-				mesh.mtllib[mtlname].triCount = 0
-			else
-				mesh.mtllib[mtlname] = nil
-			end
+			mesh.groups:remove(i)
 		end
 	end
 end)

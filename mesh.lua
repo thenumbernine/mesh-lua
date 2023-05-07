@@ -76,7 +76,7 @@ function Mesh:init()
 	-- just holds extra info per tri
 	self.tris = table() -- triangulation of all faces
 
-	self.mtllib = {[''] = {}}
+	self.groups = table()
 end
 
 function Mesh:prepare()
@@ -130,11 +130,22 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 		end
 	end
 	print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+
+	-- invalidate
+	self.loadedGL = false
+	self.vtxBuf = nil
+	
+	self.edges = nil
+	self.edgeIndexBuf = nil
+	self.allOverlappingEdges = nil
 end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxPos(i)
 	local t = self.triIndexBuf.v + i
+	assert(t[0] >= 0 and t[0] < self.vtxs.size)
+	assert(t[1] >= 0 and t[1] < self.vtxs.size)
+	assert(t[2] >= 0 and t[2] < self.vtxs.size)
 	return self.vtxs.v[t[0]].pos,
 			self.vtxs.v[t[1]].pos,
 			self.vtxs.v[t[2]].pos
@@ -307,10 +318,10 @@ function Mesh:calcCOMs()
 	print('com3 = '..self.com3)
 	-- can only do this with com2 and com3 since they use tris, which are stored per-material
 	-- ig i could with edges and vertexes too if I flag them per-material
-	timer('mtl com2/3', function()
-		for mtlname,mtl in pairs(self.mtllib) do
-			mtl.com2 = self:calcCOM2(mtlname)
-			mtl.com3 = self:calcCOM3(mtlname)
+	timer('group com2/3', function()
+		for _,g in ipairs(self.groups) do
+			g.com2 = self:calcCOM2(g.name)
+			g.com3 = self:calcCOM3(g.name)
 		end
 	end)
 end
@@ -346,11 +357,11 @@ end
 -- index is 0-based in increments of 3
 function Mesh:removeTri(i)
 	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
-	for mtlname,mtl in pairs(self.mtllib) do
-		if i < mtl.triFirstIndex then
-			mtl.triFirstIndex = mtl.triFirstIndex - 1
-		elseif i >= mtl.triFirstIndex and i < mtl.triFirstIndex + mtl.triCount then
-			mtl.triCount = mtl.triCount - 1
+	for _,g in ipairs(self.groups) do
+		if i < g.triFirstIndex then
+			g.triFirstIndex = g.triFirstIndex - 1
+		elseif i >= g.triFirstIndex and i < g.triFirstIndex + g.triCount then
+			g.triCount = g.triCount - 1
 		end
 	end
 end
@@ -422,11 +433,11 @@ function Mesh:vtxiter()
 	end)
 end
 
-function Mesh:getTriIndexesForMaterial(mtlname)
-	if mtlname then
-		local mtl = self.mtllib[mtlname]
-		if mtl then
-			return mtl.triFirstIndex, mtl.triFirstIndex + mtl.triCount - 1
+function Mesh:getTriIndexesForMaterial(groupname)
+	if groupname then
+		local _, g = self.groups:find(nil, function(g) return g.name == groupname end)
+		if g then
+			return g.triFirstIndex, g.triFirstIndex + g.triCount - 1
 		else
 			return 0, -1
 		end
@@ -437,14 +448,14 @@ end
 
 -- yields with each material collection for a particular material name
 -- default = no name = iterates over all materials
-function Mesh:mtliter(mtlname)
+function Mesh:groupiter(groupname)
 	return coroutine.wrap(function()
-		if mtlname then
-			local mtl = self.mtllib[mtlname]
-			if mtl then coroutine.yield(mtl, mtlname) end
+		if groupname then
+			local _, g = self.groups:find(nil, function(g) return g.name == groupname end)
+			if g then coroutine.yield(g, g.name) end
 		else
-			for mtlname, mtl in pairs(self.mtllib) do
-				coroutine.yield(mtl, mtlname)
+			for _,g in ipairs(self.groups) do
+				coroutine.yield(g, g.name)
 			end
 		end
 	end)
@@ -492,10 +503,10 @@ end
 -- calculate COM by 2-forms (triangles)
 -- volume = *<Q,Q> = *(Q∧*Q) where Q = (b-a) ∧ (c-a)
 -- for 2D, volume = |(b-a)x(c-a)|
-function Mesh:calcCOM2(mtlname)
+function Mesh:calcCOM2(groupname)
 	local totalCOM = vec3f()
 	local totalArea = 0
-	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
+	local i1, i2 = self:getTriIndexesForMaterial(groupname)
 	for i=i1,i2 do
 		local a, b, c = self:triVtxPos(3*i)
 		local com = (a + b + c) * (1/3)
@@ -504,7 +515,7 @@ function Mesh:calcCOM2(mtlname)
 		totalArea = totalArea + area
 	end
 	if totalArea == 0 then
-		return self:calcCOM1(mtlname)
+		return self:calcCOM1(groupname)
 	end
 	local result = totalCOM / totalArea
 	assert(math.isfinite(result:normSq()))
@@ -512,10 +523,10 @@ function Mesh:calcCOM2(mtlname)
 end
 
 -- calculate COM by 3-forms (enclosed volume)
-function Mesh:calcCOM3(mtlname)
+function Mesh:calcCOM3(groupname)
 	local totalCOM = vec3f()
 	local totalVolume = 0
-	local i1, i2 = self:getTriIndexesForMaterial(mtlname)
+	local i1, i2 = self:getTriIndexesForMaterial(groupname)
 	for i=i1,i2 do
 		local a, b, c = self:triVtxPos(3*i)
 
@@ -530,7 +541,7 @@ function Mesh:calcCOM3(mtlname)
 	end
 	-- if there's no volume then technically this can't exist ... but just fallback
 	if totalVolume == 0 then
-		return self:calcCOM2(mtlname)
+		return self:calcCOM2(groupname)
 	end
 	local result = totalCOM / totalVolume
 	assert(math.isfinite(result:normSq()))
@@ -589,6 +600,7 @@ function Mesh:breakTriangles()
 	self.vtxBuf = nil
 
 	self.edges = nil
+	self.edgeIndexBuf = nil
 	self.allOverlappingEdges = nil
 
 	self:calcBBox()
@@ -663,20 +675,17 @@ function Mesh:loadGL(shader)
 	local GLVertexArray = require 'gl.vertexarray'
 
 	-- load textures
-	for mtlname, mtl in pairs(self.mtllib) do
-		if mtl.image_Kd
-		and not mtl.tex_Kd
+	for _,g in ipairs(self.groups) do
+		if g.image_Kd
+		and not g.tex_Kd
 		then
-			mtl.tex_Kd = GLTex2D{
-				image = mtl.image_Kd,
+			g.tex_Kd = GLTex2D{
+				image = g.image_Kd,
 				minFilter = gl.GL_NEAREST,
 				magFilter = gl.GL_LINEAR,
 			}
 		end
 	end
-
-	-- mtl will just index into this.
-	-- why does mtl store a list of tri indexes?  it should just store an offset
 
 --print('creating array buffer of size', self.vtxs.size)
 	if not self.vtxBuf then
@@ -720,24 +729,24 @@ function Mesh:draw(args)
 	self:loadGL()	-- load if not loaded
 
 	local curtex
-	for mtlname, mtl in pairs(self.mtllib) do
+	for _,g in ipairs(self.groups) do
 		--[[
-		if mtl.Kd then
-			gl.glColor4f(mtl.Kd:unpack())
+		if g.Kd then
+			gl.glColor4f(g.Kd:unpack())
 		else
 			gl.glColor4f(1,1,1,1)
 		end
 		--]]
 		--[[
-		if mtl
-		and mtl.tex_Kd
+		if g
+		and g.tex_Kd
 		and not (args and args.disableTextures)
 		then
 			-- TODO use .Ka, Kd, Ks, Ns, etc
 			-- with fixed pipeline?  opengl lighting?
 			-- with a shader in the wavefrontobj lib?
 			-- with ... nothing?
-			curtex = mtl.tex_Kd
+			curtex = g.tex_Kd
 			curtex:enable()
 			curtex:bind()
 		else
@@ -748,11 +757,11 @@ function Mesh:draw(args)
 			end
 		end
 		--]]
-		if args.beginMtl then args.beginMtl(mtl) end
+		if args.beginGroup then args.beginGroup(g) end
 
 		--[[ immediate mode
 		gl.glBegin(gl.GL_TRIANGLES)
-		for vi in self:triindexiter(mtlname) do
+		for vi in self:triindexiter(g.name) do
 			-- TODO store a set of unique face v/vt/vn index-vertexes
 			-- and then bake those into a unique vertex array, and store its index alongside face's other indexes
 			-- that'll be most compat with GL indexed arrays
@@ -764,37 +773,37 @@ function Mesh:draw(args)
 		gl.glEnd()
 		--]]
 		--[[ vertex client arrays
-		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].pos.s)
-		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].texcoord.s)
-		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].normal.s)
+		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].pos.s)
+		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].texcoord.s)
+		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].normal.s)
 		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxs.size)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, g.vtxs.size)
 		gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
 		gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
 		--]]
 		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
-		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].texcoord.s)
-		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', mtl.vtxs.v[0].normal.s)
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].texcoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, mtl.vtxs.size)
+		gl.glDrawArrays(gl.GL_TRIANGLES, 0, g.vtxs.size)
 		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
 		--]]
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
-		if mtl.triCount > 0 then
+		if g.triCount > 0 then
 			self.vao:use()
-			gl.glDrawElements(gl.GL_TRIANGLES, mtl.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + mtl.triFirstIndex * 3)
+			gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + g.triFirstIndex * 3)
 			self.vao:useNone()
 		end
 		--]]
-		if args.endMtl then args.endMtl(mtl) end
+		if args.endGroup then args.endGroup(g) end
 	end
 	--[[
 	if curtex then
@@ -806,7 +815,7 @@ function Mesh:draw(args)
 end
 
 -- make sure my edges match my faces
--- can't handle mtl-group explode dist because edges aren't stored associted with materials ...
+-- can't handle group explode dist because edges aren't stored associted with materials ...
 -- they are per-tri, which is per-face, which is per-material, but there can be multiple materials per edge.
 function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
