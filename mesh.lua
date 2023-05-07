@@ -105,6 +105,7 @@ function Mesh:calcBBox()
 end
 
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
+	assert(#self.tris*3 == self.triIndexBuf.size)
 	if not self.bbox then self:calcBBox() end
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
@@ -130,6 +131,7 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 		end
 	end
 	print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+	assert(#self.tris*3 == self.triIndexBuf.size)
 
 	-- invalidate
 	self.loadedGL = false
@@ -252,12 +254,20 @@ function Mesh:calcAllOverlappingEdges()
 --]]
 end
 
-function Mesh:findEdges()
+function Mesh:findEdges(getIndex)
+	if not getIndex then getIndex = function(a) return a end end
 	-- and just for kicks, track all edges
 	if not self.edgeIndexBuf then
 		self.edgeIndexBuf = vector('int32_t', 6 * #self.tris)
 	end
 	self.edgeIndexBuf:resize(0)
+	
+	for i=1,self.triIndexBuf.size/3 do
+		self.tris[i] = self.tris[i] or {}
+	end
+	for i=self.triIndexBuf.size/3+1,#self.tris do
+		self.tris[i] = nil
+	end
 	timer('edges', function()
 		self.edges = {}
 		local function addEdge(a,b,t)
@@ -281,9 +291,9 @@ function Mesh:findEdges()
 		end
 		for i=0,self.triIndexBuf.size-1,3 do
 			local tp = self.triIndexBuf.v + i
-			local a = tp[0]
-			local b = tp[1]
-			local c = tp[2]
+			local a = getIndex(tp[0])
+			local b = getIndex(tp[1])
+			local c = getIndex(tp[2])
 			local t = self.tris[i/3+1]
 			t.edges = table()
 			addEdge(a+1, b+1, t)
@@ -356,6 +366,7 @@ end
 
 -- index is 0-based in increments of 3
 function Mesh:removeTri(i)
+	assert(#self.tris*3 == self.triIndexBuf.size)
 	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
 	self.tris:remove(i/3+1)
 	for _,g in ipairs(self.groups) do

@@ -119,7 +119,9 @@ timer('loading', function()
 	end
 end)
 
-print('removing unused materials...')
+	if self.verbose then
+		print('removing unused materials...')
+	end
 	for i=#mesh.groups,1,-1 do
 		local g = mesh.groups[i]
 		if not g.triCount or g.triCount == 0 then
@@ -127,36 +129,18 @@ print('removing unused materials...')
 		end
 	end
 
-print'allocating vertex and index buffers...'
+	if self.verbose then
+		print'allocating vertex and index buffers...'
+	end
 	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
 	local triIndexBuf = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
 	triIndexBuf:resize(0)
-print'calculating vertex and index buffers...'
-	--[=[ lazy
-	do
-		local e = 0
-		for ti,t in ipairs(mesh.tris) do
-			for j,tj in ipairs(t) do
-				local dst = vtxs:emplace_back()
-				dst.pos:set(assert(vs[tj.v]):unpack())
-				if tj.vt then
-					dst.texcoord:set(assert(vts[tj.vt]):unpack())
-				else
-					dst.texcoord:set(0,0,0)
-				end
-				if tj.vn then
-					dst.normal:set(assert(vns[tj.vn]):unpack())
-				else
-					dst.normal:set(0,0,0)
-				end			
-				triIndexBuf:push_back(e)
-				e = e + 1
-			end
-		end
+	if self.verbose then
+		print'calculating vertex and index buffers...'
 	end
-	--]=]
+
 	-- [=[ optimize?
 	local indexForVtx = {}	-- from 'v,vt,vn'
 	for ti,t in ipairs(mesh.tris) do
@@ -196,14 +180,18 @@ print'calculating vertex and index buffers...'
 			tj.vn = i+1
 		end
 	end
---print('#unique vertexes', vtxs.size)
---print('#unique triangles', triIndexBuf.size)
+	if self.verbose then
+		print('#unique vertexes', vtxs.size)
+		print('#unique triangles', triIndexBuf.size)
+	end
 	--]=]
 
 	mesh.vtxs = vtxs
 	mesh.triIndexBuf = triIndexBuf
-
-print'done'
+	
+	if self.verbose then
+		print'done'
+	end
 	return mesh
 end
 
@@ -426,7 +414,9 @@ function OBJLoader:save(filename, mesh)
 				end
 			end
 		end
-print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+		if self.verbose then
+			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+		end
 		for _,v in ipairs(uniquevs) do
 			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
 		end
@@ -485,7 +475,9 @@ print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		end
 		writeFaceSoFar()
 	end
-print('tri indexes reduced from '..mesh.triIndexBuf.size..' to '..numtriindexes)
+	if self.verbose then
+		print('tri indexes reduced from '..mesh.triIndexBuf.size..' to '..numtriindexes)
+	end
 	o:close()
 end
 

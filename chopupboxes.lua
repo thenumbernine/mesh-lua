@@ -233,14 +233,23 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		for i=0,m.triIndexBuf.size-1 do
 			assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
 		end
+		m.tris = range(m.triIndexBuf.size/3):mapi(function(i)
+			return {
+				{v=i, vt=i, vn=i},
+				{v=i, vt=i, vn=i},
+				{v=i, vt=i, vn=i},
+			}	-- findEdges stores stuff in here ... but idk
+		end)
 		
 		-- [[ ok here, per-side, seal off the mesh.
 		
 		-- find all open edges, and find what sides they touch ...
 		-- TODO what about two triangles, completely overlapping, but varying texcoords?
 		-- because that's what's happening on block #4 ...
-		m:mergeMatchingVertexes()
-	
+		--m:mergeMatchingVertexes()
+		
+		--[==[ this isn't help anthing
+		assert(#m.tris*3 == m.triIndexBuf.size)
 		local prec = 1e-5
 		local function makekey(i)
 			return vec3i(range(0,2):mapi(function(k) return m.triIndexBuf.v[i+k] end):sort():unpack())
@@ -265,7 +274,7 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		end
 		for i=m.triIndexBuf.size-3,3,-3 do
 			local ki = makekey(i)
---print(ki)
+print(ki)
 			for j=i-3,0,-3 do
 				local kj = makekey(j)
 --print(ki,kj)
@@ -274,12 +283,20 @@ for tboxIndex,tbox in ipairs(tboxes) do
 				end
 			end
 		end
+		--]==]
+	
+		-- TODO gotta find edges based on vtx comparing pos
+		-- not based on vtx index
+		m:findEdges(function(i)
+			for j=0,i-1 do
+				if (m.vtxs.v[j].pos - m.vtxs.v[i].pos):norm() < 1e-6 then
+					return j
+				end
+			end
+			return i
+		end)
 
 		local border = table()
-		m.tris = range(0,m.triIndexBuf.size/3-1):mapi(function(i)
-			return {}	-- findEdges stores stuff in here ... but idk
-		end)
-		m:findEdges()
 		local totalEdges = 0
 		for a,o in pairs(m.edges) do
 			for b,e in pairs(o) do
@@ -357,8 +374,10 @@ print('#lines', #lines)
 			-- block 13 at (1, 1, 0)
 			-- block 14 at (10, 2, 0)
 			-- and still going ...
-			--assert(#loops == 1, "failed to find just one loop for shape "..dstfn)
-			
+			if #loops > 1 then
+				print("!!!!!!!!!! failed to find just one loop for shape "..dstfn..' !!!!!!!!!!')
+			end
+
 			local function getIndexForLoopChain(l)
 				local i = l.e[l.v]-1
 				assert(i >= 0 and i < m.vtxs.size)
@@ -366,6 +385,7 @@ print('#lines', #lines)
 			end
 
 			for i,loop in ipairs(loops) do
+print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
 				--[[ determine if the loop is planar (and determine its normal)
 				for j=1,#loop-1 do
 					local ia = getIndexForLoopChain(loop[j])
@@ -378,8 +398,12 @@ print('#lines', #lines)
 					print(n)
 				end
 				--]]
-				-- just add the tris
-				-- [[
+				-- [[ just add the tris as-is
+-- TODO how to determine loop order ...
+-- probably based on normal of opposing edges triangles
+if loop[1].e.tris[1][1].v == loop[1].e[1] then
+	loop = loop:reverse()
+end
 				for j=2,#loop-1 do
 					local ia = getIndexForLoopChain(loop[1])
 					m.triIndexBuf:push_back(ia)
@@ -392,7 +416,10 @@ print('#lines', #lines)
 				assert(#loop >= 3)
 			end
 		end
+		--]]
 
+		--[=[ look at vtxs that are along the bbox
+		-- TODO combine this with the edge border loops
 		m:calcBBox()
 		print('bbox', m.bbox)
 		for side=0,2 do
@@ -403,7 +430,7 @@ print('#lines', #lines)
 				print('side', side, '+-', pm, '#vs', #vs)
 			end
 		end
-		--]]
+		--]=]
 
 		-- [[ fix up the mtl part of Mesh
 		m.mtlFilenames = {origMtlFn}
