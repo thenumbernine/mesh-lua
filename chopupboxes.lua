@@ -1,8 +1,11 @@
 #!/usr/bin/env luajit
 local table = require 'ext.table'
 local file = require 'ext.file'
+local math = require 'ext.math'
 local timer = require 'ext.timer'
+local range = require 'ext.range'
 local vec3i = require 'vec-ffi.vec3i'
+local vec3f = require 'vec-ffi.vec3f'
 local vec4f = require 'vec-ffi.vec4f'
 local Mesh = require 'mesh'
 
@@ -212,30 +215,208 @@ file'blocks':mkdir()
 assert(file'blocks':isdir())
 
 for tboxIndex,tbox in ipairs(tboxes) do
-	local m = Mesh()
-	local x,y,z = tbox[1]:unpack()
-	local tris = table.keys(trisForBox[x][y][z]):sort()
-	for _,i in ipairs(tris) do
-		for j=0,2 do
-			m.triIndexBuf:push_back(m.vtxs.size)
-			m.vtxs:push_back(mesh.vtxs.v[i+j])
+	local dstfn = 'blocks/'..tboxIndex..'.obj'
+	timer('saving '..dstfn, function()
+		local m = Mesh()
+		local x,y,z = tbox[1]:unpack()
+		print('at',x,y,z)
+		local tris = table.keys(trisForBox[x][y][z]):sort()
+		for _,i in ipairs(tris) do
+			for j=0,2 do
+				m.triIndexBuf:push_back(m.vtxs.size)
+				m.vtxs:push_back(mesh.vtxs.v[i+j])
+				local v = m.vtxs:back()
+				v.pos = v.pos - vec3f(x,y,z)
+			end
 		end
-	end
-	assert(m.triIndexBuf.size == m.vtxs.size)
-	for i=0,m.triIndexBuf.size-1 do
-		assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
-	end
-	-- [[ TODO fix up the mtl part of Mesh
-	m.mtlFilenames = {origMtlFn}
-	m.groups = table{
-		{
-			name = 'm',
-			triFirstIndex = 0,
-			triCount = m.triIndexBuf.size/3,
-		},
-	}
-	--]]
-	loader:save('blocks/'..tboxIndex..'.obj', m)
+		assert(m.triIndexBuf.size == m.vtxs.size)
+		for i=0,m.triIndexBuf.size-1 do
+			assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
+		end
+		
+		-- [[ ok here, per-side, seal off the mesh.
+		
+		-- find all open edges, and find what sides they touch ...
+		-- TODO what about two triangles, completely overlapping, but varying texcoords?
+		-- because that's what's happening on block #4 ...
+		m:mergeMatchingVertexes()
+	
+		local prec = 1e-5
+		local function makekey(i)
+			return vec3i(range(0,2):mapi(function(k) return m.triIndexBuf.v[i+k] end):sort():unpack())
+			--[=[
+			return range(0,2):mapi(function(k)
+				return m.vtxs.v[m.triIndexBuf.v[i+k]].pos
+			end):sort(function(a,b)
+				if a.x == b.x then
+					if a.y == b.y then
+						return a.z < b.z
+					end
+					return a.y < b.y
+				end
+				return a.x < b.x
+			end):mapi(function(v)
+				return tostring(v:map(function(x)
+					if math.abs(x) < prec then return 0 end	-- avoid -0's
+					return math.round(x / prec) * prec
+				end))
+			end):concat' '
+			--]=]
+		end
+		for i=m.triIndexBuf.size-3,3,-3 do
+			local ki = makekey(i)
+--print(ki)
+			for j=i-3,0,-3 do
+				local kj = makekey(j)
+--print(ki,kj)
+				if ki == kj then
+					error("found identical triangles")
+				end
+			end
+		end
+
+		local border = table()
+		m.tris = range(0,m.triIndexBuf.size/3-1):mapi(function(i)
+			return {}	-- findEdges stores stuff in here ... but idk
+		end)
+		m:findEdges()
+		local totalEdges = 0
+		for a,o in pairs(m.edges) do
+			for b,e in pairs(o) do
+				if #e.tris == 1 then
+					border:insert(e)
+				end
+				totalEdges = totalEdges + 1
+			end
+		end
+print('edges total', totalEdges, 'border', #border)
+		do	-- now put in loops
+			local all = table(border)
+			local loops = table()
+			local lines = table()
+			while #all > 0 do
+				local loop = table()
+				local last = all:remove(1)
+--print('first edge', last[1], last[2])
+				loop:insert{v=1, e=last}
+				local lastvi = 2
+				while true do
+					local found
+					for i=1,#all do
+						local o = all[i]
+--print('checking edge', o[1], o[2])
+						if o[1] == last[lastvi] then
+							last = o
+							lastvi = 2
+							loop:insert{v=3-lastvi, e=o}
+							all:remove(i)
+							found = true
+--print('adding edge', last[1], last[2])							
+							break
+						elseif o[2] == last[lastvi] then
+							last = o
+							lastvi = 1
+							loop:insert{v=3-lastvi, e=o}
+							all:remove(i)
+							found = true
+--print('adding edge', last[1], last[2])							
+							break
+						end
+					end
+					if not found then
+--print('found no more edges, adding to lines')
+						lines:insert(loop)
+						break
+					else
+						if last[lastvi] == loop[1].e[loop[1].v] then
+--print('reached beginning, adding to loops')
+							loops:insert(loop)
+							break
+						end
+					end
+				end
+			end
+print('#loops', #loops)
+print('#lines', #lines)
+			
+			-- no boundary edges that aren't loops
+			-- lines?  how to fix those?
+			if #lines > 0 then error("can't fix stupid") end
+			-- luckily I never have to find out (yet)
+	
+			-- which blocks have more than one loop?
+			-- block 4 at (10, 1, 0)
+			-- block 5 at (9, 1, 0)
+			-- block 6 at (8, 1, 0)
+			-- block 7 at (7, 1, 0)
+			-- block 8 at (6, 1, 0)
+			-- block 9 at (5, 1, 0)
+			-- block 10 at (4, 1, 0)
+			-- block 11 at (3, 1, 0)
+			-- block 12 at (2, 1, 0)
+			-- block 13 at (1, 1, 0)
+			-- block 14 at (10, 2, 0)
+			-- and still going ...
+			--assert(#loops == 1, "failed to find just one loop for shape "..dstfn)
+			
+			local function getIndexForLoopChain(l)
+				local i = l.e[l.v]-1
+				assert(i >= 0 and i < m.vtxs.size)
+				return i
+			end
+
+			for i,loop in ipairs(loops) do
+				--[[ determine if the loop is planar (and determine its normal)
+				for j=1,#loop-1 do
+					local ia = getIndexForLoopChain(loop[j])
+					local a = m.vtxs.v[ia].pos
+					local ib = getIndexForLoopChain(loop[j%#loop+1])
+					local b = m.vtxs.v[ib].pos
+					local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
+					local c = m.vtxs.v[ic].pos
+					local n = (c - b):cross(b - a)
+					print(n)
+				end
+				--]]
+				-- just add the tris
+				-- [[
+				for j=2,#loop-1 do
+					local ia = getIndexForLoopChain(loop[1])
+					m.triIndexBuf:push_back(ia)
+					local ib = getIndexForLoopChain(loop[j])
+					m.triIndexBuf:push_back(ib)
+					local ic = getIndexForLoopChain(loop[j+1])
+					m.triIndexBuf:push_back(ic)
+				end
+				--]]
+				assert(#loop >= 3)
+			end
+		end
+
+		m:calcBBox()
+		print('bbox', m.bbox)
+		for side=0,2 do
+			for pm=0,1 do
+				local vs = range(0,m.vtxs.size-1):filter(function(i)
+					return m.vtxs.v[i].pos.s[side] == m.bbox[({'min','max'})[pm+1]][side+1]
+				end)
+				print('side', side, '+-', pm, '#vs', #vs)
+			end
+		end
+		--]]
+
+		-- [[ fix up the mtl part of Mesh
+		m.mtlFilenames = {origMtlFn}
+		m.groups = table{
+			{
+				name = 'm',
+				triFirstIndex = 0,
+				triCount = m.triIndexBuf.size/3,
+			},
+		}
+		--]]
+		loader:save(dstfn, m)
+	end)
 end
 
 loader:save(outfn, mesh)

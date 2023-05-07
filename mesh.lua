@@ -104,7 +104,7 @@ function Mesh:calcBBox()
 	end
 end
 
-function Mesh:mergeMatchingVertexes()
+function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	if not self.bbox then self:calcBBox() end
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
@@ -120,8 +120,8 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 			local dist = (vi.pos - vj.pos):norm()
 --print(dist)
 			if dist < vtxMergeThreshold
-			and (vi.texcoord - vj.texcoord):norm() < 1e-7
-			and (vi.normal - vj.normal):norm() < 1e-7
+			and (skipTexCoords or (vi.texcoord - vj.texcoord):norm() < 1e-7)
+			and (skipNormals or (vi.normal - vj.normal):norm() < 1e-7)
 			then
 --print('merging vertex '..i..' and '..j)
 				self:mergeVertex(i,j)
@@ -357,6 +357,7 @@ end
 -- index is 0-based in increments of 3
 function Mesh:removeTri(i)
 	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
+	self.tris:remove(i/3+1)
 	for _,g in ipairs(self.groups) do
 		if i < g.triFirstIndex then
 			g.triFirstIndex = g.triFirstIndex - 1
@@ -819,6 +820,11 @@ end
 -- they are per-tri, which is per-face, which is per-material, but there can be multiple materials per edge.
 function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
+	
+	if not self.edgeIndexBuf then
+		self:findEdges()
+	end
+
 	--gl.glLineWidth(3)
 	gl.glColor3f(1,1,0)
 	
