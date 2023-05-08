@@ -394,19 +394,26 @@ function OBJLoader:save(filename, mesh)
 		end
 	end
 
-	local function outputUnique(symbol, field)
-		local indexToUniqueV, uniquevs = mesh:getUniqueVtxs(1e-5, field, usedIndexes)
+	local function outputUnique(symbol, field, ispos, istc, isnormal)
+		local prec = 1e-5
+		local uniquevs, indexToUniqueV = mesh:getUniqueVtxs(
+			ispos and prec,
+			istc and prec,
+			isnormal and prec,
+			usedIndexes
+		)
 		if self.verbose then
 			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		end
-		for _,v in ipairs(uniquevs) do
+		for _,i in ipairs(uniquevs) do
+			local v = mesh.vtxs.v[i][field]
 			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
 		end
 		return indexToUniqueV
 	end
-	local indexToUniqueV = outputUnique('v', 'pos')
-	local indexToUniqueVt = outputUnique('vt', 'texcoord')
-	local indexToUniqueVn = outputUnique('vn', 'normal')
+	local indexToUniqueV = outputUnique('v', 'pos', true, false, false)
+	local indexToUniqueVt = outputUnique('vt', 'texcoord', false, true, false)
+	local indexToUniqueVn = outputUnique('vn', 'normal', false, false, true)
 
 	local numtriindexes = 0
 	for i,group in ipairs(mesh.groups) do

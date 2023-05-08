@@ -105,39 +105,59 @@ function Mesh:calcBBox()
 	end
 end
 
---[[
-prec = precision, default 1e-5
-field = which field in MeshVertex_t to get all unique indexes from.  default 'pos'
-usedIndex = optional map {[0-based-vtx-index] = true} to flag which indexes to check
---]]
-function Mesh:getUniqueVtxs(prec, field, usedIndexes)
-	prec = prec or 1e-5
-	field = field or 'pos'
+--[=[
+args:
+	prec = precision, default 1e-5
+	posPrec = precision for testing .pos uniqueness.  nil means no precision means don't even check.
+	texCoordPrec = use .texcoord to test uniqueness.
+	normalPrec = use .normal to test uniqueness.
+	usedIndexes = optional map {[0-based-vtx-index] = true} to flag which indexes to check
+
+returns:
+	uniquevs = lua-table holding all the unique 0-based vtx indexes
+	indexToUniqueV = {[0-based-vtx-index] = 1-based index in uniquevs} = map from old (0-based c-array) to new (1-based lua-table)
+	
+it should always be the case that uniquevs[indexToUniqueV[i]] <= i
+--]=]
+function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
+	local function vec3ToStrPrec(v, prec)
+		return tostring(v:map(function(x)
+			return math.round(x / prec) * prec
+		end))
+	end
+	
 	-- map from the vtxs to unique indexes
 	local uniquevs = table()
+	
 	-- used by tris.
-	-- map from all vtxs.v[field], into unique indexes
+	-- map from all vtxs.v[], into unique indexes
 	-- rounds values to precision 'prec'
 	-- keys are 0-based, values are 1-based
 	local indexToUniqueV = {}
+	
 	-- maps from a key (from rounded vec3f) to uniquevs index
 	-- goes a *lot* faster than the old way
 	local keyToUnique = {}
+	
 	for i=0,self.vtxs.size-1 do
 		if not usedIndexes or usedIndexes[i] then
-			local v = self.vtxs.v[i][field]
-			local k = tostring(v:map(function(x) return math.round(x / prec) * prec end))
+			local v = self.vtxs.v[i]
+			local k = table{
+				posPrec and vec3ToStrPrec(v.pos, posPrec) or '',
+				texCoordPrec and vec3ToStrPrec(v.texcoord, texCoordPrec) or '',
+				normalPrec and vec3ToStrPrec(v.normal, normalPrec) or ''
+			}:concat','
 			local j = keyToUnique[k]
 			if j then
 				indexToUniqueV[i] = j
 			else
-				uniquevs:insert(v)
+				uniquevs:insert(i)
 				keyToUnique[k] = #uniquevs
 				indexToUniqueV[i] = #uniquevs
 			end
 		end
 	end
-	return indexToUniqueV, uniquevs
+	return uniquevs, indexToUniqueV
 end
 
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
@@ -149,24 +169,21 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
-	print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+	
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
+		vtxMergeThreshold,
+		not skipTexCoords and 1e-7,
+		not skipNormals and 1e-7
+	)
 	for i=self.vtxs.size-1,1,-1 do
-		local vi = self.vtxs.v[i]
-		for j=0,i-1 do
-			local vj = self.vtxs.v[j]
-			local dist = (vi.pos - vj.pos):norm()
---print(dist)
-			if dist < vtxMergeThreshold
-			and (skipTexCoords or (vi.texcoord - vj.texcoord):norm() < 1e-7)
-			and (skipNormals or (vi.normal - vj.normal):norm() < 1e-7)
-			then
---print('merging vertex '..i..' and '..j)
-				self:mergeVertex(i,j)
-				break
-			end
+		local j = uniquevs[indexToUniqueV[i]]
+		assert(j <= i)
+		if j < i then
+			self:mergeVertex(i,j)
 		end
 	end
-	print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
 	assert(#self.tris*3 == self.triIndexBuf.size)
 
 	-- invalidate
