@@ -105,6 +105,41 @@ function Mesh:calcBBox()
 	end
 end
 
+--[[
+prec = precision, default 1e-5
+field = which field in MeshVertex_t to get all unique indexes from.  default 'pos'
+usedIndex = optional map {[0-based-vtx-index] = true} to flag which indexes to check
+--]]
+function Mesh:getUniqueVtxs(prec, field, usedIndexes)
+	prec = prec or 1e-5
+	field = field or 'pos'
+	-- map from the vtxs to unique indexes
+	local uniquevs = table()
+	-- used by tris.
+	-- map from all vtxs.v[field], into unique indexes
+	-- rounds values to precision 'prec'
+	-- keys are 0-based, values are 1-based
+	local indexToUniqueV = {}
+	-- maps from a key (from rounded vec3f) to uniquevs index
+	-- goes a *lot* faster than the old way
+	local keyToUnique = {}
+	for i=0,self.vtxs.size-1 do
+		if not usedIndexes or usedIndexes[i] then
+			local v = self.vtxs.v[i][field]
+			local k = tostring(v:map(function(x) return math.round(x / prec) * prec end))
+			local j = keyToUnique[k]
+			if j then
+				indexToUniqueV[i] = j
+			else
+				uniquevs:insert(v)
+				keyToUnique[k] = #uniquevs
+				indexToUniqueV[i] = #uniquevs
+			end
+		end
+	end
+	return indexToUniqueV, uniquevs
+end
+
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	assert(#self.tris*3 == self.triIndexBuf.size)
 	if not self.bbox then self:calcBBox() end
@@ -137,7 +172,9 @@ print('vtxMergeThreshold', vtxMergeThreshold)
 	-- invalidate
 	self.loadedGL = false
 	self.vtxBuf = nil
-	
+	self.vtxAttrs = nil
+	self.vao = nil
+
 	self.edges = nil
 	self.edgeIndexBuf = nil
 	self.allOverlappingEdges = nil
@@ -260,7 +297,7 @@ function Mesh:findEdges(getIndex)
 		self.edgeIndexBuf = vector('int32_t', 6 * #self.tris)
 	end
 	self.edgeIndexBuf:resize(0)
-	
+
 	for i=1,self.triIndexBuf.size/3 do
 		self.tris[i] = self.tris[i] or {
 			index = i,
@@ -611,6 +648,8 @@ function Mesh:breakTriangles()
 	-- can I resize a gl arraybuffer?
 	self.loadedGL = false
 	self.vtxBuf = nil
+	self.vtxAttrs = nil
+	self.vao = nil
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
@@ -832,14 +871,14 @@ end
 -- they are per-tri, which is per-face, which is per-material, but there can be multiple materials per edge.
 function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	local gl = require 'gl'
-	
+
 	if not self.edgeIndexBuf then
 		self:findEdges()
 	end
 
 	--gl.glLineWidth(3)
 	gl.glColor3f(1,1,0)
-	
+
 	-- TODO shader that does the explode stuff
 	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
 	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
@@ -922,16 +961,16 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 	local besti, bestdist
 	for i=0,self.triIndexBuf.size-3,3 do
 		local a,b,c = self:triVtxPos(i)
-		
+
 		local planePt = a
 		local triNormal, area = triNormal(a,b,c)
 		if area > 1e-7 then
 			-- make sure it's pointing towards the ray origin
 			if triNormal:dot(dir) < 0 then triNormal = -triNormal end
-			
+
 			local p, s = rayPlaneIntersect(pos, dir, triNormal, planePt)
 			if s >= 0 and (not bestdist or s < bestdist) then
-			
+
 				-- barycentric coordinates
 				local oob
 				local vs = {a,b,c}
@@ -945,7 +984,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 						break
 					end
 				end
-				
+
 				if not oob then
 					besti = i
 					bestdist = s

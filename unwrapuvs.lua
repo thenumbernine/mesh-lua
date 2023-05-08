@@ -13,6 +13,8 @@ local function unwrapUVs(args)
 	mesh:calcAllOverlappingEdges()
 	-- invalidate
 	mesh.vtxBuf = nil
+	mesh.vtxAttrs = nil
+	mesh.vao = nil
 
 --[[ TODO put this all in its own function or its own app
 	local numSharpEdges = 0
@@ -93,14 +95,14 @@ do--	else
 		assert(not t.uvs)
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
-print('t.index', t.index)		
+--print('t.index', t.index)
 		local v = {mesh:triVtxPos(3 * (t.index - 1))}
-print('v', table.unpack(v))
+--print('v', table.unpack(v))
 		local d1 = v[2] - v[1]
 		local d2 = v[3] - v[2]
 		local n = d1:cross(d2)
 		local nlen = n:norm()
-print('|d1 x d2| = '..nlen)
+--print('|d1 x d2| = '..nlen)
 		if not math.isfinite(nlen)
 		or nlen < 1e-9
 		then
@@ -110,7 +112,7 @@ print('|d1 x d2| = '..nlen)
 			return
 		end
 		n = n / nlen
-print('n = '..n)
+--print('n = '..n)
 		local tnormal = vec3f(n:unpack())
 
 		--if true then
@@ -127,13 +129,13 @@ print('n = '..n)
 					return v[i].y
 				end):inf())
 			]:unpack())
-print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)
+--print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)
 			local tcom = mesh.triCOM(mesh:triVtxPos(3*(t.index-1)))
 			mesh.unwrapUVOrigins:insert(t.uvorigin3D * .7 + tcom * .3)
 			--]]
 
-print('uv2D = '..t.uvorigin2D)
-print('uv3D = '..t.uvorigin3D)
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
 
 			-- modularity for choosing initial basis
 			--[[ use first base of the triangle
@@ -228,20 +230,20 @@ print('uv3D = '..t.uvorigin3D)
 			or not math.isfinite(exNormSq)			-- can't use nan
 			or math.abs(ex:dot(n)) > 1 - 1e-3	-- can't use ex perp to n
 			then
-print('failed to find u vector based on bestNormal, picked ex='..ex)
+--print('failed to find u vector based on bestNormal, picked ex='..ex)
 				-- pick any basis perpendicular to 'n'
 				local ns = range(3):mapi(function(i)
 					local a = vec3f()
 					a.s[i-1] = 1
 					return n:cross(a)
 				end)
-print('choices\n', ns)
+--print('choices\n', ns)
 				local lens = range(3):mapi(function(i) return ns[i]:normSq() end)
 				local _, i = table.sup(lens)	-- best normal
-print('biggest cross '..i)
+--print('biggest cross '..i)
 				ex = ns[i]:normalize()
-print('picking fallback ', ex)
-print('ex = '..ex)
+--print('picking fallback ', ex)
+--print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
 				t.uvbasisT = {
 					n:cross(ex):normalize(),
@@ -249,7 +251,7 @@ print('ex = '..ex)
 					n,
 				}
 			else
-print('ex = '..ex)
+--print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
 				t.uvbasisT = {
 					ex,
@@ -258,7 +260,7 @@ print('ex = '..ex)
 				}
 			end
 
-print('ey = '..t.uvbasisT[2])
+--print('ey = '..t.uvbasisT[2])
 		else
 			assert(tsrc.uvs)
 
@@ -270,7 +272,7 @@ tsrc.v3      tsrc.v2
 tsrc.v1*-------*
 	  t.v3   t.v1
 --]]
-print('folding from', tsrc.index, 'to', t.index)
+--print('folding from', tsrc.index, 'to', t.index)
 			--[[ using .edges
 			local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
 			local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
@@ -291,7 +293,7 @@ print('folding from', tsrc.index, 'to', t.index)
 			local i22 = i21 % 3 + 1
 			assert(i11 and i12 and i21 and i22)
 			--]]
-print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
+--print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
 			-- tables are identical
 
 			local isrc
@@ -306,8 +308,8 @@ print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
 			t.uvorigin2D = vec2f(tsrc.uvs[isrc]:unpack())			-- copy matching uv from edge neighbor
 			local tsrcp = mesh.triIndexBuf.v + 3 * (tsrc.index - 1)
 			t.uvorigin3D = vec3f(mesh.vtxs.v[tsrcp[isrc-1]].pos:unpack())	-- copy matching 3D position
-print('uv2D = '..t.uvorigin2D)
-print('uv3D = '..t.uvorigin3D)
+--print('uv2D = '..t.uvorigin2D)
+--print('uv3D = '..t.uvorigin3D)
 
 			-- modularity for choosing unwrap rotation
 			--[[ reset basis every time. dumb.
@@ -340,22 +342,22 @@ print('uv3D = '..t.uvorigin3D)
 				local _, i = table.inf{dn:map(math.abs):unpack()}
 				if i == 1 then
 					local degrees = math.deg(math.atan2(n.z, n.y) - math.atan2(tsrcnormal.z, tsrcnormal.y))
-print(tnormal, tsrcnormal, dn, 'rot on x-axis by', degrees)
+--print(tnormal, tsrcnormal, dn, 'rot on x-axis by', degrees)
 					q = quatf():fromAngleAxis(1, 0, 0, degrees)
 				elseif i == 2 then
 					local degrees = math.deg(math.atan2(n.x, n.z) - math.atan2(tsrcnormal.x, tsrcnormal.z))
-print(tnormal, tsrcnormal, dn, 'rot on y-axis by', degrees)
+--print(tnormal, tsrcnormal, dn, 'rot on y-axis by', degrees)
 					q = quatf():fromAngleAxis(0, 1, 0, degrees)
 				elseif i == 3 then
 					local degrees = math.deg(math.atan2(n.y, n.x) - math.atan2(tsrcnormal.y, tsrcnormal.x))
-print(tnormal, tsrcnormal, dn, 'rot on z-axis by', degrees)
+--print(tnormal, tsrcnormal, dn, 'rot on z-axis by', degrees)
 					q = quatf():fromAngleAxis(0, 0, 1, degrees)
 				end
 			end
-print('q', q)
-print('n', n)
-print('tsrc ex = '..tsrc.uvbasisT[1])
-print('tsrc ey = '..tsrc.uvbasisT[2])
+--print('q', q)
+--print('n', n)
+--print('tsrc ex = '..tsrc.uvbasisT[1])
+--print('tsrc ey = '..tsrc.uvbasisT[2])
 			t.uvbasisT = {
 				q:rotate(tsrc.uvbasisT[1]),
 				q:rotate(tsrc.uvbasisT[2]),
@@ -363,24 +365,25 @@ print('tsrc ey = '..tsrc.uvbasisT[2])
 			}
 			--]]
 
-print('|ez-n| = '..(q:rotate(tsrc.uvbasisT[3]) - n):norm())
-print('ex = '..t.uvbasisT[1])
-print('ey = '..t.uvbasisT[2])
+--print('|ez-n| = '..(q:rotate(tsrc.uvbasisT[3]) - n):norm())
+--print('ex = '..t.uvbasisT[1])
+--print('ey = '..t.uvbasisT[2])
 		end
 
 		t.uvs = t.uvs or {}
 		for i=1,3 do
 			local d = v[i] - t.uvorigin3D
-print('d = '..d)
+--print('d = '..d)
 			local m = {t.uvbasisT[1], t.uvbasisT[2]}
-print('m', table.unpack(m))
+--print('m', table.unpack(m))
+			-- wait if this is d:dot then ... this is really 'uvbasis' not transpose
 			local md = vec2f(
 				d:dot(t.uvbasisT[1]),
 				d:dot(t.uvbasisT[2])
 			)
-print('m * d = '..md)
+--print('m * d = '..md)
 			t.uvs[i] = md + t.uvorigin2D
-print('uv = '..t.uvs[i])
+--print('uv = '..t.uvs[i])
 			if not math.isfinite(t.uvs[i]:normSq()) then
 				print('tri has nans in its basis')
 			end
@@ -399,7 +402,7 @@ print('uv = '..t.uvs[i])
 	-- roofs
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then
-print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+--print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e}
 		end
 		-- calc the basis by rotating it around the edge
@@ -409,9 +412,9 @@ print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'ed
 			done:insert(t)
 			assert(t.uvs)
 			-- insert neighbors into a to-be-calcd list
-print('tri', t.index)
+--print('tri', t.index)
 			for _,e in ipairs(t.allOverlappingEdges) do
-print('edge length', e.length)
+--print('edge length', e.length)
 				-- for all edges in the t, go to the other faces matching.
 				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
 				do--if #e.tris == 2 then	-- if we're using any overlapping edge then this guarantee goes out the window
@@ -441,7 +444,7 @@ print('edge length', e.length)
 		alreadyFilled:insertUnique(t)
 		if t.uvs then return end
 		if tsrc then
-print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+--print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true}
 		end
 		assert((tsrc == nil) == (e == nil))
@@ -454,7 +457,7 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 					if not alreadyFilled:find(t2) then
 						local tnormal = mesh.triNormal(mesh:triVtxPos(3*(t.index-1)))
 						local t2normal = mesh.triNormal(mesh:triVtxPos(3*(t2.index-1)))
-print('flood fill testing', math.deg(math.acos(math.clamp(tnormal:dot(t2normal), -1, 1))))
+--print('flood fill testing', math.deg(math.acos(math.clamp(tnormal:dot(t2normal), -1, 1))))
 						if tnormal:dot(t2normal) > cosAngleThreshold then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						else
@@ -467,7 +470,7 @@ print('flood fill testing', math.deg(math.acos(math.clamp(tnormal:dot(t2normal),
 	end
 
 	while #notDoneYet > 0 do
-print('starting unwrapping process with '..#notDoneYet..' left')
+--print('starting unwrapping process with '..#notDoneYet..' left')
 
 		-- I will be tracking all live edges
 		-- so process the first tri as the starting point
@@ -549,7 +552,7 @@ print('starting unwrapping process with '..#notDoneYet..' left')
 				if #todo > 0 then break end
 			end
 		end
-print('number to initialize with', #todo)
+--print('number to initialize with', #todo)
 		-- ... and process them all once first, adding their neigbors to the 'todo' pile
 		--]=]
 		-- [=[ choose tris with any edges that are 90' from the guide normal
@@ -569,7 +572,7 @@ print('number to initialize with', #todo)
 				--]] do
 					local edgeCenter = (b + a) * .5
 					local comToEdge = edgeCenter - tcom
-print('comToEdge', comToEdge)
+--print('comToEdge', comToEdge)
 					-- [[ exclude tops.  necessary for roofs.  helps walls too.
 					--if comToEdge:dot(bestNormal) > 0 then
 					if comToEdge:dot(vec3f(0,1,0)) > 0 then
@@ -596,10 +599,10 @@ print('comToEdge', comToEdge)
 		-- ... then pick one at random?
 		-- this is used when seeding the roof
 		if #todo == 0 then
-print("couldn't find any perp-to-bestNormal edges to initialize with... picking one at random")
+--print("couldn't find any perp-to-bestNormal edges to initialize with... picking one at random")
 			todo:insert(notDoneYet:remove(1))
 		else
-print("found "..#todo.." perp-to-bestNormal edges to initialize with")
+--print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		end
 		--]=]
 		-- [[ sort 'todo'
@@ -639,7 +642,7 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		-- [=[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
 		-- this is required for v=0 to align with roof bottom edges
-print('starting first pass with #todo', #todo)
+--print('starting first pass with #todo', #todo)
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
@@ -657,7 +660,7 @@ print('starting first pass with #todo', #todo)
 			end
 			--]]
 		end
-print('after first pass, #todo', #todo, '#done', #done)
+--print('after first pass, #todo', #todo, '#done', #done)
 		--]=]
 
 		while #todo > 0 do

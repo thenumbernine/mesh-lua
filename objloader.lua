@@ -176,11 +176,11 @@ end)
 				end
 			end
 			triIndexBuf:emplace_back()[0] = i
-			
+
 			-- TODO from here on out
 			-- don't use .v .vt .vn in tris[] anymore
 			-- since only in .obj are they all separately indexed
-			-- instead just use .triIndexBuf 
+			-- instead just use .triIndexBuf
 			--t[j] = nil
 			t[j] = nil
 		end
@@ -395,30 +395,7 @@ function OBJLoader:save(filename, mesh)
 	end
 
 	local function outputUnique(symbol, field)
-		-- map from the vtxs to unique indexes
-		local uniquevs = table()
-		-- used by tris.
-		-- map from all vtxs.v[] to unique indexes
-		-- keys are 0-based, values are 1-based
-		local indexToUniqueV = {}
-		-- maps from a key (from rounded vec3f) to uniquevs index
-		-- goes a *lot* faster than the old way
-		local keyToUnique = {}
-		local prec = 1e-5
-		for i=0,mesh.vtxs.size-1 do
-			if usedIndexes[i] then
-				local v = mesh.vtxs.v[i][field]
-				local k = tostring(v:map(function(x) return math.round(x / prec) * prec end))
-				local j = keyToUnique[k]
-				if j then
-					indexToUniqueV[i] = j
-				else
-					uniquevs:insert(v)
-					keyToUnique[k] = #uniquevs
-					indexToUniqueV[i] = #uniquevs
-				end
-			end
-		end
+		local indexToUniqueV, uniquevs = mesh:getUniqueVtxs(1e-5, field, usedIndexes)
 		if self.verbose then
 			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		end
