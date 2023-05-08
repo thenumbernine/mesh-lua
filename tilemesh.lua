@@ -23,6 +23,31 @@ local function inv2x2(m)
 end
 
 local function tileMesh(mesh, omesh)
+
+	local scale = vec3f(.1, .05, .1) * .9
+
+	-- list of column-vectors
+	-- transform from uv-space to placement-space
+--[[	
+	local uvxform = matrix_ffi{
+		{1, 0},
+		{0, 1},
+	}
+--]]	
+-- [[	
+	local uvxform = matrix_ffi{
+		{.2, 0},
+		{.1, .1},
+	}:T()
+--]]
+	local uvxformInv = inv2x2(uvxform)
+print('placement', uvxform)
+print('placementInv', uvxformInv)
+
+
+
+
+
 --[[ make sure triangles have uvbasisT
 
 R * (pos[i] - pos0) = texcoord[i] - texcoord0
@@ -84,26 +109,6 @@ TB_jk = (texcoord'^-1)_ij * pos'_ik
 --print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
 		end
 	end
-
-	local scale = vec3f(.1, .05, .1)
-
-	-- list of column-vectors
-	-- transform from uv-space to placement-space
---[[	
-	local uvxform = matrix_ffi{
-		{1, 0},
-		{0, 1},
-	}
---]]	
--- [[	
-	local uvxform = matrix_ffi{
-		{.2, 0},
-		{.1, .1},
-	}:T()
---]]
-	local uvxformInv = inv2x2(uvxform)
-print('placement', uvxform)
-print('placementInv', uvxformInv)
 
 	-- for each tri
 	local places = table()
@@ -174,9 +179,10 @@ print('placementInv', uvxformInv)
 		end
 	end
 print('#places', #places)
-
+	
+	-- place instances
 	local nvtxs = vector'MeshVertex_t'
-	local ntris = vector'uint32_t'
+	local indexesPerGroup = table()
 	for _,place in ipairs(places) do
 		local firstVtx = nvtxs.size
 		for i=0,omesh.vtxs.size-1 do
@@ -184,7 +190,15 @@ print('#places', #places)
 			local dstv = nvtxs:emplace_back()
 			dstv.pos = srcv.pos
 			dstv.texcoord = srcv.texcoord
-			dstv.normal = srcv.normal
+			-- scale, rotate, normalize the normals
+			dstv.normal.x = srcv.normal.x * place.scale.x
+			dstv.normal.y = srcv.normal.y * place.scale.y
+			dstv.normal.z = srcv.normal.z * place.scale.z
+			dstv.normal = place.uvbasisT[1] * dstv.normal.x
+						+ place.uvbasisT[2] * dstv.normal.y
+						+ place.uvbasisT[3] * dstv.normal.z
+			dstv.normal = dstv.normal:normalize()
+			-- scale, rotate, translate the positions
 			-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
 			dstv.pos.x = dstv.pos.x * place.scale.x
 			dstv.pos.y = dstv.pos.y * place.scale.y
@@ -195,14 +209,27 @@ print('#places', #places)
 			dstv.pos = dstv.pos + place.pos
 		end
 		local lastVtx = nvtxs.size
-		for i=0,omesh.triIndexBuf.size-1 do
-			local srci = omesh.triIndexBuf.v[i]
-			assert(srci >= 0 and srci < omesh.vtxs.size)
-			local dsti = srci + firstVtx
-			assert(dsti >= firstVtx and dsti < lastVtx)
-			ntris:emplace_back()[0] = dsti
+		for _,g in ipairs(omesh.groups) do
+			indexesPerGroup[g.name] = indexesPerGroup[g.name] or table()
+			for i=3*g.triFirstIndex,3*(g.triFirstIndex+g.triCount)-1 do
+				local srci = omesh.triIndexBuf.v[i]
+				assert(srci >= 0 and srci < omesh.vtxs.size)
+				local dsti = srci + firstVtx
+				assert(dsti >= firstVtx and dsti < lastVtx)
+				indexesPerGroup[g.name]:insert(dsti)
+			end
 		end
 	end
+	
+	local ntris = vector'uint32_t'
+	for _,g in ipairs(omesh.groups) do
+		g.triFirstIndex = ntris.size
+		for _,i in ipairs(indexesPerGroup[g.name] or {}) do
+			ntris:emplace_back()[0] = i
+		end
+		g.triCount = ntris.size - g.triFirstIndex
+	end
+
 	assert(nvtxs.size == omesh.vtxs.size * #places)
 	assert(ntris.size == omesh.triIndexBuf.size * #places)
 print('nvtxs.size', nvtxs.size)
@@ -228,6 +255,7 @@ print('ntris.size', ntris.size)
 	mesh:findEdges()
 	mesh:calcCOMs()
 
+	mesh.mtlFilenames = omesh.mtlFilenames
 	local g = mesh.groups[1]
 	g.triFirstIndex = 0
 	g.triCount = mesh.triIndexBuf.size/3
@@ -237,5 +265,6 @@ print('ntris.size', ntris.size)
 		mesh:mergeMatchingVertexes()
 	end)
 	--]]
+
 end
 return tileMesh
