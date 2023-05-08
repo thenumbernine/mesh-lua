@@ -72,7 +72,7 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 		self.mesh.com1 = self.mesh:calcCOM1()
 	end
 
-	if cmdline.unwrapuv then
+	if cmdline.unwrapuv or cmdline.tilemesh then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
 			unwrapUVs{
@@ -80,6 +80,9 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 				angleThreshold = self.unwrapAngleThreshold,
 			}
 		end)
+	end
+	if cmdline.tilemesh then
+		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh))
 	end
 --]]
 
@@ -338,9 +341,8 @@ function App:update()
 			for j=0,2 do
 				local k = bit.bxor(i, bit.lshift(1, j))
 				if k > i then
-					for _,o in ipairs{i,k} do
-						gl.glVertex3fv(mesh.bbox:corner(o).s)
-					end
+					gl.glVertex3fv(mesh.bbox:corner(i).s)
+					gl.glVertex3fv(mesh.bbox:corner(k).s)
 				end
 			end
 		end
@@ -615,7 +617,10 @@ function App:updateGUI()
 					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
 				end
 			end
+			
+			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
 
+			self.tileMeshFilename = self.tileMeshFilename or ''
 			ig.luatableInputText('tile mesh filename', self, 'tileMeshFilename')
 			if ig.igButton'tile mesh' then
 				tileMesh(mesh, OBJLoader():load(self.tileMeshFilename))
@@ -651,7 +656,6 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
 			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
-			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
 
 			ig.igEndMenu()
 		end

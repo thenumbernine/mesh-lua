@@ -11,6 +11,8 @@ local function unwrapUVs(args)
 
 	mesh:breakTriangles()
 	mesh:calcAllOverlappingEdges()
+	-- invalidate
+	mesh.vtxBuf = nil
 
 --[[ TODO put this all in its own function or its own app
 	local numSharpEdges = 0
@@ -88,31 +90,28 @@ do--	else
 	end
 	-- returns true on success
 	local function calcUVBasis(t, tsrc, esrc)
-		assert(not t[1].uv and not t[2].uv and not t[3].uv)
+		assert(not t.uvs)
 		-- t[1] is our origin
 		-- t[1]->t[2] is our x axis with unit length
-		local v = {
-			mesh.vtxs.v[t[1].v-1].pos,
-			mesh.vtxs.v[t[2].v-1].pos,
-			mesh.vtxs.v[t[3].v-1].pos
-		}
---print('v\n'..v)
+print('t.index', t.index)		
+		local v = {mesh:triVtxPos(3 * (t.index - 1))}
+print('v', table.unpack(v))
 		local d1 = v[2] - v[1]
 		local d2 = v[3] - v[2]
 		local n = d1:cross(d2)
 		local nlen = n:norm()
---print('|d1 x d2| = '..nlen)
+print('|d1 x d2| = '..nlen)
 		if not math.isfinite(nlen)
 		or nlen < 1e-9
 		then
-			t.normal = d1:normalize()
+			--t.normal = d1:normalize()
 			-- can't fold this because i'ts not a triangle ... it's a line
 			-- should I even populate the uv fields?  nah, just toss it in the caller
 			return
 		end
 		n = n / nlen
---print('n = '..n)
-		t.normal = vec3f(n:unpack())
+print('n = '..n)
+		local tnormal = vec3f(n:unpack())
 
 		--if true then
 		if not tsrc then	-- first basis
@@ -128,13 +127,13 @@ do--	else
 					return v[i].y
 				end):inf())
 			]:unpack())
---print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)
+print('inserting unwrap origin at', mesh.tris:find(t)-1, t.uvorigin3D, t.com)
 			local tcom = mesh.triCOM(mesh:triVtxPos(3*(t.index-1)))
 			mesh.unwrapUVOrigins:insert(t.uvorigin3D * .7 + tcom * .3)
 			--]]
 
---print('uv2D = '..t.uvorigin2D)
---print('uv3D = '..t.uvorigin3D)
+print('uv2D = '..t.uvorigin2D)
+print('uv3D = '..t.uvorigin3D)
 
 			-- modularity for choosing initial basis
 			--[[ use first base of the triangle
@@ -236,13 +235,13 @@ print('failed to find u vector based on bestNormal, picked ex='..ex)
 					a.s[i-1] = 1
 					return n:cross(a)
 				end)
---print('choices\n'..ns)
+print('choices\n', ns)
 				local lens = range(3):mapi(function(i) return ns[i]:normSq() end)
 				local _, i = table.sup(lens)	-- best normal
---print('biggest cross '..i)
+print('biggest cross '..i)
 				ex = ns[i]:normalize()
 print('picking fallback ', ex)
---print('ex = '..ex)
+print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
 				t.uvbasisT = {
 					n:cross(ex):normalize(),
@@ -250,7 +249,7 @@ print('picking fallback ', ex)
 					n,
 				}
 			else
---print('ex = '..ex)
+print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
 				t.uvbasisT = {
 					ex,
@@ -259,9 +258,9 @@ print('picking fallback ', ex)
 				}
 			end
 
---print('ey = '..t.uvbasisT[2])
+print('ey = '..t.uvbasisT[2])
 		else
-			assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+			assert(tsrc.uvs)
 
 --[[
 tsrc.v3      tsrc.v2
@@ -271,7 +270,7 @@ tsrc.v3      tsrc.v2
 tsrc.v1*-------*
 	  t.v3   t.v1
 --]]
---print('folding from', tsrc.index, 'to', t.index)
+print('folding from', tsrc.index, 'to', t.index)
 			--[[ using .edges
 			local i11 = findLocalIndex(tsrc, esrc[1])	-- where in tsrc is the edge's first?
 			local i12 = findLocalIndex(tsrc, esrc[2])	-- where in tsrc is the edge's second?
@@ -292,22 +291,23 @@ tsrc.v1*-------*
 			local i22 = i21 % 3 + 1
 			assert(i11 and i12 and i21 and i22)
 			--]]
---print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
+print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
 			-- tables are identical
 
 			local isrc
-			assert(tsrc[i11].uv)
-			--if tsrc[i11].uv then
+			assert(tsrc.uvs and tsrc.uvs[i11])
+			--if tsrc.uvs[i11] then
 				isrc = i11
-			--elseif tsrc[i12].uv then
+			--elseif tsrc.uvs[i12] then
 			--	isrc = i12
 			--else
 			--	error("how can we fold a line when the src tri doesn't have uv coords for it?")
 			--end
-			t.uvorigin2D = vec2f(tsrc[isrc].uv:unpack())			-- copy matching uv from edge neighbor
-			t.uvorigin3D = vec3f(mesh.vtxs.v[tsrc[isrc].v-1].pos:unpack())	-- copy matching 3D position
---print('uv2D = '..t.uvorigin2D)
---print('uv3D = '..t.uvorigin3D)
+			t.uvorigin2D = vec2f(tsrc.uvs[isrc]:unpack())			-- copy matching uv from edge neighbor
+			local tsrcp = mesh.triIndexBuf.v + 3 * (tsrc.index - 1)
+			t.uvorigin3D = vec3f(mesh.vtxs.v[tsrcp[isrc-1]].pos:unpack())	-- copy matching 3D position
+print('uv2D = '..t.uvorigin2D)
+print('uv3D = '..t.uvorigin3D)
 
 			-- modularity for choosing unwrap rotation
 			--[[ reset basis every time. dumb.
@@ -330,7 +330,8 @@ tsrc.v1*-------*
 			--]]
 			-- [[ pick the rotation along the cardinal axis that has the greatest change
 			-- BEST FOR CARTESIAN ALIGNED
-			local dn = t.normal - tsrc.normal
+			local tsrcnormal = tsrc.uvbasisT[3]
+			local dn = tnormal - tsrcnormal
 			local q
 			if dn:normSq() < 1e-3 then
 				q = quatf(0,0,0,1)
@@ -338,23 +339,23 @@ tsrc.v1*-------*
 				-- pick smallest changing axis in normal?
 				local _, i = table.inf{dn:map(math.abs):unpack()}
 				if i == 1 then
-					local degrees = math.deg(math.atan2(n.z, n.y) - math.atan2(tsrc.normal.z, tsrc.normal.y))
-print(t.normal, tsrc.normal, dn, 'rot on x-axis by', degrees)
+					local degrees = math.deg(math.atan2(n.z, n.y) - math.atan2(tsrcnormal.z, tsrcnormal.y))
+print(tnormal, tsrcnormal, dn, 'rot on x-axis by', degrees)
 					q = quatf():fromAngleAxis(1, 0, 0, degrees)
 				elseif i == 2 then
-					local degrees = math.deg(math.atan2(n.x, n.z) - math.atan2(tsrc.normal.x, tsrc.normal.z))
-print(t.normal, tsrc.normal, dn, 'rot on y-axis by', degrees)
+					local degrees = math.deg(math.atan2(n.x, n.z) - math.atan2(tsrcnormal.x, tsrcnormal.z))
+print(tnormal, tsrcnormal, dn, 'rot on y-axis by', degrees)
 					q = quatf():fromAngleAxis(0, 1, 0, degrees)
 				elseif i == 3 then
-					local degrees = math.deg(math.atan2(n.y, n.x) - math.atan2(tsrc.normal.y, tsrc.normal.x))
-print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
+					local degrees = math.deg(math.atan2(n.y, n.x) - math.atan2(tsrcnormal.y, tsrcnormal.x))
+print(tnormal, tsrcnormal, dn, 'rot on z-axis by', degrees)
 					q = quatf():fromAngleAxis(0, 0, 1, degrees)
 				end
 			end
---print('q', q)
---print('n', n)
---print('tsrc ex = '..tsrc.uvbasisT[1])
---print('tsrc ey = '..tsrc.uvbasisT[2])
+print('q', q)
+print('n', n)
+print('tsrc ex = '..tsrc.uvbasisT[1])
+print('tsrc ey = '..tsrc.uvbasisT[2])
 			t.uvbasisT = {
 				q:rotate(tsrc.uvbasisT[1]),
 				q:rotate(tsrc.uvbasisT[2]),
@@ -362,23 +363,25 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 			}
 			--]]
 
---print('|ez-n| = '..matrix(q:rotate(tsrc.uvbasisT[3]) - n):norm())
---print('ex = '..t.uvbasisT[1])
---print('ey = '..t.uvbasisT[2])
+print('|ez-n| = '..(q:rotate(tsrc.uvbasisT[3]) - n):norm())
+print('ex = '..t.uvbasisT[1])
+print('ey = '..t.uvbasisT[2])
 		end
 
+		t.uvs = t.uvs or {}
 		for i=1,3 do
 			local d = v[i] - t.uvorigin3D
+print('d = '..d)
 			local m = {t.uvbasisT[1], t.uvbasisT[2]}
---print('d = '..d)
---print('m\n'..m)
---print('m * d = '..(m * d))
-			t[i].uv = vec2f(
+print('m', table.unpack(m))
+			local md = vec2f(
 				d:dot(t.uvbasisT[1]),
 				d:dot(t.uvbasisT[2])
-			) + t.uvorigin2D
---print('uv = '..t[i].uv)
-			if not math.isfinite(t[i].uv:normSq()) then
+			)
+print('m * d = '..md)
+			t.uvs[i] = md + t.uvorigin2D
+print('uv = '..t.uvs[i])
+			if not math.isfinite(t.uvs[i]:normSq()) then
 				print('tri has nans in its basis')
 			end
 		end
@@ -396,7 +399,7 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 	-- roofs
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then
---print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e}
 		end
 		-- calc the basis by rotating it around the edge
@@ -404,11 +407,11 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 		-- roof actually looks good with always retarting ... but not best
 		if calcUVBasis(t, tsrc, e) then
 			done:insert(t)
-			assert(t[1].uv and t[2].uv and t[3].uv)
+			assert(t.uvs)
 			-- insert neighbors into a to-be-calcd list
---print('tri', t.index)
+print('tri', t.index)
 			for _,e in ipairs(t.allOverlappingEdges) do
---print('edge length', e.length)
+print('edge length', e.length)
 				-- for all edges in the t, go to the other faces matching.
 				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
 				do--if #e.tris == 2 then	-- if we're using any overlapping edge then this guarantee goes out the window
@@ -421,7 +424,7 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 					then
 						local i = notDoneYet:find(t2)
 						if i then
-							assert(not t2[1].uv and not t2[2].uv and not t2[3].uv)
+							assert(not t2.uvs)
 							notDoneYet:remove(i)
 							todo:insert(t2)
 						end
@@ -436,7 +439,7 @@ print(t.normal, tsrc.normal, dn, 'rot on z-axis by', degrees)
 	-- walls
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
-		if t[1].uv then return end
+		if t.uvs then return end
 		if tsrc then
 print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true}
@@ -444,14 +447,14 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 		assert((tsrc == nil) == (e == nil))
 		if calcUVBasis(t, tsrc, e) then
 			done:insert(t)
-			assert(t[1].uv and t[2].uv and t[3].uv)
+			assert(t.uvs)
 			for _,e in ipairs(t.allOverlappingEdges) do
 				do--if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
 					if not alreadyFilled:find(t2) then
---print('flood fill testing', math.deg(math.acos(math.clamp(t.normal:dot(t2.normal), -1, 1))))
 						local tnormal = mesh.triNormal(mesh:triVtxPos(3*(t.index-1)))
 						local t2normal = mesh.triNormal(mesh:triVtxPos(3*(t2.index-1)))
+print('flood fill testing', math.deg(math.acos(math.clamp(tnormal:dot(t2normal), -1, 1))))
 						if tnormal:dot(t2normal) > cosAngleThreshold then
 							floodFillMatchingNormalNeighbors(t2, t, e, alreadyFilled)
 						else
@@ -464,7 +467,7 @@ print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(t
 	end
 
 	while #notDoneYet > 0 do
---print('starting unwrapping process with '..#notDoneYet..' left')
+print('starting unwrapping process with '..#notDoneYet..' left')
 
 		-- I will be tracking all live edges
 		-- so process the first tri as the starting point
@@ -554,10 +557,11 @@ print('number to initialize with', #todo)
 		local todo = table()
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
+			local tp = mesh.triIndexBuf.v + 3 * (t.index - 1)
 			local tcom = mesh.triCOM(mesh:triVtxPos(3*(i-1)))
 			for j=1,3 do
-				local a = mesh.vtxs.v[t[j].v-1].pos
-				local b = mesh.vtxs.v[t[j%3+1].v-1].pos
+				local a = mesh.vtxs.v[tp[j-1]].pos
+				local b = mesh.vtxs.v[tp[j%3]].pos
 				local edgeDir = b - a
 				-- [[ if the edges is in the xz plane ...
 				-- needed for basic walls to look good
@@ -565,18 +569,18 @@ print('number to initialize with', #todo)
 				--]] do
 					local edgeCenter = (b + a) * .5
 					local comToEdge = edgeCenter - tcom
---print('comToEdge', comToEdge)
+print('comToEdge', comToEdge)
 					-- [[ exclude tops.  necessary for roofs.  helps walls too.
 					--if comToEdge:dot(bestNormal) > 0 then
 					if comToEdge:dot(vec3f(0,1,0)) > 0 then
 					--]] do
 						--[[ exclude edges pointed straight downward
-						if math.abs(t.normal:cross(edgeDir):dot(vec3f(0,1,0))) > 1 - 1e-3 then
+						if math.abs(tnormal:cross(edgeDir):dot(vec3f(0,1,0))) > 1 - 1e-3 then
 						--]] do
 							--[[ exclude normals that aren't 90' in the xz plane ...
 							-- necessary for rounded walls
-							if math.abs(t.normal[1]) > 1 - 1e-3
-							or math.abs(t.normal[3]) > 1 - 1e-3
+							if math.abs(tnormal[1]) > 1 - 1e-3
+							or math.abs(tnormal[3]) > 1 - 1e-3
 							then
 							--]] do
 								notDoneYet:remove(i)
@@ -600,15 +604,11 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		--]=]
 		-- [[ sort 'todo'
 		todo:sort(function(ta,tb)
-			local a1 = mesh.vtxs.v[ta[1].v-1].pos
-			local a2 = mesh.vtxs.v[ta[2].v-1].pos
-			local a3 = mesh.vtxs.v[ta[3].v-1].pos
+			local a1, a2, a3 = mesh:triVtxPos(3*(ta.index-1))
 			local minax = math.min(a1.x, a2.x, a3.x)
 			local minay = math.min(a1.y, a2.y, a3.y)
 			local minaz = math.min(a1.z, a2.z, a3.z)
-			local b1 = mesh.vtxs.v[tb[1].v-1].pos
-			local b2 = mesh.vtxs.v[tb[2].v-1].pos
-			local b3 = mesh.vtxs.v[tb[3].v-1].pos
+			local b1, b2, b3 = mesh:triVtxPos(3*(tb.index-1))
 			local minbx = math.min(b1.x, b2.x, b3.x)
 			local minby = math.min(b1.y, b2.y, b3.y)
 			local minbz = math.min(b1.z, b2.z, b3.z)
@@ -639,7 +639,7 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 		-- [=[ first pass to make sure all the first picked are considered
 		-- during this first pass, immediately fold across any identical normals
 		-- this is required for v=0 to align with roof bottom edges
---print('starting first pass with #todo', #todo)
+print('starting first pass with #todo', #todo)
 		for i=#todo,1,-1 do
 			local t = todo:remove(i)
 			-- for 't', flood-fill through anything with matching normal
@@ -651,13 +651,13 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 			-- helpes for curved walls
 			-- MUST NOT be used for the roof with multiple trim levels
 			for _,t in ipairs(filled) do
-				if not t[1].uv then
+				if not t.uvs then
 					todo:insertUnique(t)
 				end
 			end
 			--]]
 		end
---print('after first pass, #todo', #todo, '#done', #done)
+print('after first pass, #todo', #todo, '#done', #done)
 		--]=]
 
 		while #todo > 0 do
@@ -705,8 +705,8 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 					--]]
 					-- [[ prioritize rotation angle
 					-- LOOKS THE BEST SO FAR
-					local ra = a.tri.normal:dot(a.prevtri.normal)
-					local rb = b.tri.normal:dot(b.prevtri.normal)
+					local ra = atri.normal:dot(a.prevtri.normal)
+					local rb = btri.normal:dot(b.prevtri.normal)
 					return ra > rb
 					--]]
 					-- TODO Try prioritizing discrete curvature (mesh angle & area info combined?)
@@ -722,18 +722,18 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 				assert(t)
 				assert(e)
 				assert(tsrc)
-				assert(tsrc[1].uv and tsrc[2].uv and tsrc[3].uv)
+				assert(tsrc.uvs)
 				todo:removeObject(t)
 			end
 			for _,t in ipairs(todo) do
-				assert(not t[1].uv and not t[2].uv and not t[3].uv)
+				assert(not t.uvs)
 			end
 			if t then
 				calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 			end
 		end
 		for _,t in ipairs(done) do
-			assert(t[1].uv and t[2].uv and t[3].uv)
+			assert(t.uvs)
 		end
 	end
 
@@ -743,10 +743,10 @@ print("found "..#todo.." perp-to-bestNormal edges to initialize with")
 	for i=1,#mesh.tris do
 		local t = mesh.tris[i]
 		for j=1,3 do
-			local src = t[j].uv or vec2f(0,0)
+			local src = t.uvs and t.uvs[j] or vec2f(0,0)
 			mesh.vtxs.v[(j-1)+3*(i-1)].texcoord:set(src.x, src.y, 0)
-			t[j].uv = nil
 		end
+		t.uvs = nil
 	end
 
 	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))
@@ -781,16 +781,18 @@ function drawUVUnwrapEdges(mesh)
 			gl.glColor3f(.5,.5,0)
 		end
 		local t1 = e.tris[1]
+		local tp1 = mesh.triIndexBuf.v + 3 * (t1.index - 1)
 		local t2 = e.tris[2]
+		local tp2 = mesh.triIndexBuf.v + 3 * (t2.index - 1)
 		assert((t1 == ta and t2 == tb) or (t1 == tb and t2 == ta))
-		local vi11 = t1[e.triVtxIndexes[1]].v
-		local vi12 = t1[e.triVtxIndexes[1]%3+1].v
-		local vi21 = t2[e.triVtxIndexes[2]].v
-		local vi22 = t2[e.triVtxIndexes[2]%3+1].v
-		local v11 = mesh.vtxs.v[vi11-1].pos	-- this's intervals is along the opposing tri's edge
-		local v12 = mesh.vtxs.v[vi12-1].pos
-		local v21 = mesh.vtxs.v[vi21-1].pos	-- e.intervals[2][1] is always 0
-		local v22 = mesh.vtxs.v[vi22-1].pos	-- e.intervals[2][2] is always its edge length
+		local vi11 = tp1[e.triVtxIndexes[1]-1]
+		local vi12 = tp1[e.triVtxIndexes[1]%3]
+		local vi21 = tp2[e.triVtxIndexes[2]-1]
+		local vi22 = tp2[e.triVtxIndexes[2]%3]
+		local v11 = mesh.vtxs.v[vi11].pos	-- this's intervals is along the opposing tri's edge
+		local v12 = mesh.vtxs.v[vi12].pos
+		local v21 = mesh.vtxs.v[vi21].pos	-- e.intervals[2][1] is always 0
+		local v22 = mesh.vtxs.v[vi22].pos	-- e.intervals[2][2] is always its edge length
 		local l = e.intervals[2][2]
 		-- pick the subset of intervals in common
 		local lmin = math.max(e.intervals[1][1], e.intervals[2][1])

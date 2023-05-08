@@ -234,11 +234,8 @@ for tboxIndex,tbox in ipairs(tboxes) do
 			assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
 		end
 		m.tris = range(m.triIndexBuf.size/3):mapi(function(i)
-			return {
-				{v=i, vt=i, vn=i},
-				{v=i, vt=i, vn=i},
-				{v=i, vt=i, vn=i},
-			}	-- findEdges stores stuff in here ... but idk
+			-- findEdges stores stuff in here ... but idk
+			return i-1
 		end)
 
 		-- [[ ok here, per-side, seal off the mesh.

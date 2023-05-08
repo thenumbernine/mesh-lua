@@ -98,7 +98,7 @@ timer('loading', function()
 				}
 				mesh.tris:insert(t)
 				-- keys:
-				t.index = #mesh.tris+1	-- so far only used for debugging
+				t.index = #mesh.tris
 				t.group = assert(group)
 				group.triCount = #mesh.tris - group.triFirstIndex
 			end
@@ -144,7 +144,8 @@ end)
 	-- [=[ optimize?
 	local indexForVtx = {}	-- from 'v,vt,vn'
 	for ti,t in ipairs(mesh.tris) do
-		for j,tj in ipairs(t) do
+		for j=1,3 do
+			local tj = t[j]
 			local k = tj.v..','..(tj.vt or '0')..','..(tj.vn or '0')
 			-- [[ allocating way too much ...
 			local i = indexForVtx[k]	-- 0-based
@@ -175,9 +176,13 @@ end)
 				end
 			end
 			triIndexBuf:emplace_back()[0] = i
-			tj.v = i+1
-			tj.vt = i+1
-			tj.vn = i+1
+			
+			-- TODO from here on out
+			-- don't use .v .vt .vn in tris[] anymore
+			-- since only in .obj are they all separately indexed
+			-- instead just use .triIndexBuf 
+			--t[j] = nil
+			t[j] = nil
 		end
 	end
 	if self.verbose then

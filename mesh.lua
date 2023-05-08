@@ -99,7 +99,7 @@ function Mesh:prepare()
 end
 
 function Mesh:calcBBox()
-	self.bbox = box3f.makeempty()
+	self.bbox = box3f.empty()
 	for i=0,self.vtxs.size-1 do
 		self.bbox:stretch(self.vtxs.v[i].pos)
 	end
@@ -178,11 +178,11 @@ function Mesh:calcAllOverlappingEdges()
 --	print('n = '..t.normal)
 --end
 	for i1=#self.tris,2,-1 do
-		local t1 = self.tris[i1]
+		local tp1 = self.triIndexBuf.v + 3 * (i1 - 1)
 		for j1=1,3 do
 			-- t1's j1'th edge
-			local v11 = self.vtxs.v[t1[j1].v-1].pos
-			local v12 = self.vtxs.v[t1[j1%3+1].v-1].pos
+			local v11 = self.vtxs.v[tp1[j1-1]].pos
+			local v12 = self.vtxs.v[tp1[j1%3]].pos
 --print('tri', i1, 'pos', j1, '=', v11)
 			local n1 = v12 - v11
 			local n1NormSq = n1:normSq()
@@ -190,9 +190,10 @@ function Mesh:calcAllOverlappingEdges()
 				n1 = n1 / math.sqrt(n1NormSq)
 				for i2=i1-1,1,-1 do
 					local t2 = self.tris[i2]
+					local tp2 = self.triIndexBuf.v + 3 * (i2 - 1)
 					for j2=1,3 do
-						local v21 = self.vtxs.v[t2[j2].v-1].pos
-						local v22 = self.vtxs.v[t2[j2%3+1].v-1].pos
+						local v21 = self.vtxs.v[tp2[j2-1]].pos
+						local v22 = self.vtxs.v[tp2[j2%3]].pos
 						local n2 = v22 - v21
 						local n2NormSq = n2:normSq()
 						if n2NormSq  > 1e-3 then
@@ -261,7 +262,9 @@ function Mesh:findEdges(getIndex)
 	self.edgeIndexBuf:resize(0)
 	
 	for i=1,self.triIndexBuf.size/3 do
-		self.tris[i] = self.tris[i] or {}
+		self.tris[i] = self.tris[i] or {
+			index = i,
+		}
 	end
 	for i=self.triIndexBuf.size/3+1,#self.tris do
 		self.tris[i] = nil
@@ -366,13 +369,17 @@ end
 function Mesh:removeTri(i)
 	assert(#self.tris*3 == self.triIndexBuf.size)
 	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
-	self.tris:remove(i/3+1)
 	for _,g in ipairs(self.groups) do
 		if i < g.triFirstIndex then
 			g.triFirstIndex = g.triFirstIndex - 1
 		elseif i >= g.triFirstIndex and i < g.triFirstIndex + g.triCount then
 			g.triCount = g.triCount - 1
 		end
+	end
+	-- phasing this out
+	self.tris:remove(i/3+1)
+	for j=i/3+1,#self.tris do
+		self.tris[j].index = j
 	end
 end
 
@@ -592,10 +599,6 @@ function Mesh:breakTriangles()
 	-- then remap them as we break tris
 
 	for i,t in ipairs(self.tris) do
-		local function vis(i) return {v=i, vt=i, vn=i} end
-		for j=1,3 do
-			t[j] = vis(3*(i-1)+j)
-		end
 		-- update vertex COMs
 		-- they are only valid now
 		local com = self.triCOM(self:triVtxPos(3*(i-1)))
