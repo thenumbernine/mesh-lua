@@ -15,6 +15,7 @@ local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
 local OBJLoader = require 'mesh.objloader'
 local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
+local tileMesh = require 'mesh.tilemesh'
 local drawUVUnwrapEdges = require 'mesh.unwrapuvs'.drawUVUnwrapEdges
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
@@ -336,13 +337,10 @@ function App:update()
 		for i=0,7 do
 			for j=0,2 do
 				local k = bit.bxor(i, bit.lshift(1, j))
-				for _,o in ipairs{i,k} do
-					local v = {}
-					for l=1,3 do
-						local minmax = bit.band(bit.rshift(o, l-1), 1) == 1
-						v[l] = minmax and mesh.bbox.min[l] or mesh.bbox.max[l]
+				if k > i then
+					for _,o in ipairs{i,k} do
+						gl.glVertex3fv(mesh.bbox:corner(o).s)
 					end
-					gl.glVertex3f(table.unpack(v))
 				end
 			end
 		end
@@ -616,6 +614,11 @@ function App:updateGUI()
 				if mesh.loadedGL then
 					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
 				end
+			end
+
+			ig.luatableInputText('tile mesh filename', self, 'tileMeshFilename')
+			if ig.igButton'tile mesh' then
+				tileMesh(mesh, OBJLoader():load(self.tileMeshFilename))
 			end
 
 			ig.igEndMenu()

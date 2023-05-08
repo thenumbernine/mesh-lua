@@ -6,6 +6,7 @@ local range = require 'ext.range'
 local timer = require 'ext.timer'
 local vector = require 'ffi.cpp.vector'
 local vec3f = require 'vec-ffi.vec3f'
+local box3f = require 'vec-ffi.box3f'
 
 ffi.cdef[[
 typedef struct {
@@ -98,10 +99,9 @@ function Mesh:prepare()
 end
 
 function Mesh:calcBBox()
-	local box3 = require 'vec.box3'
-	self.bbox = box3(-math.huge)
+	self.bbox = box3f.makeempty()
 	for i=0,self.vtxs.size-1 do
-		self.bbox:stretch{self.vtxs.v[i].pos:unpack()}
+		self.bbox:stretch(self.vtxs.v[i].pos)
 	end
 end
 
