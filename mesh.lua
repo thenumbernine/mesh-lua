@@ -116,7 +116,7 @@ args:
 returns:
 	uniquevs = lua-table holding all the unique 0-based vtx indexes
 	indexToUniqueV = {[0-based-vtx-index] = 1-based index in uniquevs} = map from old (0-based c-array) to new (1-based lua-table)
-	
+
 it should always be the case that uniquevs[indexToUniqueV[i]] <= i
 --]=]
 function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
@@ -125,20 +125,20 @@ function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
 			return math.round(x / prec) * prec
 		end))
 	end
-	
+
 	-- map from the vtxs to unique indexes
 	local uniquevs = table()
-	
+
 	-- used by tris.
 	-- map from all vtxs.v[], into unique indexes
 	-- rounds values to precision 'prec'
 	-- keys are 0-based, values are 1-based
 	local indexToUniqueV = {}
-	
+
 	-- maps from a key (from rounded vec3f) to uniquevs index
 	-- goes a *lot* faster than the old way
 	local keyToUnique = {}
-	
+
 	for i=0,self.vtxs.size-1 do
 		if not usedIndexes or usedIndexes[i] then
 			local v = self.vtxs.v[i]
@@ -170,7 +170,7 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
 print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
-	
+
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
 		vtxMergeThreshold,
 		not skipTexCoords and 1e-7,

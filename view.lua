@@ -72,7 +72,8 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 		self.mesh.com1 = self.mesh:calcCOM1()
 	end
 
-	if cmdline.unwrapuv or cmdline.tilemesh then
+	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
+	if cmdline.unwrapuv then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
 			unwrapUVs{
@@ -600,7 +601,7 @@ function App:updateGUI()
 			if ig.igButton'break triangles' then
 				mesh:breakTriangles()
 			end
-			
+
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'UV' then
@@ -617,7 +618,7 @@ function App:updateGUI()
 					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
 				end
 			end
-			
+
 			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
 
 			self.tileMeshFilename = self.tileMeshFilename or ''
