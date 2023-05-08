@@ -35,19 +35,19 @@ local OBJLoader = class()
 
 function OBJLoader:load(filename)
 	local mesh = Mesh()
-	
+
 	local vs = table()
 	local vts = table()
 	local vns = table()
-	
-	-- TODO get rid of this old method	
+
+	-- TODO get rid of this old method
 	mesh.tris = table()
 
 timer('loading', function()
 
 	-- mesh groups / materials
 	local group
-	
+
 	mesh.relpath = file(filename):getdir()
 	mesh.mtlFilenames = table()
 
@@ -188,7 +188,7 @@ end)
 
 	mesh.vtxs = vtxs
 	mesh.triIndexBuf = triIndexBuf
-	
+
 	if self.verbose then
 		print'done'
 	end
@@ -199,7 +199,7 @@ function OBJLoader:loadMtl(filename, mesh)
 timer('loading mtl file', function()
 	-- TODO don't store mtlFilenames
 	mesh.mtlFilenames:insert(filename)
-	
+
 	local group
 	filename = file(mesh.relpath)(filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
@@ -483,7 +483,7 @@ end
 
 -- TODO
 -- use .mtlFilenames to determine filename?
--- or ... why store mtlFilenames at all? 
+-- or ... why store mtlFilenames at all?
 -- why not require it upon request for :save() ?
 -- and if store, why not store the .obj filename too?
 -- or why not combine :saveMtl and :save like i do :loadMtl and :load
@@ -493,7 +493,7 @@ function OBJLoader:saveMtl(filename, mesh)
 		if group.name ~= '' then
 			o:write('newmtl ', group.name,'\n')
 			for _,k in ipairs{
-				'Ka', 'Kd', 'Ks', 'Ns', 'map_Kd', 
+				'Ka', 'Kd', 'Ks', 'Ns', 'map_Kd',
 				--'map_Ks', 'map_Ns', 'map_bump', 'disp', 'decal',
 			} do
 				local v = group[k]

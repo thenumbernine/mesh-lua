@@ -14,6 +14,7 @@ typedef struct {
 	vec3f_t normal;
 
 	// per-triangle stats (duplicated 3x per-vertex)
+	// TODO move this to a separate buffer
 	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
 } MeshVertex_t;
 ]]
@@ -145,9 +146,6 @@ end
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxPos(i)
 	local t = self.triIndexBuf.v + i
-	assert(t[0] >= 0 and t[0] < self.vtxs.size)
-	assert(t[1] >= 0 and t[1] < self.vtxs.size)
-	assert(t[2] >= 0 and t[2] < self.vtxs.size)
 	return self.vtxs.v[t[0]].pos,
 			self.vtxs.v[t[1]].pos,
 			self.vtxs.v[t[2]].pos

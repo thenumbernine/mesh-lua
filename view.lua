@@ -593,6 +593,10 @@ function App:updateGUI()
 			if ig.igButton'merge vertexes' then
 				mesh:mergeMatchingVertexes()
 			end
+			if ig.igButton'merge vertexes w/o t.c.' then
+				-- there's another flag for 'skip normals' but you can just clear them so
+				mesh:mergeMatchingVertexes(true)
+			end
 			if ig.igButton'break triangles' then
 				mesh:breakTriangles()
 			end

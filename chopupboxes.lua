@@ -52,7 +52,7 @@ for i=0,mesh.triIndexBuf.size-3,3 do
 			tmini.s[k] = math.min(tmini.s[k], math.floor(v.s[k] + eps))
 			tmaxi.s[k] = math.max(tmaxi.s[k], math.floor(v.s[k] - eps))
 			--]]
-			-- [[ so instead, push towards tri com and push back from the fwd-facing normal 
+			-- [[ so instead, push towards tri com and push back from the fwd-facing normal
 			iv.s[k] = math.floor(v.s[k])
 			mini.s[k] = math.min(mini.s[k], iv.s[k])
 			maxi.s[k] = math.max(maxi.s[k], iv.s[k])
@@ -61,7 +61,7 @@ for i=0,mesh.triIndexBuf.size-3,3 do
 			--]]
 		end
 		tboxes:insert{tmini, tmaxi}
-		
+
 		for ix=tmini.x,tmaxi.x do
 			for iy=tmini.y,tmaxi.y do
 				for iz=tmini.z,tmaxi.z do
@@ -122,7 +122,7 @@ for i=#tboxes,2,-1 do
 			-- j is the new k / dst tbox with this cluster's nodes
 			k = j
 			-- don't break out of the loop
-			-- so the pieces go thru the cluster and collect at the smallest index 
+			-- so the pieces go thru the cluster and collect at the smallest index
 		end
 	end
 	if k ~= i then	-- moved?
@@ -135,8 +135,8 @@ for i=#tboxes,1,-1 do
 	for ix=tbox[1].x,tbox[2].x do
 		for iy=tbox[1].y,tbox[2].y do
 			for iz=tbox[1].z,tbox[2].z do
-				if trisForBox[ix] 
-				and trisForBox[ix][iy] 
+				if trisForBox[ix]
+				and trisForBox[ix][iy]
 				and trisForBox[ix][iy][iz]
 				then
 					if next(trisForBox[ix][iy][iz]) then
@@ -170,7 +170,7 @@ end)
 local numBinnedTris = 0
 for _,b in ipairs(tboxes) do
 	local tris = table.keys(trisForBox[b[1].x][b[1].y][b[1].z]):sort()
-	numBinnedTris = numBinnedTris + #tris 
+	numBinnedTris = numBinnedTris + #tris
 	print(b[1], b[2], tris:concat', ')
 end
 print('# clusters left', #tboxes)
@@ -240,14 +240,14 @@ for tboxIndex,tbox in ipairs(tboxes) do
 				{v=i, vt=i, vn=i},
 			}	-- findEdges stores stuff in here ... but idk
 		end)
-		
+
 		-- [[ ok here, per-side, seal off the mesh.
-		
+
 		-- find all open edges, and find what sides they touch ...
 		-- TODO what about two triangles, completely overlapping, but varying texcoords?
 		-- because that's what's happening on block #4 ...
 		--m:mergeMatchingVertexes()
-		
+
 		--[==[ this isn't help anthing
 		assert(#m.tris*3 == m.triIndexBuf.size)
 		local prec = 1e-5
@@ -284,7 +284,7 @@ print(ki)
 			end
 		end
 		--]==]
-	
+
 		-- TODO gotta find edges based on vtx comparing pos
 		-- not based on vtx index
 		m:findEdges(function(i)
@@ -307,6 +307,9 @@ print(ki)
 			end
 		end
 print('edges total', totalEdges, 'border', #border)
+
+		--[=[
+		TODO turn this into a mesh function: find boundary edges
 		do	-- now put in loops
 			local all = table(border)
 			local loops = table()
@@ -328,7 +331,7 @@ print('edges total', totalEdges, 'border', #border)
 							loop:insert{v=3-lastvi, e=o}
 							all:remove(i)
 							found = true
---print('adding edge', last[1], last[2])							
+--print('adding edge', last[1], last[2])
 							break
 						elseif o[2] == last[lastvi] then
 							last = o
@@ -336,7 +339,7 @@ print('edges total', totalEdges, 'border', #border)
 							loop:insert{v=3-lastvi, e=o}
 							all:remove(i)
 							found = true
---print('adding edge', last[1], last[2])							
+--print('adding edge', last[1], last[2])
 							break
 						end
 					end
@@ -355,12 +358,12 @@ print('edges total', totalEdges, 'border', #border)
 			end
 print('#loops', #loops)
 print('#lines', #lines)
-			
+
 			-- no boundary edges that aren't loops
 			-- lines?  how to fix those?
 			if #lines > 0 then error("can't fix stupid") end
 			-- luckily I never have to find out (yet)
-	
+
 			-- which blocks have more than one loop?
 			-- block 4 at (10, 1, 0)
 			-- block 5 at (9, 1, 0)
@@ -416,9 +419,10 @@ end
 				assert(#loop >= 3)
 			end
 		end
+		--]=]
 		--]]
 
-		--[=[ look at vtxs that are along the bbox
+		-- [=[ look at vtxs that are along the bbox
 		-- TODO combine this with the edge border loops
 		m:calcBBox()
 		print('bbox', m.bbox)
@@ -427,7 +431,16 @@ end
 				local vs = range(0,m.vtxs.size-1):filter(function(i)
 					return m.vtxs.v[i].pos.s[side] == m.bbox[({'min','max'})[pm+1]][side+1]
 				end)
-				print('side', side, '+-', pm, '#vs', #vs)
+
+				-- find what border edges are on this side
+				local es = border:mapi(function(e,i,t)
+					for j=1,2 do
+						if m.vtxs.v[e[j]-1].pos.s[side] ~= m.bbox[({'min','max'})[pm+1]][side+1] then return end
+					end
+					return e, #t+1
+				end)
+
+				print('side', side, '+-', pm, '#vs', #vs, '#es', #es)
 			end
 		end
 		--]=]
@@ -444,6 +457,7 @@ end
 		--]]
 		loader:save(dstfn, m)
 	end)
+	break
 end
 
 loader:save(outfn, mesh)
