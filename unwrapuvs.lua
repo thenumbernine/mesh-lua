@@ -245,7 +245,7 @@ do--	else
 --print('picking fallback ', ex)
 --print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.basis = {
+				t.basis = table{
 					n:cross(ex):normalize(),
 					-ex,
 					n,
@@ -253,7 +253,7 @@ do--	else
 			else
 --print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.basis = {
+				t.basis = table{
 					ex,
 					n:cross(ex):normalize(),
 					n,
@@ -314,7 +314,7 @@ tsrc.v1*-------*
 			-- modularity for choosing unwrap rotation
 			--[[ reset basis every time. dumb.
 			local ex = d1:normalize()
-			t.basis = {
+			t.basis = table{
 				ex,
 				n:cross(ex):normalize(),
 				n,
@@ -324,7 +324,7 @@ tsrc.v1*-------*
 			-- find the rotation from normal 1 to normal 2
 			-- that'll just be the matrix formed from n1 and n2's basis ...
 			local q = quatf():vectorRotate(tsrc.normal, t.normal)
-			t.basis = {
+			t.basis = table{
 				q:rotate(tsrc.basis[1]),
 				q:rotate(tsrc.basis[2]),
 				n,
@@ -358,7 +358,7 @@ tsrc.v1*-------*
 --print('n', n)
 --print('tsrc ex = '..tsrc.basis[1])
 --print('tsrc ey = '..tsrc.basis[2])
-			t.basis = {
+			t.basis = table{
 				q:rotate(tsrc.basis[1]),
 				q:rotate(tsrc.basis[2]),
 				n,
@@ -750,6 +750,11 @@ tsrc.v1*-------*
 			mesh.vtxs.v[(j-1)+3*(i-1)].texcoord:set(src.x, src.y, 0)
 		end
 		t.uvs = nil
+	end
+
+	print('tri basis:')
+	for i,t in ipairs(mesh.tris) do
+		print(t.basis:unpack())
 	end
 
 	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))

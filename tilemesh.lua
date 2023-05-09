@@ -17,26 +17,27 @@ local matrix_ffi = require 'matrix.ffi'
 
 local function tileMesh(mesh, omesh)
 
-	local scale = vec3f(.1, .05, .1) * .9
 
 	-- list of column-vectors
 	-- transform from uv-space to placement-space
---[[
-	local uvxform = matrix_ffi{
+-- [[
+	local scale = vec3f(.5, .5, .5)
+	local placementCoordXForm = matrix_ffi{
 		{1, 0},
 		{0, 1},
 	}
 --]]
--- [[
-	local uvxform = matrix_ffi{
+--[[
+	local scale = vec3f(.1, .05, .1) * .9
+	local placementCoordXForm = matrix_ffi{
 		{.2, .1},
 		{0, .1},
 	}
 --]]
-	local uvxformInv = uvxform:inv()
-print('placement', uvxform)
-print('placementInv', uvxformInv)
-	assert((uvxform * uvxformInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
+	local placementCoordXFormInv = placementCoordXForm:inv()
+print('placementXForm', placementCoordXForm)
+print('placementXFormInv', placementCoordXFormInv)
+	assert((placementCoordXForm * placementCoordXFormInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
 
 	mesh:generateTriBasis()
 
@@ -49,52 +50,63 @@ print('placementInv', uvxformInv)
 			return mesh.vtxs.v[tp[i]]
 		end)
 		-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
-		local uvorigin2D = tvtxs[1].texcoord
-		local uvorigin3D = tvtxs[1].pos
-		local tnormal = t.basis[3]
+		local uvorigin2D = vec2f():set(tvtxs[1].texcoord:unpack())
+		local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
+print('uv origin', ti, uvorigin2D, uvorigin3D)
 		-- find uv min max
 		-- maybe stretch bounds to include edges of placements?
 		-- interpolate across uv
 		-- find lattice locations where an instance should be placed
 		-- place mesh
 		local placementBBox = box2f.empty()
-		local vs = {}
 		for j=0,2 do
 			assert(tp[j] >= 0 and tp[j] < mesh.vtxs.size)
 			local v = mesh.vtxs.v[tp[j]]
-			vs[j+1] = v.pos
-			local tc = uvxformInv * matrix_ffi{v.texcoord.x, v.texcoord.y}
-			tc = vec2f(tc:unpack())
-			placementBBox:stretch(tc)
---print('stretching', v.texcoord)
+			--local tc = v.texcoord
+			-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = d/du)
+			local dvpos = v.pos - uvorigin3D
+			local tc = vec2f(
+				dvpos:dot(t.basis[1]),
+				dvpos:dot(t.basis[2])
+			) + uvorigin2D
+			local placementCoord = placementCoordXFormInv * matrix_ffi{tc.x, tc.y}
+			placementCoord = vec2f(placementCoord:unpack())
+			placementBBox:stretch(placementCoord)
+print('stretching', placementCoord)
 		end
 		local from = box2f(placementBBox)
 		placementBBox.min = placementBBox.min:map(math.floor) - 1
 		placementBBox.max = placementBBox.max:map(math.ceil) + 1
---print('placementBBox', from, 'to' , placementBBox)
+print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
-				local uv = uvxform * matrix_ffi{pu,pv}
+				local uv = placementCoordXForm * matrix_ffi{pu,pv}
 				uv = vec2f(uv:unpack())
 --print(uv)
-
 				local duv = uv - uvorigin2D
-				-- uv = basis * (vtxpos - uvorigin3D) + uvorigin2D
-				-- vtxpos = uvbasis * (uv - uvorigin2D) + uvorigin3D
+				--[[
+				texcoord = basis * (vtxpos - uvorigin3D) + uvorigin2D
+				vtxpos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
+
+				with placement-lattice transforms
+				placementCoords = placementXForm * texcoord
+				placementXFormInv * placementCoords = texcoord
+				--]]
 				local vtxpos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
 				-- if in tri (barycentric coord test)
-
-				if t:insideBCC(vtxpos, mesh) then
+				local inside = t:insideBCC(vtxpos, mesh)
+--print(uv, inside)
+				if inside then
 					-- then place an instance of omesh
 					-- get the transform rotation and scale to the location on the poly
 					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
 					mesh.tilePlaces:insert{
 						-- scale, rotate, offset ...
-						pos = vtxpos,	-- not so necessary
-						basis = t.basis,
-						scale = scale,
+						pos = vec3f(vtxpos),	-- not so necessary
+						basis = t.basis:mapi(function(v) return vec3f(v) end),
+						scale = vec3f(scale),
 						-- not necessary
-						uv = uv,
+						uv = vec2f(uv),
 					}
 				end
 			end

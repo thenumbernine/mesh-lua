@@ -513,9 +513,13 @@ function Mesh:generateTriBasis()
 			-- [[ orthogonalize
 			local ey = n:cross(ex):normalize()
 			--]]
-			t.basis = {ex, ey, n}
+			t.basis = table{ex, ey, n}
 --print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
 		end
+	end
+	print('tri basis:')
+	for i,t in ipairs(self.tris) do
+		print(t.basis:unpack())
 	end
 end
 
