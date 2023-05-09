@@ -147,10 +147,16 @@ function Triangle:calcBCC(p, mesh)
 		local v2 = mesh.vtxs.v[tp[(j+1)%3]].pos
 		local tocom = (v2 - v1):cross(self.normal)
 		-- TODO rescale correctly
-		-- will only work on front-facing triangles
-		bcc.s[j] = (p - v1):dot(tocom) < 0
+		-- right now they're only good for signedness test
+		bcc.s[j] = -(p - v1):dot(tocom)
 	end
 	return bcc
+end
+
+-- returns 'true' if 'p' is inside the triangle according to barycentric coordinate test
+function Triangle:insideBCC(p, mesh)
+	local bcc = self:calcBCC(p, mesh)
+	return bcc.x >= 0 and bcc.y >= 0 and bcc.z >= 0
 end
 
 function Triangle:calcTetradVolume(mesh)
@@ -423,7 +429,9 @@ function Mesh:rebuildTris(from,to)
 		self.tris[i].index = i
 		self.tris[i]:calcAux(self)
 	end
-	assert(#self.tris*3 == self.triIndexes.size)
+	if #self.tris*3 ~= self.triIndexes.size then
+		error("expected "..(#self.tris*3).." but found "..self.triIndexes.size)
+	end
 	for i,t in ipairs(self.tris) do
 		assert(Triangle:isa(t))
 	end
@@ -1148,8 +1156,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 			local p, s = rayPlaneIntersect(pos, dir, tnormal, planePt)
 			if s >= 0 and (not bestdist or s < bestdist) then
 				-- barycentric coordinates
-				local bcc = t:calcBCC(p, self)
-				if bcc.x > 0 and bcc.y > 0 and bcc.z > 0 then
+				if t:insideBCC(p, self) then
 					besti = i
 					bestdist = s
 				end

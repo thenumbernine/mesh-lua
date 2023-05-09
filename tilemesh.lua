@@ -84,15 +84,7 @@ print('placementInv', uvxformInv)
 				local vtxpos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
 				-- if in tri (barycentric coord test)
 
-				local outside
-				for j=1,3 do
-					local dv = (vs[j%3+1] - vs[j]):cross(tnormal)
-					if dv:dot(vtxpos - vs[j]) > 0 then
-						outside = true
-						break
-					end
-				end
-				if not outside then
+				if t:insideBCC(vtxpos, mesh) then
 					-- then place an instance of omesh
 					-- get the transform rotation and scale to the location on the poly
 					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
@@ -130,12 +122,15 @@ print('#tilePlaces', #mesh.tilePlaces)
 			dstv.normal = dstv.normal:normalize()
 			-- scale, rotate, translate the positions
 			-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
+			-- scale
 			dstv.pos.x = dstv.pos.x * place.scale.x
 			dstv.pos.y = dstv.pos.y * place.scale.y
 			dstv.pos.z = dstv.pos.z * place.scale.z
+			-- rotate
 			dstv.pos = place.basis[1] * dstv.pos.x
 					+ place.basis[2] * dstv.pos.y
 					+ place.basis[3] * dstv.pos.z
+			-- translate
 			dstv.pos = dstv.pos + place.pos
 		end
 		local lastVtx = nvtxs.size
