@@ -121,6 +121,27 @@ function Triangle:calcAux(mesh)
 	self.normal, self.area = mesh.triNormal(self:vtxPos(mesh))
 end
 
+-- calculate the barycentric coordinates of point 'p'
+function Triangle:calcBCC(p, mesh)
+	local ti = 3 * (self.index - 1)
+	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	local tp = mesh.triIndexes.v + ti
+	assert(tp[0] >= 0 and tp[0] < mesh.vtxs.size)
+	assert(tp[1] >= 0 and tp[1] < mesh.vtxs.size)
+	assert(tp[2] >= 0 and tp[2] < mesh.vtxs.size)
+
+	local bcc = vec3f()
+	for j=0,2 do
+		local v1 = mesh.vtxs.v[tp[j]].pos
+		local v2 = mesh.vtxs.v[tp[(j+1)%3]].pos
+		local tocom = (v2 - v1):cross(self.normal)
+		-- TODO rescale correctly
+		-- will only work on front-facing triangles
+		bcc.s[j] = (p - v1):dot(tocom) < 0
+	end
+	return bcc
+end
+
 Mesh.Triangle = Triangle
 
 function Mesh:init(o)
@@ -997,32 +1018,19 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 	assert(#self.tris * 3 == self.triIndexes.size)
 	for ti,t in ipairs(self.tris) do
 		local i = 3*(ti-1)
-		local triNormal, area = t.normal, t.area
+		local tnormal, area = t.normal, t.area
 		
-		local a,b,c = t:vtxPos(mesh)
+		local a,b,c = t:vtxPos(self)
 		local planePt = a
 		if area > 1e-7 then
 			-- make sure it's pointing towards the ray origin
-			if triNormal:dot(dir) < 0 then triNormal = -triNormal end
+			if tnormal:dot(dir) < 0 then tnormal = -tnormal end
 
-			local p, s = rayPlaneIntersect(pos, dir, triNormal, planePt)
+			local p, s = rayPlaneIntersect(pos, dir, tnormal, planePt)
 			if s >= 0 and (not bestdist or s < bestdist) then
-
 				-- barycentric coordinates
-				local oob
-				local vs = {a,b,c}
-				for j=0,2 do
-					local v1 = vs[j+1]
-					local v2 = vs[(j+1)%3+1]
-					local tocom = (v2 - v1):cross(triNormal)
-					-- will only work on front-facing triangles
-					if (p - v1):dot(tocom) < 0 then
-						oob = true
-						break
-					end
-				end
-
-				if not oob then
+				local bcc = t:calcBCC(p, self)
+				if bcc.x > 0 and bcc.y > 0 and bcc.z > 0 then
 					besti = i
 					bestdist = s
 				end
