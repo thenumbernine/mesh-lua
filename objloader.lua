@@ -441,7 +441,11 @@ function OBJLoader:save(filename, mesh)
 			vis = nil
 		end
 		for i=group.triFirstIndex,group.triFirstIndex+group.triCount-1 do
-			assert(3*i >= 0 and 3*i < mesh.triIndexBuf.size)
+			if 3*i < 0 or 3*i >= mesh.triIndexBuf.size then
+				error("group "..group.name
+					.." has an oob index range: "..(group.triFirstIndex*3).." size "..(group.triCount*3)
+					.." when the mesh only has a size of "..mesh.triIndexBuf.size)
+			end
 			local t = mesh.triIndexBuf.v + 3*i
 			local normal, area = mesh.triNormal(mesh:triVtxPos(3*i))
 			if area > 0 then

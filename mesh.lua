@@ -70,15 +70,121 @@ local function rayPlaneIntersect(rayPos, rayDir, planeNormal, planePt)
 	return rayPos + rayDir * s, s
 end
 
-function Mesh:init()
-	-- TODO new system:
+function Mesh:init(o)
+	-- TODO replace my lua-ization of cpp-vectors
+	-- ...with a cdef-ization of lua-tables
+	-- because everyone knows the stl api is way too longwinded compared to equiv commands in other languages/apis, and is only that way to accomodate functional programming and templates.
 	self.vtxs = vector'MeshVertex_t'
 	self.triIndexBuf = vector'int32_t'
 
 	-- just holds extra info per tri
 	self.tris = table() -- triangulation of all faces
-
 	self.groups = table()
+end
+
+-- combines 'self' with other meshes.
+-- operates in-place.
+-- returns self 
+function Mesh:combine(...)
+	self.mtlFilenames = table(self.mtlFilenames)
+
+	for oi=1,select('#', ...) do
+		local o = select(oi, ...)
+
+		local firstVtx = self.vtxs.size
+		self.vtxs:resize(self.vtxs.size + o.vtxs.size)
+		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffi.sizeof(o.vtxs.type) * o.vtxs.size)
+		
+		local firstIndex = self.triIndexBuf.size
+		self.triIndexBuf:resize(self.triIndexBuf.size + o.triIndexBuf.size)
+		for i=0,o.triIndexBuf.size-1 do
+			self.triIndexBuf.v[firstIndex + i] = o.triIndexBuf.v[i] + firstVtx
+		end
+		
+		local firstGroup = #self.groups+1
+		self.groups:append(o.groups:mapi(function(g)
+			g = table(g):setmetatable(nil)
+			g.triFirstIndex = g.triFirstIndex + firstIndex/3
+			return g
+		end))
+
+		self.tris:append(o.tris:mapi(function(t)
+			t = table(t):setmetatable(nil)
+			local groupIndex = o.groups:find(t.group)
+			t.group = groupIndex and self.groups[firstGroup + groupIndex - 1] or nil
+			return t
+		end))
+		for i,t in ipairs(self.tris) do
+			t.index = i
+		end
+	
+		self.mtlFilenames:append(o.mtlFilenames)
+	end
+
+	self.mtlFilenames = self.mtlFilenames:mapi(function(v,k,t)
+		return true, v
+	end):map(function(v,k,t)
+		return k, #t+1
+	end)
+	
+	self.edges = nil
+	self.edgeIndexBuf = nil
+	self.loadedGL = nil
+	self.vtxBuf = nil
+
+	return self
+end
+
+function Mesh:clone()
+	return Mesh():combine(self)
+end
+
+-- TODO operators?  * number, * vec3f, etc?
+function Mesh:scale(...)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
+		for j=0,2 do
+			v.s[j] = v.s[j] * select(j+1, ...)
+		end
+	end
+	self:refreshVtxs()
+	return self
+end
+
+-- TODO operators?
+function Mesh:translate(...)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
+		for j=0,2 do
+			v.s[j] = v.s[j] + select(j+1, ...)
+		end
+	end
+	self:refreshVtxs()
+	return self
+end
+
+-- quaternion?  matrix?  angle-axis? detect?
+-- quaternion for now.
+function Mesh:rotate(q)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
+		for j=0,2 do
+			v.s[j] = q:rotate(v.s[j])
+		end
+	end
+	self:refreshVtxs()
+	return self
+end
+
+function Mesh:refreshVtxs()
+	if self.loadedGL then
+		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+	end
+	self.bbox = nil
+	-- TODO invalidate instead of recalculate?
+	--self:findEdges()
+	--self:calcCOMs()
+	return self
 end
 
 function Mesh:prepare()

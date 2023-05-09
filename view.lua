@@ -567,22 +567,12 @@ function App:updateGUI()
 				mesh:recenter(mesh.com3)
 			end
 
-			self.rescale = self.rescale or {1,1,1}
+			self.rescale = self.rescale or table{1,1,1}
 			ig.luatableInputFloat('scale x', self.rescale, 1)
 			ig.luatableInputFloat('scale y', self.rescale, 2)
 			ig.luatableInputFloat('scale z', self.rescale, 3)
 			if ig.igButton'rescale' then
-				for i=0,mesh.vtxs.size-1 do
-					local v = mesh.vtxs.v[i].pos
-					for j=0,2 do
-						v.s[j] = v.s[j] * self.rescale[j+1]
-					end
-				end
-				mesh:calcCOMs()
-				mesh:calcBBox()
-				if mesh.loadedGL then
-					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
-				end
+				mesh:scale(self.rescale:unpack())
 			end
 
 			if ig.igButton'regen normals' then
