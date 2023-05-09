@@ -90,6 +90,14 @@ unwrapuv:
 --]]
 local Triangle = class()
 
+function Triangle:init(args)
+	if args then
+		for k,v in pairs(args) do
+			self[k] = v
+		end
+	end
+end
+
 function Triangle:indexes(mesh)
 	local ti = 3 * (self.index - 1)
 	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
@@ -140,6 +148,10 @@ function Triangle:calcBCC(p, mesh)
 		bcc.s[j] = (p - v1):dot(tocom) < 0
 	end
 	return bcc
+end
+
+function Triangle:calcTetradVolume(mesh)
+	return tetradVolume(self:vtxPos(mesh))
 end
 
 Mesh.Triangle = Triangle
@@ -388,14 +400,33 @@ function Mesh:triVtxPos(i)
 end
 
 function Mesh:removeEmptyTris()
-	for i=self.triIndexes.size-3,0,-3 do
-		local a,b,c = self:triVtxPos(i)
-		local area = triArea(a,b,c)
-		if area < 1e-7 then
-			self:removeTri(i)
+	for i,t in ipairs(self.tris) do
+		if t.area < 1e-7 then
+			self:removeTri(3*(i-1))
 		end
 	end
 end
+
+-- rebuild .tris from .triIndexes
+function Mesh:rebuildTris(from,to)
+	if not from then
+		from = 1
+		to = self.triIndexes.size/3
+	end
+	for i=from,to do
+		if not self.tris[i] then
+			self.tris[i] = Triangle()
+		end
+		self.tris[i].index = i
+		self.tris[i]:calcAux(self)
+	end
+	assert(#self.tris*3 == self.triIndexes.size)
+	for i,t in ipairs(self.tris) do
+		assert(Triangle:isa(t))
+	end
+end
+
+
 
 -- fill the allOverlappingEdges table
 -- TODO instead generate this upon request?
@@ -497,13 +528,12 @@ function Mesh:findEdges(getIndex)
 	end
 	self.edgeIndexBuf:resize(0)
 
+	assert(#self.tris*3 == self.triIndexes.size)
 	for i=1,self.triIndexes.size/3 do
-		self.tris[i] = self.tris[i] or {
-			index = i,
-		}
-	end
-	for i=self.triIndexes.size/3+1,#self.tris do
-		self.tris[i] = nil
+		local t = self.tris[i]
+		if not Triangle:isa(t) then
+			error("got a bad tri at "..i..": "..require 'ext.tolua'(t))
+		end
 	end
 	timer('edges', function()
 		self.edges = {}
@@ -531,7 +561,12 @@ function Mesh:findEdges(getIndex)
 			local a = getIndex(tp[0])
 			local b = getIndex(tp[1])
 			local c = getIndex(tp[2])
-			local t = self.tris[i/3+1]
+			assert(i/3+1 >= 0 and i/3+1 <= #self.tris)
+			local ti = i/3+1
+			local t = self.tris[ti]
+			if not Triangle:isa(t) then
+				error("got a bad tri at "..ti..": "..require 'ext.tolua'(t))
+			end
 			t.edges = table()
 			addEdge(a+1, b+1, t)
 			addEdge(a+1, c+1, t)
@@ -761,11 +796,9 @@ function Mesh:calcCOM2(groupname)
 	local totalArea = 0
 	local i1, i2 = self:getTriIndexesForMaterial(groupname)
 	for i=i1,i2 do
-		local a, b, c = self:triVtxPos(3*i)
-		local com = (a + b + c) * (1/3)
-		local area = triArea(a, b, c)
-		totalCOM = totalCOM + com * area
-		totalArea = totalArea + area
+		local t = self.tris[i+1]
+		totalCOM = totalCOM + t.com * t.area
+		totalArea = totalArea + t.area
 	end
 	if totalArea == 0 then
 		return self:calcCOM1(groupname)
@@ -781,14 +814,14 @@ function Mesh:calcCOM3(groupname)
 	local totalVolume = 0
 	local i1, i2 = self:getTriIndexesForMaterial(groupname)
 	for i=i1,i2 do
-		local a, b, c = self:triVtxPos(3*i)
-
+		local t = self.tris[i+1]
 		-- using [a,b,c,0] as the 4 pts of our tetrahedron
 		-- volume = *<Q,Q> = *(Q∧*Q) where Q = (a-0) ∧ (b-0) ∧ (c-0)
 		-- for 3D, volume = det|a b c|
-		local com = (a + b + c) * (1/4)
+		--local com = (a + b + c) * (1/4)
+		local com = t.com * (3/4)
 
-		local volume = tetradVolume(a,b,c)
+		local volume = t:calcTetradVolume(self)
 		totalCOM = totalCOM + com * volume
 		totalVolume = totalVolume + volume
 	end
@@ -804,8 +837,8 @@ end
 -- calculates volume bounded by triangles
 function Mesh:calcVolume()
 	local totalVolume = 0
-	for i=0,self.triIndexes.size-1,3 do
-		totalVolume = totalVolume + tetradVolume(self:triVtxPos(i))
+	for i,t in ipairs(self.tris) do
+		totalVolume = totalVolume + t:calcTetradVolume(self)
 	end
 	if totalVolume < 0 then totalVolume = -totalVolume end
 	return totalVolume
@@ -837,7 +870,7 @@ function Mesh:breakTriangles()
 	for i,t in ipairs(self.tris) do
 		-- update vertex COMs
 		-- they are only valid now
-		local com = self.triCOM(self:triVtxPos(3*(i-1)))
+		local com = t.com
 		for j=0,2 do
 			nvtxs.v[3*(i-1)+j].com = com
 		end

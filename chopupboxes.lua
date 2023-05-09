@@ -16,9 +16,9 @@ local loader = require 'mesh.objloader'()
 local mesh = loader:load(infn)
 mesh:calcBBox()
 print('bbox', mesh.bbox)
-for i=1,3 do
-	mesh.bbox.min[i] = math.floor(mesh.bbox.min[i])
-	mesh.bbox.max[i] = math.ceil(mesh.bbox.max[i])
+for i=0,2 do
+	mesh.bbox.min.s[i] = math.floor(mesh.bbox.min.s[i])
+	mesh.bbox.max.s[i] = math.ceil(mesh.bbox.max.s[i])
 end
 print('bbox after rounding', mesh.bbox)
 mesh:breakTriangles()
@@ -31,9 +31,10 @@ local mini = vec3i(999,999,999)
 local maxi = -mini
 local tboxes = table()
 for i=0,mesh.triIndexes.size-3,3 do
-	local a,b,c = mesh:triVtxPos(i)
-	local com = mesh.triCOM(a,b,c)
-	local normal, area = mesh.triNormal(a,b,c)
+	local t = mesh.tris[i/3+1]
+	local a,b,c = t:vtxPos(mesh)
+	local com = t.com
+	local normal, area = t.normal, t.area
 
 	-- calc tri bounds
 	local tmini = vec3i(999,999,999)
@@ -205,6 +206,11 @@ for i,tbox in ipairs(tboxes) do
 		end
 	end
 end
+mesh:rebuildTris()
+
+loader:save(outfn, mesh)
+loader:saveMtl(mesh.mtlFilenames[1], mesh)
+
 
 -- now comes a new trick ...
 -- filling in missing faces on a mesh.
@@ -233,10 +239,7 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		for i=0,m.triIndexes.size-1 do
 			assert(m.triIndexes.v[i] >= 0 and m.triIndexes.v[i] < m.vtxs.size)
 		end
-		m.tris = range(m.triIndexes.size/3):mapi(function(i)
-			-- findEdges stores stuff in here ... but idk
-			return i-1
-		end)
+		m:rebuildTris()
 
 		-- [[ ok here, per-side, seal off the mesh.
 
@@ -426,13 +429,13 @@ end
 		for side=0,2 do
 			for pm=0,1 do
 				local vs = range(0,m.vtxs.size-1):filter(function(i)
-					return m.vtxs.v[i].pos.s[side] == m.bbox[({'min','max'})[pm+1]][side+1]
+					return m.vtxs.v[i].pos.s[side] == m.bbox.s[pm].s[side]
 				end)
 
 				-- find what border edges are on this side
 				local es = border:mapi(function(e,i,t)
 					for j=1,2 do
-						if m.vtxs.v[e[j]-1].pos.s[side] ~= m.bbox[({'min','max'})[pm+1]][side+1] then return end
+						if m.vtxs.v[e[j]-1].pos.s[side] ~= m.bbox.s[pm].s[side] then return end
 					end
 					return e, #t+1
 				end)
@@ -456,6 +459,3 @@ end
 	end)
 	break
 end
-
-loader:save(outfn, mesh)
-loader:saveMtl(mesh.mtlFilenames[1], mesh)

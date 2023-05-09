@@ -384,17 +384,20 @@ function OBJLoader:save(filename, mesh)
 		end
 	end
 
+	mesh:rebuildTris()
+
 	-- keep track of all used indexes by tris
 	local usedIndexes = {}
 	for i=0,mesh.triIndexes.size-3,3 do
-		local t = mesh.triIndexes.v + i
-		local a,b,c = mesh:triVtxPos(i)
-		local area = mesh.triArea(a,b,c)
+		local t = mesh.tris[i/3+1]
+		local tp = mesh.triIndexes.v + i
+		local a,b,c = t:vtxPos(mesh)
+		local area = t.area
 		-- make sure this condition matches the tri write cond down below
 		if area > 0 then
-			usedIndexes[t[0]] = true
-			usedIndexes[t[1]] = true
-			usedIndexes[t[2]] = true
+			usedIndexes[tp[0]] = true
+			usedIndexes[tp[1]] = true
+			usedIndexes[tp[2]] = true
 		end
 	end
 
@@ -428,7 +431,7 @@ function OBJLoader:save(filename, mesh)
 			usemtlWritten = true
 			o:write('usemtl ', group.name, '\n')
 		end
-		local lastt
+		local lasttp
 		local lasttnormal
 		local vis
 		local function writeFaceSoFar()
@@ -450,23 +453,24 @@ function OBJLoader:save(filename, mesh)
 					.." has an oob index range: "..(group.triFirstIndex*3).." size "..(group.triCount*3)
 					.." when the mesh only has a size of "..mesh.triIndexes.size)
 			end
-			local t = mesh.triIndexes.v + 3*i
-			local normal, area = mesh.triNormal(mesh:triVtxPos(3*i))
+			local t = mesh.tris[i+1]
+			local tp = mesh.triIndexes.v + 3*i
+			local normal, area = t.normal, t.area
 			if area > 0 then
-				if lastt
-				and t[0] == lastt[0]
-				and t[1] == lastt[2]
+				if lasttp
+				and tp[0] == lasttp[0]
+				and tp[1] == lasttp[2]
 				-- same plane
 				and normal:dot(lasttnormal) > 1 - 1e-3
-				and math.abs((mesh.vtxs.v[t[2]].pos - mesh.vtxs.v[lastt[2]].pos):dot(normal)) < 1e-3
+				and math.abs((mesh.vtxs.v[tp[2]].pos - mesh.vtxs.v[lasttp[2]].pos):dot(normal)) < 1e-3
 				then
 					-- continuation of the last face
-					vis:insert(t[2])
+					vis:insert(tp[2])
 				else
 					writeFaceSoFar()
-					vis = table{t[0], t[1], t[2]}
+					vis = table{tp[0], tp[1], tp[2]}
 				end
-				lastt = t
+				lasttp = tp
 				lasttnormal = normal
 			end
 		end
