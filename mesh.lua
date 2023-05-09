@@ -5,8 +5,11 @@ local math = require 'ext.math'
 local range = require 'ext.range'
 local timer = require 'ext.timer'
 local vector = require 'ffi.cpp.vector'
+local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local box3f = require 'vec-ffi.box3f'
+local matrix_ffi = require 'matrix.ffi'
+matrix_ffi.real = 'float'
 
 ffi.cdef[[
 typedef struct {
@@ -425,6 +428,79 @@ function Mesh:rebuildTris(from,to)
 		assert(Triangle:isa(t))
 	end
 end
+
+-- i know "TNB" is the traditional, cuz thats the order you calculate them in the Frenet frame
+-- but if "normal" is the surface dir (which I'm making the 'Z' axis) so that u and v in 2D align with x and y in 3D ...
+-- then it becomes tangent-(negative)binormal-normal
+function Mesh:clearTriBasis(mesh)
+	for i,t in ipairs(mesh.tris) do
+		-- TODO unify this with .normal
+		t.uvbasisT = nil
+	end
+end
+
+-- generate tangent, binormal, normal
+function Mesh:generateTriBasis()
+	--[[ make sure triangles have uvbasisT
+	vectors are columns ...
+	[T|B]' * (pos[i] - pos0) = tc[i] - tc0
+	[T|B] = 3x2, ' is transpose is 2x3
+	let dpos = pos[i] - pos0, so it is 3x3 with 1rd row 0
+	... same with tc
+	... and we can truncate those 0 rows
+	[T|B] * [T|B]' * dpos = [T|B] * dtc
+	[T|B] * [T|B]' = I 2x2 since T and B are orthogonal ... but not vice versa since [T|B] is 3x2
+	dpos * dtc^-1 = [T|B] * dtc * dtc^-1
+	[T|B] = dpos * dtc^-1
+	--]]
+	for i,t in ipairs(self.tris) do
+		if not t.uvbasisT then
+			local tp = self.triIndexes.v + 3*(i-1)
+			local va = self.vtxs.v[tp[0]]
+			local vb = self.vtxs.v[tp[1]]
+			local vc = self.vtxs.v[tp[2]]
+			local dpos1 = vb.pos - va.pos
+			local dpos2 = vc.pos - va.pos
+			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
+			local dtc2 = vc.texcoord - va.texcoord
+
+			-- dtc is matrix with columns of dtc[i]
+			local dtc = matrix_ffi{
+				{dtc1.x, dtc2.x},
+				{dtc1.y, dtc2.y},
+			}
+			-- now 2x2 invert
+			local dtcInv = dtc:inv()
+			-- get the cols
+			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[2][1])
+			local dtcInv2 = vec2f(dtcInv[1][2], dtcInv[2][2])
+
+			local ex = vec3f(
+				dtcInv1:dot(vec2f(dpos1.x, dpos2.x)),
+				dtcInv1:dot(vec2f(dpos1.y, dpos2.y)),
+				dtcInv1:dot(vec2f(dpos1.z, dpos2.z))
+			):normalize()
+			--[[ don't use ey ... just use N x ex...
+			local ey = vec3f(
+				dtcInv2:dot(vec2f(dpos1.x, dpos2.x)),
+				dtcInv2:dot(vec2f(dpos1.y, dpos2.y)),
+				dtcInv2:dot(vec2f(dpos1.z, dpos2.z))
+			):normalize()
+			--]]
+			--[[ or use the delta as ex ...
+			local ex = dpos1:normalize()
+			--]]
+			local n = dpos1:cross(dpos2):normalize()
+			t.uvbasisT = {
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+--print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
+		end
+	end
+end
+
 
 
 
@@ -1221,6 +1297,27 @@ function Mesh:drawTriNormals()
 		gl.glVertex3fv((t.com + t.normal).s)
 	end
 	gl.glEnd()
+end
+
+function Mesh:drawTriBasis()
+	local gl = require 'gl'
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for i,t in ipairs(self.tris) do
+		if t.uvbasisT then
+			gl.glColor3f(1,0,0)
+			gl.glVertex3f(t.com:unpack())
+			gl.glVertex3f((t.com + t.uvbasisT[1]):unpack())
+			gl.glColor3f(0,1,0)
+			gl.glVertex3f(t.com:unpack())
+			gl.glVertex3f((t.com + t.uvbasisT[2]):unpack())
+			gl.glColor3f(0,0,1)
+			gl.glVertex3f(t.com:unpack())
+			gl.glVertex3f((t.com + t.uvbasisT[3]):unpack())
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
 end
 
 return Mesh

@@ -60,6 +60,10 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
 
+	if cmdline.tribasis then
+		self.mesh:generateTriBasis()
+	end
+
 	-- TODO make this an option with specified threshold.
 	-- calcBBox has to be done first
 	-- after doing this you have to call findEdges and calcCOMs
@@ -119,6 +123,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	self.useDrawPolys = true
 	self.drawVertexNormals = false
 	self.drawTriNormals = false
+	self.drawTriBasis = false
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
@@ -294,6 +299,9 @@ function App:update()
 	end
 	if self.drawTriNormals then
 		mesh:drawTriNormals()
+	end
+	if self.drawTriBasis then
+		mesh:drawTriBasis()
 	end
 	if self.useDrawPolys then
 		self.shader:use()
@@ -589,7 +597,7 @@ function App:updateGUI()
 				mesh:scale(self.scale:unpack())
 			end
 
-			if ig.igButton'regen vertex normals' then
+			if ig.igButton'gen. vertex normals' then
 				mesh:generateVertexNormals()
 			end
 			if ig.igButton'clear vertex normals' then
@@ -604,6 +612,14 @@ function App:updateGUI()
 			end
 			if ig.igButton'break triangles' then
 				mesh:breakTriangles()
+			end
+
+			-- triangles
+			if ig.igButton'gen. tri basis' then
+				mesh:generateTriBasis()
+			end
+			if ig.igButton'clear tri basis' then
+				mesh:clearTriBasis()
 			end
 
 			ig.igEndMenu()
@@ -661,6 +677,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
 			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
+			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
 
 			ig.igEndMenu()

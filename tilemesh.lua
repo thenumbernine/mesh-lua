@@ -15,81 +15,6 @@ local quatf = require 'vec-ffi.quatf'
 local vector = require 'ffi.cpp.vector'
 local matrix_ffi = require 'matrix.ffi'
 
-local function inv2x2(m)
-	local det = m[1][1] * m[2][2] - m[1][2] * m[2][1]
-	return matrix_ffi{
-		{m[2][2], -m[1][2]},
-		{-m[2][1], m[1][1]}} * (1 / det)
-end
-
-local function clearTBN(mesh)
-	for i,t in ipairs(mesh.tris) do
-		t.uvbasisT = nil
-	end
-end
-
--- generate tangent, binormal, normal
-local function generateTBN(mesh)
-	--[[ make sure triangles have uvbasisT
-	vectors are columns ...
-	[T|B]' * (pos[i] - pos0) = tc[i] - tc0
-	[T|B] = 3x2, ' is transpose is 2x3
-	let dpos = pos[i] - pos0, so it is 3x3 with 1rd row 0
-	... same with tc
-	... and we can truncate those 0 rows
-	[T|B] * [T|B]' * dpos = [T|B] * dtc
-	[T|B] * [T|B]' = I 2x2 since T and B are orthogonal ... but not vice versa since [T|B] is 3x2
-	dpos * dtc^-1 = [T|B] * dtc * dtc^-1
-	[T|B] = dpos * dtc^-1
-	--]]
-	for i,t in ipairs(mesh.tris) do
-		if not t.uvbasisT then
-			local tp = mesh.triIndexes.v + 3*(i-1)
-			local va = mesh.vtxs.v[tp[0]]
-			local vb = mesh.vtxs.v[tp[1]]
-			local vc = mesh.vtxs.v[tp[2]]
-			local dpos1 = vb.pos - va.pos
-			local dpos2 = vc.pos - va.pos
-			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
-			local dtc2 = vc.texcoord - va.texcoord
-
-			-- dtc is matrix with columns of dtc[i]
-			local dtc = matrix_ffi{
-				{dtc1:unpack()},
-				{dtc2:unpack()},
-			}:T()
-			-- now 2x2 invert
-			local dtcInv = inv2x2(dtc)
-			-- get the cols
-			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[2][1])
-			local dtcInv2 = vec2f(dtcInv[1][2], dtcInv[2][2])
-
-			local ex = vec3f(
-				dtcInv1:dot(vec2f(dpos1.x, dpos2.x)),
-				dtcInv1:dot(vec2f(dpos1.y, dpos2.y)),
-				dtcInv1:dot(vec2f(dpos1.z, dpos2.z))
-			):normalize()
-			--[[ don't use ey ... just use N x ex...
-			local ey = vec3f(
-				dtcInv2:dot(vec2f(dpos1.x, dpos2.x)),
-				dtcInv2:dot(vec2f(dpos1.y, dpos2.y)),
-				dtcInv2:dot(vec2f(dpos1.z, dpos2.z))
-			):normalize()
-			--]]
-			--[[ or use the delta as ex ...
-			local ex = dpos1:normalize()
-			--]]
-			local n = dpos1:cross(dpos2):normalize()
-			t.uvbasisT = {
-				ex,
-				n:cross(ex):normalize(),
-				n,
-			}
---print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
-		end
-	end
-end
-
 local function tileMesh(mesh, omesh)
 
 	local scale = vec3f(.1, .05, .1) * .9
@@ -108,11 +33,11 @@ local function tileMesh(mesh, omesh)
 		{.1, .1},
 	}:T()
 --]]
-	local uvxformInv = inv2x2(uvxform)
+	local uvxformInv = uvxform:inv()
 print('placement', uvxform)
 print('placementInv', uvxformInv)
 
-	generateTBN(mesh)
+	mesh:generateTriBasis()
 
 	-- for each tri
 	mesh.tilePlaces = table()
