@@ -30,7 +30,7 @@ local trisForBox = {}
 local mini = vec3i(999,999,999)
 local maxi = -mini
 local tboxes = table()
-for i=0,mesh.triIndexBuf.size-3,3 do
+for i=0,mesh.triIndexes.size-3,3 do
 	local a,b,c = mesh:triVtxPos(i)
 	local com = mesh.triCOM(a,b,c)
 	local normal, area = mesh.triNormal(a,b,c)
@@ -40,7 +40,7 @@ for i=0,mesh.triIndexBuf.size-3,3 do
 	local tmaxi = -mini
 
 	for j=0,2 do
-		local v = mesh.vtxs.v[mesh.triIndexBuf.v[i+j]].pos
+		local v = mesh.vtxs.v[mesh.triIndexes.v[i+j]].pos
 		v = v * (1 - comEps) + com * comEps - normal * normalStepEps
 		local iv = vec3i()
 		for k=0,2 do
@@ -175,13 +175,13 @@ for _,b in ipairs(tboxes) do
 end
 print('# clusters left', #tboxes)
 print('# binned tris', numBinnedTris)
-print('# orig tris', mesh.triIndexBuf.size/3)
+print('# orig tris', mesh.triIndexes.size/3)
 print('ibounds', mini, maxi)
 
 -- now convert tboxes tris into unique materials
 -- and export
 mesh.groups = table()
-mesh.triIndexBuf:resize(0)
+mesh.triIndexes:resize(0)
 local origMtlFn = mesh.mtlFilenames[1]
 mesh.mtlFilenames = {(outfn:gsub('%.obj$', '.mtl'))}
 for i,tbox in ipairs(tboxes) do
@@ -190,7 +190,7 @@ for i,tbox in ipairs(tboxes) do
 	local groupname = 'm'..i
 	mesh.groups:insert{
 		name = groupname,
-		triFirstIndex = mesh.triIndexBuf.size / 3,
+		triFirstIndex = mesh.triIndexes.size / 3,
 		triCount = #tris,
 		Kd = vec4f(
 			tonumber(x - mini.x) / tonumber(maxi.x - mini.x),
@@ -200,7 +200,7 @@ for i,tbox in ipairs(tboxes) do
 	}
 	for _,j in ipairs(tris) do
 		for k=0,2 do
-			mesh.triIndexBuf:push_back(j+k)
+			mesh.triIndexes:push_back(j+k)
 			-- since our tris are already broken up, we can manipulate the vtx without it messing up any other tris
 		end
 	end
@@ -223,17 +223,17 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		local tris = table.keys(trisForBox[x][y][z]):sort()
 		for _,i in ipairs(tris) do
 			for j=0,2 do
-				m.triIndexBuf:push_back(m.vtxs.size)
+				m.triIndexes:push_back(m.vtxs.size)
 				m.vtxs:push_back(mesh.vtxs.v[i+j])
 				local v = m.vtxs:back()
 				v.pos = v.pos - vec3f(x,y,z)
 			end
 		end
-		assert(m.triIndexBuf.size == m.vtxs.size)
-		for i=0,m.triIndexBuf.size-1 do
-			assert(m.triIndexBuf.v[i] >= 0 and m.triIndexBuf.v[i] < m.vtxs.size)
+		assert(m.triIndexes.size == m.vtxs.size)
+		for i=0,m.triIndexes.size-1 do
+			assert(m.triIndexes.v[i] >= 0 and m.triIndexes.v[i] < m.vtxs.size)
 		end
-		m.tris = range(m.triIndexBuf.size/3):mapi(function(i)
+		m.tris = range(m.triIndexes.size/3):mapi(function(i)
 			-- findEdges stores stuff in here ... but idk
 			return i-1
 		end)
@@ -246,13 +246,13 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		--m:mergeMatchingVertexes()
 
 		--[==[ this isn't help anthing
-		assert(#m.tris*3 == m.triIndexBuf.size)
+		assert(#m.tris*3 == m.triIndexes.size)
 		local prec = 1e-5
 		local function makekey(i)
-			return vec3i(range(0,2):mapi(function(k) return m.triIndexBuf.v[i+k] end):sort():unpack())
+			return vec3i(range(0,2):mapi(function(k) return m.triIndexes.v[i+k] end):sort():unpack())
 			--[=[
 			return range(0,2):mapi(function(k)
-				return m.vtxs.v[m.triIndexBuf.v[i+k]].pos
+				return m.vtxs.v[m.triIndexes.v[i+k]].pos
 			end):sort(function(a,b)
 				if a.x == b.x then
 					if a.y == b.y then
@@ -269,7 +269,7 @@ for tboxIndex,tbox in ipairs(tboxes) do
 			end):concat' '
 			--]=]
 		end
-		for i=m.triIndexBuf.size-3,3,-3 do
+		for i=m.triIndexes.size-3,3,-3 do
 			local ki = makekey(i)
 print(ki)
 			for j=i-3,0,-3 do
@@ -406,11 +406,11 @@ if loop[1].e.tris[1][1].v == loop[1].e[1] then
 end
 				for j=2,#loop-1 do
 					local ia = getIndexForLoopChain(loop[1])
-					m.triIndexBuf:push_back(ia)
+					m.triIndexes:push_back(ia)
 					local ib = getIndexForLoopChain(loop[j])
-					m.triIndexBuf:push_back(ib)
+					m.triIndexes:push_back(ib)
 					local ic = getIndexForLoopChain(loop[j+1])
-					m.triIndexBuf:push_back(ic)
+					m.triIndexes:push_back(ic)
 				end
 				--]]
 				assert(#loop >= 3)
@@ -448,7 +448,7 @@ end
 			{
 				name = 'm',
 				triFirstIndex = 0,
-				triCount = m.triIndexBuf.size/3,
+				triCount = m.triIndexes.size/3,
 			},
 		}
 		--]]

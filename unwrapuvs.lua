@@ -306,7 +306,7 @@ tsrc.v1*-------*
 			--	error("how can we fold a line when the src tri doesn't have uv coords for it?")
 			--end
 			t.uvorigin2D = vec2f(tsrc.uvs[isrc]:unpack())			-- copy matching uv from edge neighbor
-			local tsrcp = mesh.triIndexBuf.v + 3 * (tsrc.index - 1)
+			local tsrcp = mesh.triIndexes.v + 3 * (tsrc.index - 1)
 			t.uvorigin3D = vec3f(mesh.vtxs.v[tsrcp[isrc-1]].pos:unpack())	-- copy matching 3D position
 --print('uv2D = '..t.uvorigin2D)
 --print('uv3D = '..t.uvorigin3D)
@@ -560,7 +560,7 @@ tsrc.v1*-------*
 		local todo = table()
 		for i=#notDoneYet,1,-1 do
 			local t = notDoneYet[i]
-			local tp = mesh.triIndexBuf.v + 3 * (t.index - 1)
+			local tp = mesh.triIndexes.v + 3 * (t.index - 1)
 			local tcom = mesh.triCOM(mesh:triVtxPos(3*(i-1)))
 			for j=1,3 do
 				local a = mesh.vtxs.v[tp[j-1]].pos
@@ -784,9 +784,9 @@ function drawUVUnwrapEdges(mesh)
 			gl.glColor3f(.5,.5,0)
 		end
 		local t1 = e.tris[1]
-		local tp1 = mesh.triIndexBuf.v + 3 * (t1.index - 1)
+		local tp1 = mesh.triIndexes.v + 3 * (t1.index - 1)
 		local t2 = e.tris[2]
-		local tp2 = mesh.triIndexBuf.v + 3 * (t2.index - 1)
+		local tp2 = mesh.triIndexes.v + 3 * (t2.index - 1)
 		assert((t1 == ta and t2 == tb) or (t1 == tb and t2 == ta))
 		local vi11 = tp1[e.triVtxIndexes[1]-1]
 		local vi12 = tp1[e.triVtxIndexes[1]%3]

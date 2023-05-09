@@ -56,7 +56,7 @@ timer('loading', function()
 		-- make default
 		group = {
 			name = '',
-			triFirstIndex = #mesh.tris,
+			triFirstIndex = #mesh.tris,	-- 0-based index
 			triCount = 0,
 		}
 		mesh.groups:insert(group)
@@ -91,14 +91,14 @@ timer('loading', function()
 			for i=2,#words-1 do
 				-- store a copy of the vertex indices per triangle index
 				-- v vt vn are 1-based
-				local t = {
-					table(vis[1]):setmetatable(nil),
-					table(vis[i]):setmetatable(nil),
-					table(vis[i+1]):setmetatable(nil),
-				}
+				local t = Mesh.Triangle()
+				-- temporary store vertex indexes
+				t[1] = table(vis[1]):setmetatable(nil)
+				t[2] = table(vis[i]):setmetatable(nil)
+				t[3] = table(vis[i+1]):setmetatable(nil)
 				mesh.tris:insert(t)
 				-- keys:
-				t.index = #mesh.tris
+				t.index = #mesh.tris	-- 1-based index
 				t.group = assert(group)
 				group.triCount = #mesh.tris - group.triFirstIndex
 			end
@@ -133,10 +133,10 @@ end)
 		print'allocating vertex and index buffers...'
 	end
 	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
-	local triIndexBuf = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
+	local triIndexes = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
-	triIndexBuf:resize(0)
+	triIndexes:resize(0)
 	if self.verbose then
 		print'calculating vertex and index buffers...'
 	end
@@ -175,24 +175,28 @@ end)
 					dst.normal:set(0,0,0)
 				end
 			end
-			triIndexBuf:emplace_back()[0] = i
+			triIndexes:emplace_back()[0] = i
 
 			-- TODO from here on out
 			-- don't use .v .vt .vn in tris[] anymore
 			-- since only in .obj are they all separately indexed
-			-- instead just use .triIndexBuf
+			-- instead just use .triIndexes
 			--t[j] = nil
 			t[j] = nil
 		end
 	end
 	if self.verbose then
 		print('#unique vertexes', vtxs.size)
-		print('#unique triangles', triIndexBuf.size)
+		print('#unique triangles', triIndexes.size)
 	end
 	--]=]
 
 	mesh.vtxs = vtxs
-	mesh.triIndexBuf = triIndexBuf
+	mesh.triIndexes = triIndexes
+
+	for _,t in ipairs(mesh.tris) do
+		t:calcAux(mesh)
+	end
 
 	if self.verbose then
 		print'done'
@@ -382,8 +386,8 @@ function OBJLoader:save(filename, mesh)
 
 	-- keep track of all used indexes by tris
 	local usedIndexes = {}
-	for i=0,mesh.triIndexBuf.size-3,3 do
-		local t = mesh.triIndexBuf.v + i
+	for i=0,mesh.triIndexes.size-3,3 do
+		local t = mesh.triIndexes.v + i
 		local a,b,c = mesh:triVtxPos(i)
 		local area = mesh.triArea(a,b,c)
 		-- make sure this condition matches the tri write cond down below
@@ -415,7 +419,7 @@ function OBJLoader:save(filename, mesh)
 	local indexToUniqueVt = outputUnique('vt', 'texcoord', false, true, false)
 	local indexToUniqueVn = outputUnique('vn', 'normal', false, false, true)
 
-	local numtriindexes = 0
+	local numTriIndexes = 0
 	for i,group in ipairs(mesh.groups) do
 		local usemtlWritten = false
 		local function writeMtlName()
@@ -437,16 +441,16 @@ function OBJLoader:save(filename, mesh)
 					indexToUniqueVn[vi],
 				}:concat'/'
 			end):concat' ', '\n')
-			numtriindexes = numtriindexes + #vis
+			numTriIndexes = numTriIndexes + #vis
 			vis = nil
 		end
 		for i=group.triFirstIndex,group.triFirstIndex+group.triCount-1 do
-			if 3*i < 0 or 3*i >= mesh.triIndexBuf.size then
+			if 3*i < 0 or 3*i >= mesh.triIndexes.size then
 				error("group "..group.name
 					.." has an oob index range: "..(group.triFirstIndex*3).." size "..(group.triCount*3)
-					.." when the mesh only has a size of "..mesh.triIndexBuf.size)
+					.." when the mesh only has a size of "..mesh.triIndexes.size)
 			end
-			local t = mesh.triIndexBuf.v + 3*i
+			local t = mesh.triIndexes.v + 3*i
 			local normal, area = mesh.triNormal(mesh:triVtxPos(3*i))
 			if area > 0 then
 				if lastt
@@ -469,7 +473,7 @@ function OBJLoader:save(filename, mesh)
 		writeFaceSoFar()
 	end
 	if self.verbose then
-		print('tri indexes reduced from '..mesh.triIndexBuf.size..' to '..numtriindexes)
+		print('tri indexes reduced from '..mesh.triIndexes.size..' to '..numTriIndexes)
 	end
 	o:close()
 end

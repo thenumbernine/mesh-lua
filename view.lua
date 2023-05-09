@@ -55,7 +55,7 @@ function App:initGL(...)
 
 	self.mesh = OBJLoader():load(fn)
 print('#unique vertexes', self.mesh.vtxs.size)
-print('#unique triangles', self.mesh.triIndexBuf.size/3)
+print('#unique triangles', self.mesh.triIndexes.size/3)
 
 	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
@@ -479,9 +479,9 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 					0
 				)
 				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
-				mesh.vtxs.v[i] = mesh.vtxs.v[i] + vtxDelta
+				mesh.vtxs.v[i].pos = mesh.vtxs.v[i].pos + vtxDelta
 			else
-				mesh.vtxs.v[i] = mesh.vtxs.v[i] + self.view.angle:rotate(vec3d(0, 0, dy))
+				mesh.vtxs.v[i].pos = mesh.vtxs.v[i].pos + self.view.angle:rotate(vec3d(0, 0, dy))
 			end
 			-- update in the cpu buffer if it's been generated
 			if mesh.loadedGL then
@@ -560,6 +560,14 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Mesh' then
+			self.translate = self.translate or table{1,1,1}
+			ig.luatableInputFloat('translate x', self.translate, 1)
+			ig.luatableInputFloat('translate y', self.translate, 2)
+			ig.luatableInputFloat('translate z', self.translate, 3)
+			if ig.igButton'translate' then
+				mesh:translate(self.translate:unpack())
+			end
+
 			if ig.igButton'recenter com0' then
 				mesh:recenter(mesh.com0)
 			end
@@ -573,12 +581,12 @@ function App:updateGUI()
 				mesh:recenter(mesh.com3)
 			end
 
-			self.rescale = self.rescale or table{1,1,1}
-			ig.luatableInputFloat('scale x', self.rescale, 1)
-			ig.luatableInputFloat('scale y', self.rescale, 2)
-			ig.luatableInputFloat('scale z', self.rescale, 3)
-			if ig.igButton'rescale' then
-				mesh:scale(self.rescale:unpack())
+			self.scale = self.scale or table{1,1,1}
+			ig.luatableInputFloat('scale x', self.scale, 1)
+			ig.luatableInputFloat('scale y', self.scale, 2)
+			ig.luatableInputFloat('scale z', self.scale, 3)
+			if ig.igButton'scale' then
+				mesh:scale(self.scale:unpack())
 			end
 
 			if ig.igButton'regen vertex normals' then

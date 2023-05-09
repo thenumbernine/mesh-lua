@@ -22,9 +22,7 @@ local function inv2x2(m)
 		{-m[2][1], m[1][1]}} * (1 / det)
 end
 
-
--- generate 
-local function clearTNB(mesh)
+local function clearTBN(mesh)
 	for i,t in ipairs(mesh.tris) do
 		t.uvbasisT = nil
 	end
@@ -46,7 +44,7 @@ local function generateTBN(mesh)
 	--]]
 	for i,t in ipairs(mesh.tris) do
 		if not t.uvbasisT then
-			local tp = mesh.triIndexBuf.v + 3*(i-1)
+			local tp = mesh.triIndexes.v + 3*(i-1)
 			local va = mesh.vtxs.v[tp[0]]
 			local vb = mesh.vtxs.v[tp[1]]
 			local vc = mesh.vtxs.v[tp[2]]
@@ -117,10 +115,10 @@ print('placementInv', uvxformInv)
 	generateTBN(mesh)
 
 	-- for each tri
-	self.tilePlaces = table()
-	for ti=0,mesh.triIndexBuf.size-3,3 do
+	mesh.tilePlaces = table()
+	for ti=0,mesh.triIndexes.size-3,3 do
 		local t = assert(mesh.tris[ti/3+1])
-		local tp = mesh.triIndexBuf.v + ti
+		local tp = mesh.triIndexes.v + ti
 		local tvtxs = range(0,2):mapi(function(i)
 			return mesh.vtxs.v[tp[i]]
 		end)
@@ -172,7 +170,7 @@ print('placementInv', uvxformInv)
 					-- then place an instance of omesh
 					-- get the transform rotation and scale to the location on the poly
 					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
-					self.tilePlaces:insert{
+					mesh.tilePlaces:insert{
 						-- scale, rotate, offset ...
 						pos = vtxpos,	-- not so necessary
 						uvbasisT = t.uvbasisT,
@@ -184,12 +182,12 @@ print('placementInv', uvxformInv)
 			end
 		end
 	end
-print('#tilePlaces', #self.tilePlaces)
+print('#tilePlaces', #mesh.tilePlaces)
 	
 	-- place instances
 	local nvtxs = vector'MeshVertex_t'
 	local indexesPerGroup = table()
-	for _,place in ipairs(self.tilePlaces) do
+	for _,place in ipairs(mesh.tilePlaces) do
 		local firstVtx = nvtxs.size
 		for i=0,omesh.vtxs.size-1 do
 			local srcv = omesh.vtxs.v[i]
@@ -218,7 +216,7 @@ print('#tilePlaces', #self.tilePlaces)
 		for _,g in ipairs(omesh.groups) do
 			indexesPerGroup[g.name] = indexesPerGroup[g.name] or table()
 			for i=3*g.triFirstIndex,3*(g.triFirstIndex+g.triCount)-1 do
-				local srci = omesh.triIndexBuf.v[i]
+				local srci = omesh.triIndexes.v[i]
 				assert(srci >= 0 and srci < omesh.vtxs.size)
 				local dsti = srci + firstVtx
 				assert(dsti >= firstVtx and dsti < lastVtx)
@@ -236,17 +234,17 @@ print('#tilePlaces', #self.tilePlaces)
 		g.triCount = ntris.size - g.triFirstIndex
 	end
 
-	assert(nvtxs.size == omesh.vtxs.size * #self.tilePlaces)
-	assert(ntris.size == omesh.triIndexBuf.size * #self.tilePlaces)
+	assert(nvtxs.size == omesh.vtxs.size * #mesh.tilePlaces)
+	assert(ntris.size == omesh.triIndexes.size * #mesh.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
 
 	-- replace
 	mesh.vtxs = nvtxs
-	mesh.triIndexBuf = ntris
+	mesh.triIndexes = ntris
 
 	-- reset
-	mesh.tris = range(mesh.triIndexBuf.size/3):mapi(function(i) return {index=i+1} end)
+	mesh.tris = range(mesh.triIndexes.size/3):mapi(function(i) return {index=i+1} end)
 
 	-- invalidate
 	mesh.edges = nil
@@ -264,7 +262,7 @@ print('ntris.size', ntris.size)
 	mesh.mtlFilenames = omesh.mtlFilenames
 	local g = mesh.groups[1]
 	g.triFirstIndex = 0
-	g.triCount = mesh.triIndexBuf.size/3
+	g.triCount = mesh.triIndexes.size/3
 
 	--[[ adds another 40 seconds for the cube->bricks simple example
 	timer('merging after shellmapping', function()

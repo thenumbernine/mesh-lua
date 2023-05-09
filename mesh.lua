@@ -31,13 +31,15 @@ local function triArea(a,b,c)
 end
 Mesh.triArea = triArea
 
+-- TODO the more I use this (and build off it ... giving triangle TNB frames ...)
+-- the more I think I should re-introduce storing the triangle normal
 local function triNormal(a,b,c)
 	local ab = b - a
 	local bc = c - b
 	local n = ab:cross(bc)
 	local len = n:norm()
 	if len < 1e-7 or not math.isfinite(len) then
-		return vec3f(0,0,0), len
+		return vec3f(0,0,0), len * .5
 	else
 		return n / len, len * .5	-- returns the unit normal, triangle area
 	end
@@ -70,15 +72,68 @@ local function rayPlaneIntersect(rayPos, rayDir, planeNormal, planePt)
 	return rayPos + rayDir * s, s
 end
 
+--[[ holds extra info per tri:
+.index = what it's 1-based index is
+.group = what its group is (unnecessary? finding via groups ranges is probably faster than finding a tri in the .tris table)
+.com = triangle center-of-mass (average of 3 vtxs)
+.area
+.normal = tri surface normal (surface z-axis)
+.uvbasisT = [3] of tangent, bitangent (negative of binormal), normal
+
+findEdges:
+.edges
+
+unwrapuv:
+.uvs = [3] vec2f's of the uv's of the triangle (before breaking and writing)
+.uvorigin2D
+.uvorigin3D
+--]]
+local Triangle = class()
+
+function Triangle:indexes(mesh)
+	local ti = 3 * (self.index - 1)
+	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	local tp = mesh.triIndexes.v + ti
+	local i,j,k = tp[0], tp[1], tp[2]
+	assert(i >= 0 and i < mesh.vtxs.size)
+	assert(j >= 0 and j < mesh.vtxs.size)
+	assert(k >= 0 and k < mesh.vtxs.size)
+	return i,j,k
+end
+
+function Triangle:vtxs(mesh)
+	local i,j,k = self:indexes(mesh)
+	return mesh.vtxs.v[i], mesh.vtxs.v[j], mesh.vtxs.v[k]
+end
+
+function Triangle:vtxPos(mesh)
+	local va,vb,vc = self:vtxs(mesh)
+	return va.pos, vb.pos, vc.pos
+end
+
+function Triangle:calcCOM(mesh)
+	local a, b, c = self:vtxPos(mesh)
+	self.com = (a + b + c) * (1 / 3)
+end
+
+function Triangle:calcAux(mesh)
+	self:calcCOM(mesh)
+	self.normal, self.area = mesh.triNormal(self:vtxPos(mesh))
+end
+
+Mesh.Triangle = Triangle
+
 function Mesh:init(o)
 	-- TODO replace my lua-ization of cpp-vectors
 	-- ...with a cdef-ization of lua-tables
 	-- because everyone knows the stl api is way too longwinded compared to equiv commands in other languages/apis, and is only that way to accomodate functional programming and templates.
 	self.vtxs = vector'MeshVertex_t'
-	self.triIndexBuf = vector'int32_t'
+	self.triIndexes = vector'int32_t'
 
-	-- just holds extra info per tri
-	self.tris = table() -- triangulation of all faces
+	-- array of Triangle's
+	self.tris = table()
+	
+	-- holds 0-based ranges of tris
 	self.groups = table()
 end
 
@@ -95,10 +150,10 @@ function Mesh:combine(...)
 		self.vtxs:resize(self.vtxs.size + o.vtxs.size)
 		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffi.sizeof(o.vtxs.type) * o.vtxs.size)
 		
-		local firstIndex = self.triIndexBuf.size
-		self.triIndexBuf:resize(self.triIndexBuf.size + o.triIndexBuf.size)
-		for i=0,o.triIndexBuf.size-1 do
-			self.triIndexBuf.v[firstIndex + i] = o.triIndexBuf.v[i] + firstVtx
+		local firstIndex = self.triIndexes.size
+		self.triIndexes:resize(self.triIndexes.size + o.triIndexes.size)
+		for i=0,o.triIndexes.size-1 do
+			self.triIndexes.v[firstIndex + i] = o.triIndexes.v[i] + firstVtx
 		end
 		
 		local firstGroup = #self.groups+1
@@ -267,7 +322,7 @@ function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
 end
 
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
-	assert(#self.tris*3 == self.triIndexBuf.size)
+	assert(#self.tris*3 == self.triIndexes.size)
 	if not self.bbox then self:calcBBox() end
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
@@ -275,7 +330,7 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
 print('vtxMergeThreshold', vtxMergeThreshold)
-print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
+print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
 
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
 		vtxMergeThreshold,
@@ -289,8 +344,8 @@ print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.si
 			self:mergeVertex(i,j)
 		end
 	end
-print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexBuf.size)
-	assert(#self.tris*3 == self.triIndexBuf.size)
+print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
+	assert(#self.tris*3 == self.triIndexes.size)
 
 	-- invalidate
 	self.loadedGL = false
@@ -305,14 +360,14 @@ end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxPos(i)
-	local t = self.triIndexBuf.v + i
+	local t = self.triIndexes.v + i
 	return self.vtxs.v[t[0]].pos,
 			self.vtxs.v[t[1]].pos,
 			self.vtxs.v[t[2]].pos
 end
 
 function Mesh:removeEmptyTris()
-	for i=self.triIndexBuf.size-3,0,-3 do
+	for i=self.triIndexes.size-3,0,-3 do
 		local a,b,c = self:triVtxPos(i)
 		local area = triArea(a,b,c)
 		if area < 1e-7 then
@@ -338,7 +393,7 @@ function Mesh:calcAllOverlappingEdges()
 --	print('n = '..t.normal)
 --end
 	for i1=#self.tris,2,-1 do
-		local tp1 = self.triIndexBuf.v + 3 * (i1 - 1)
+		local tp1 = self.triIndexes.v + 3 * (i1 - 1)
 		for j1=1,3 do
 			-- t1's j1'th edge
 			local v11 = self.vtxs.v[tp1[j1-1]].pos
@@ -350,7 +405,7 @@ function Mesh:calcAllOverlappingEdges()
 				n1 = n1 / math.sqrt(n1NormSq)
 				for i2=i1-1,1,-1 do
 					local t2 = self.tris[i2]
-					local tp2 = self.triIndexBuf.v + 3 * (i2 - 1)
+					local tp2 = self.triIndexes.v + 3 * (i2 - 1)
 					for j2=1,3 do
 						local v21 = self.vtxs.v[tp2[j2-1]].pos
 						local v22 = self.vtxs.v[tp2[j2%3]].pos
@@ -421,12 +476,12 @@ function Mesh:findEdges(getIndex)
 	end
 	self.edgeIndexBuf:resize(0)
 
-	for i=1,self.triIndexBuf.size/3 do
+	for i=1,self.triIndexes.size/3 do
 		self.tris[i] = self.tris[i] or {
 			index = i,
 		}
 	end
-	for i=self.triIndexBuf.size/3+1,#self.tris do
+	for i=self.triIndexes.size/3+1,#self.tris do
 		self.tris[i] = nil
 	end
 	timer('edges', function()
@@ -450,8 +505,8 @@ function Mesh:findEdges(getIndex)
 			e.tris:insert(t)
 			t.edges:insert(e)
 		end
-		for i=0,self.triIndexBuf.size-1,3 do
-			local tp = self.triIndexBuf.v + i
+		for i=0,self.triIndexes.size-1,3 do
+			local tp = self.triIndexes.v + i
 			local a = getIndex(tp[0])
 			local b = getIndex(tp[1])
 			local c = getIndex(tp[2])
@@ -504,8 +559,8 @@ function Mesh:replaceVertex(from,to)
 	assert(from >= 0 and from <= self.vtxs.size)
 	assert(to >= 0 and to <= self.vtxs.size)
 	-- replace in .tris
-	for j=self.triIndexBuf.size-3,0,-3 do
-		local t = self.triIndexBuf.v + j
+	for j=self.triIndexes.size-3,0,-3 do
+		local t = self.triIndexes.v + j
 		for i=0,2 do
 			if t[i] == from then t[i] = to end
 		end
@@ -513,8 +568,8 @@ function Mesh:replaceVertex(from,to)
 end
 
 function Mesh:removeDegenerateTriangles()
-	for i=self.triIndexBuf.size-3,0,-3 do
-		local t = self.triIndexBuf.v + i
+	for i=self.triIndexes.size-3,0,-3 do
+		local t = self.triIndexes.v + i
 		for j=2,1,-1 do
 			if t[j] == t[j-1] then
 --print('removing degenerate tri '..i..' with duplicate vertices')
@@ -527,8 +582,8 @@ end
 
 -- index is 0-based in increments of 3
 function Mesh:removeTri(i)
-	assert(#self.tris*3 == self.triIndexBuf.size)
-	self.triIndexBuf:erase(self.triIndexBuf.v + i, self.triIndexBuf.v + i + 3)
+	assert(#self.tris*3 == self.triIndexes.size)
+	self.triIndexes:erase(self.triIndexes.v + i, self.triIndexes.v + i + 3)
 	for _,g in ipairs(self.groups) do
 		if i < g.triFirstIndex then
 			g.triFirstIndex = g.triFirstIndex - 1
@@ -552,8 +607,8 @@ function Mesh:removeVertex(vi)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
 	-- if you just straight up remove a vertex then the tris and faces might go out of sync
-	for j=self.triIndexBuf.size-3,0,-3 do
-		local t = self.triIndexBuf.v + j
+	for j=self.triIndexes.size-3,0,-3 do
+		local t = self.triIndexes.v + j
 		for i=0,2 do
 			if t[i] == vi then
 				--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
@@ -586,8 +641,8 @@ end
 function Mesh:removeUnusedVtxs()
 	local usedVs = {}
 	timer('finding used vertexes', function()
-		for i=0,self.triIndexBuf.size-1 do
-			usedVs[self.triIndexBuf.v[i]] = true
+		for i=0,self.triIndexes.size-1 do
+			usedVs[self.triIndexes.v[i]] = true
 		end
 	end)
 	timer('removing unused vertexes', function()
@@ -619,7 +674,7 @@ function Mesh:getTriIndexesForMaterial(groupname)
 			return 0, -1
 		end
 	else
-		return 0, self.triIndexBuf.size/3-1
+		return 0, self.triIndexes.size/3-1
 	end
 end
 
@@ -728,7 +783,7 @@ end
 -- calculates volume bounded by triangles
 function Mesh:calcVolume()
 	local totalVolume = 0
-	for i=0,self.triIndexBuf.size-1,3 do
+	for i=0,self.triIndexes.size-1,3 do
 		totalVolume = totalVolume + tetradVolume(self:triVtxPos(i))
 	end
 	if totalVolume < 0 then totalVolume = -totalVolume end
@@ -742,16 +797,16 @@ function Mesh:clearVertexNormals()
 end
 
 function Mesh:breakTriangles()
-	print('before breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
-	local nvtxs = vector('MeshVertex_t', self.triIndexBuf.size)
-	local ntris = vector('uint32_t', self.triIndexBuf.size)
-	for i=0,self.triIndexBuf.size-1 do
-		nvtxs.v[i] = self.vtxs.v[self.triIndexBuf.v[i]]
+	print('before breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
+	local nvtxs = vector('MeshVertex_t', self.triIndexes.size)
+	local ntris = vector('uint32_t', self.triIndexes.size)
+	for i=0,self.triIndexes.size-1 do
+		nvtxs.v[i] = self.vtxs.v[self.triIndexes.v[i]]
 		ntris.v[i] = i
 	end
 	self.vtxs = nvtxs
-	self.triIndexBuf = ntris
-	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexBuf.size)
+	self.triIndexes = ntris
+	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
 
 	-- TODO update the mesh ranges as well
 	-- assert they do not overlap before
@@ -783,7 +838,7 @@ function Mesh:breakTriangles()
 	self:calcCOMs()
 end
 
--- regenerate the vertex normals based on the face normals, weighted average by face area
+-- regenerate the vertex normals based on the face normals, weighted average by angle (tesselation-independent and curvature-driven) 
 function Mesh:generateVertexNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
@@ -792,10 +847,10 @@ function Mesh:generateVertexNormals()
 		self.vtxs.v[i].normal:set(0,0,0)
 	end
 --print('accumulating triangle normals into vertex normals')
-	for i=0,self.triIndexBuf.size-1,3 do
-		local ia = self.triIndexBuf.v[i]
-		local ib = self.triIndexBuf.v[i+1]
-		local ic = self.triIndexBuf.v[i+2]
+	for i=0,self.triIndexes.size-1,3 do
+		local ia = self.triIndexes.v[i]
+		local ib = self.triIndexes.v[i+1]
+		local ic = self.triIndexes.v[i+2]
 		-- not sure what i'm doing with these ...
 		-- cache or regen?
 		local va = self.vtxs.v[ia]
@@ -909,6 +964,74 @@ function Mesh:loadGL(shader)
 	end
 end
 
+-- 'fwd' is used for depth calculation, 'dir' is the ray direction
+function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local bestdot, besti, bestdepth
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].pos
+		local delta = v - pos
+		local depth = delta:dot(fwd)
+		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
+		local dot = dir:unit():dot(delta:unit())
+		if dot > cosEpsAngle then
+			if not bestdepth
+			or depth < bestdepth
+			then
+				besti = i
+				bestdepth = depth
+				bestdot = dot
+			end
+		end
+	end
+	return besti, bestdepth
+end
+
+function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local besti, bestdist
+	assert(#self.tris * 3 == self.triIndexes.size)
+	for ti,t in ipairs(self.tris) do
+		local i = 3*(ti-1)
+		local triNormal, area = t.normal, t.area
+		
+		local a,b,c = t:vtxPos(mesh)
+		local planePt = a
+		if area > 1e-7 then
+			-- make sure it's pointing towards the ray origin
+			if triNormal:dot(dir) < 0 then triNormal = -triNormal end
+
+			local p, s = rayPlaneIntersect(pos, dir, triNormal, planePt)
+			if s >= 0 and (not bestdist or s < bestdist) then
+
+				-- barycentric coordinates
+				local oob
+				local vs = {a,b,c}
+				for j=0,2 do
+					local v1 = vs[j+1]
+					local v2 = vs[(j+1)%3+1]
+					local tocom = (v2 - v1):cross(triNormal)
+					-- will only work on front-facing triangles
+					if (p - v1):dot(tocom) < 0 then
+						oob = true
+						break
+					end
+				end
+
+				if not oob then
+					besti = i
+					bestdist = s
+				end
+			end
+		end
+	end
+	return besti, bestdist
+end
+
 function Mesh:draw(args)
 	local gl = require 'gl'
 
@@ -985,7 +1108,7 @@ function Mesh:draw(args)
 		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 		if g.triCount > 0 then
 			self.vao:use()
-			gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexBuf.v + g.triFirstIndex * 3)
+			gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
 			self.vao:useNone()
 		end
 		--]]
@@ -1036,7 +1159,6 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glPointSize(1)
 end
 
-
 function Mesh:drawVertexNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
@@ -1053,80 +1175,11 @@ function Mesh:drawTriNormals()
 	local gl = require 'gl'
 	gl.glColor3f(0,1,1)
 	gl.glBegin(gl.GL_LINES)
-	for i=0,self.triIndexBuf.size-1,3 do
-		local a, b, c = self:triVtxPos(i)
-		local normal = triNormal(a,b,c)
-		local com = triCOM(a,b,c)
-		gl.glVertex3fv(com.s)
-		gl.glVertex3fv((com + normal).s)
+	for i,t in ipairs(self.tris) do
+		gl.glVertex3fv(t.com.s)
+		gl.glVertex3fv((t.com + t.normal).s)
 	end
 	gl.glEnd()
-end
-
--- 'fwd' is used for depth calculation, 'dir' is the ray direction
-function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
-	-- assumes dir is 1 unit fwd along the view fwd
-	--dir = dir:normalize()
-	local dirlen = dir:norm()
-	local bestdot, besti, bestdepth
-	for i=0,self.vtxs.size-1 do
-		local v = self.vtxs.v[i].pos
-		local delta = v - pos
-		local depth = delta:dot(fwd)
-		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
-		local dot = dir:unit():dot(delta:unit())
-		if dot > cosEpsAngle then
-			if not bestdepth
-			or depth < bestdepth
-			then
-				besti = i
-				bestdepth = depth
-				bestdot = dot
-			end
-		end
-	end
-	return besti, bestdepth
-end
-
-function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
-	-- assumes dir is 1 unit fwd along the view fwd
-	--dir = dir:normalize()
-	local dirlen = dir:norm()
-	local besti, bestdist
-	for i=0,self.triIndexBuf.size-3,3 do
-		local a,b,c = self:triVtxPos(i)
-
-		local planePt = a
-		local triNormal, area = triNormal(a,b,c)
-		if area > 1e-7 then
-			-- make sure it's pointing towards the ray origin
-			if triNormal:dot(dir) < 0 then triNormal = -triNormal end
-
-			local p, s = rayPlaneIntersect(pos, dir, triNormal, planePt)
-			if s >= 0 and (not bestdist or s < bestdist) then
-
-				-- barycentric coordinates
-				local oob
-				local vs = {a,b,c}
-				for j=0,2 do
-					local v1 = vs[j+1]
-					local v2 = vs[(j+1)%3+1]
-					local tocom = (v2 - v1):cross(triNormal)
-					-- will only work on front-facing triangles
-					if (p - v1):dot(tocom) < 0 then
-						oob = true
-						break
-					end
-				end
-
-				if not oob then
-					besti = i
-					bestdist = s
-				end
-			end
-		end
-	end
-	return besti, bestdist
 end
 
 return Mesh
