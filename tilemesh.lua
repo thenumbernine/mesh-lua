@@ -15,12 +15,40 @@ local quatf = require 'vec-ffi.quatf'
 local vector = require 'ffi.cpp.vector'
 local matrix_ffi = require 'matrix.ffi'
 
+-- R is a table of column vec3f's, v is a vec3f
+local function rotateVec(R, v)
+	return R[1] * v.x + R[2] * v.y + R[3] * v.z
+end
+
+local function scaleVec(a, b)
+	return vec3f(
+		a.x * b.x,
+		a.y * b.y,
+		a.z * b.z)
+end
+
+-- a and b are tables of columns of vec3f's
+local function matrixMul(a, b)
+	-- c_ij = a_ik b_kj
+	local c = range(3):mapi(function() return vec3f() end)
+	for i=0,2 do
+		for j=0,2 do
+			local sum = 0
+			for k=0,2 do
+				sum = sum + a[k+1].s[i] * b[j+1].s[k]
+			end
+			c[j+1].s[i] = sum
+		end
+	end
+	return c
+end
+
 local function tileMesh(mesh, omesh)
 
 
 	-- list of column-vectors
 	-- transform from uv-space to placement-space
--- [[
+--[[
 	local scale = vec3f(.5, .5, .5)
 	local placementCoordXForm = matrix_ffi{
 		{1, 0},
@@ -28,16 +56,39 @@ local function tileMesh(mesh, omesh)
 	}
 --]]
 --[[
-	local scale = vec3f(.1, .05, .1) * .9
+	--local scale = vec3f(.1, .05, .1) * .9
+	local scale = vec3f(1,1,1)
 	local placementCoordXForm = matrix_ffi{
 		{.2, .1},
 		{0, .1},
 	}
 --]]
+	
+--[[ identity
+	local orientation = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
+--]]
+-- [[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
+
+	-- bbox of brick:
+	-- min: -0.054999999701977, -5.0268096352113e-09, -0.11500000208616
+	-- max: 0.054999999701977, 0.07600000500679, 0.11500000208616
+	-- size: 0.10999999940395, 0.076000012457371, 0.23000000417233
+	local scale = vec3f(1,1,1)
+	local placementCoordXForm = matrix_ffi{
+		{.23, .11},
+		{0, .11},
+	}
+	local orientation = table{
+		vec3f(0,1,0),
+		vec3f(0,0,1),	-- model's y+ up maps to z+ which is then mapped to the tri normal dir
+		vec3f(1,0,0),	-- model's z- fwd maps to x+ which is mapped to the tri ∂/∂u
+	}
+--]]
+
 	local placementCoordXFormInv = placementCoordXForm:inv()
-print('placementXForm', placementCoordXForm)
-print('placementXFormInv', placementCoordXFormInv)
-	assert((placementCoordXForm * placementCoordXFormInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
+--print('placementXForm', placementCoordXForm)
+--print('placementXFormInv', placementCoordXFormInv)
+--assert((placementCoordXForm * placementCoordXFormInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
 
 	mesh:generateTriBasis()
 
@@ -52,7 +103,7 @@ print('placementXFormInv', placementCoordXFormInv)
 		-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 		local uvorigin2D = vec2f():set(tvtxs[1].texcoord:unpack())
 		local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
-print('uv origin', ti, uvorigin2D, uvorigin3D)
+--print('uv origin', ti, uvorigin2D, uvorigin3D)
 		-- find uv min max
 		-- maybe stretch bounds to include edges of placements?
 		-- interpolate across uv
@@ -63,7 +114,7 @@ print('uv origin', ti, uvorigin2D, uvorigin3D)
 			assert(tp[j] >= 0 and tp[j] < mesh.vtxs.size)
 			local v = mesh.vtxs.v[tp[j]]
 			--local tc = v.texcoord
-			-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = d/du)
+			-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = ∂/∂u)
 			local dvpos = v.pos - uvorigin3D
 			local tc = vec2f(
 				dvpos:dot(t.basis[1]),
@@ -72,12 +123,12 @@ print('uv origin', ti, uvorigin2D, uvorigin3D)
 			local placementCoord = placementCoordXFormInv * matrix_ffi{tc.x, tc.y}
 			placementCoord = vec2f(placementCoord:unpack())
 			placementBBox:stretch(placementCoord)
-print('stretching', placementCoord)
+--print('stretching', placementCoord)
 		end
 		local from = box2f(placementBBox)
 		placementBBox.min = placementBBox.min:map(math.floor) - 1
 		placementBBox.max = placementBBox.max:map(math.ceil) + 1
-print('placementBBox', from, 'to' , placementBBox)
+--print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
 				local uv = placementCoordXForm * matrix_ffi{pu,pv}
@@ -103,7 +154,7 @@ print('placementBBox', from, 'to' , placementBBox)
 					mesh.tilePlaces:insert{
 						-- scale, rotate, offset ...
 						pos = vec3f(vtxpos),	-- not so necessary
-						basis = t.basis:mapi(function(v) return vec3f(v) end),
+						basis = matrixMul(t.basis, orientation),
 						scale = vec3f(scale),
 						-- not necessary
 						uv = vec2f(uv),
@@ -122,27 +173,16 @@ print('#tilePlaces', #mesh.tilePlaces)
 		for i=0,omesh.vtxs.size-1 do
 			local srcv = omesh.vtxs.v[i]
 			local dstv = nvtxs:emplace_back()
-			dstv.pos = srcv.pos
 			dstv.texcoord = srcv.texcoord
 			-- scale, rotate, normalize the normals
-			dstv.normal.x = srcv.normal.x * place.scale.x
-			dstv.normal.y = srcv.normal.y * place.scale.y
-			dstv.normal.z = srcv.normal.z * place.scale.z
-			dstv.normal = place.basis[1] * dstv.normal.x
-						+ place.basis[2] * dstv.normal.y
-						+ place.basis[3] * dstv.normal.z
+			dstv.normal = scaleVec(srcv.normal, place.scale)
+			dstv.normal = rotateVec(place.basis, dstv.normal)
 			dstv.normal = dstv.normal:normalize()
 			-- scale, rotate, translate the positions
 			-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
-			-- scale
-			dstv.pos.x = dstv.pos.x * place.scale.x
-			dstv.pos.y = dstv.pos.y * place.scale.y
-			dstv.pos.z = dstv.pos.z * place.scale.z
-			-- rotate
-			dstv.pos = place.basis[1] * dstv.pos.x
-					+ place.basis[2] * dstv.pos.y
-					+ place.basis[3] * dstv.pos.z
-			-- translate
+			dstv.pos = srcv.pos
+			dstv.pos = scaleVec(place.scale, dstv.pos)
+			dstv.pos = rotateVec(place.basis, dstv.pos)
 			dstv.pos = dstv.pos + place.pos
 		end
 		local lastVtx = nvtxs.size

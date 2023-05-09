@@ -21,7 +21,7 @@ for i=0,2 do
 	mesh.bbox.max.s[i] = math.ceil(mesh.bbox.max.s[i])
 end
 print('bbox after rounding', mesh.bbox)
-mesh:breakTriangles()
+mesh:breakAllVertexes()
 
 -- 1) bin all triangles
 local comEps = .1

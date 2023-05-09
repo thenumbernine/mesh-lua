@@ -45,6 +45,11 @@ local dirs = table{
 	{0,0,-1},
 }
 
+local function default(a, b)
+	if a == nil then return b end
+	return a
+end
+
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
@@ -74,7 +79,7 @@ function App:initGL(...)
 	self.useLighting = false
 	self.lightDir = vec3f(1,1,1)
 
-	self.useCullFace = true
+	self.useCullFace = default(cmdline.cull, true)
 	self.useDepthTest = true
 	self.useBlend = true
 	self.groupExplodeDist = 0
@@ -613,8 +618,8 @@ function App:updateGUI()
 				-- there's another flag for 'skip normals' but you can just clear them so
 				mesh:mergeMatchingVertexes(true)
 			end
-			if ig.igButton'break triangles' then
-				mesh:breakTriangles()
+			if ig.igButton'break vertexes' then
+				mesh:breakAllVertexes()
 			end
 
 			-- triangles

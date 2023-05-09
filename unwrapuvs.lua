@@ -9,7 +9,7 @@ local function unwrapUVs(args)
 	local mesh = assert(args.mesh)
 	local angleThreshold = args.angleThreshold or 5
 
-	mesh:breakTriangles()
+	mesh:breakAllVertexes()
 	mesh:calcAllOverlappingEdges()
 	-- invalidate
 	mesh.vtxBuf = nil
@@ -754,7 +754,9 @@ tsrc.v1*-------*
 
 	print('tri basis:')
 	for i,t in ipairs(mesh.tris) do
-		print(t.basis:unpack())
+		if t.basis then
+			print(i, t.basis:unpack())
+		end
 	end
 
 	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))

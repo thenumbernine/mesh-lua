@@ -12,7 +12,7 @@ local matrix_ffi = require 'matrix.ffi'
 matrix_ffi.real = 'float'
 
 ffi.cdef[[
-typedef struct {
+typedef struct MeshVertex_t {
 	vec3f_t pos;
 	vec3f_t texcoord;
 	vec3f_t normal;
@@ -206,7 +206,7 @@ function Mesh:combine(...)
 		end))
 
 		self.tris:append(o.tris:mapi(function(t)
-			t = table(t):setmetatable(nil)
+			t = Triangle(t)
 			local groupIndex = o.groups:find(t.group)
 			t.group = groupIndex and self.groups[firstGroup + groupIndex - 1] or nil
 			return t
@@ -271,6 +271,17 @@ function Mesh:rotate(q)
 	end
 	self:refreshVtxs()
 	return self
+end
+
+function Mesh:recenter(newOrigin)
+	for i=0,self.vtxs.size-1 do
+		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
+	end
+	if self.vtxBuf then
+		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+	end
+	-- recalculate coms
+	self:calcCOMs()
 end
 
 function Mesh:refreshVtxs()
@@ -421,6 +432,9 @@ function Mesh:rebuildTris(from,to)
 	if not from then
 		from = 1
 		to = self.triIndexes.size/3
+	end
+	for i,t in ipairs(self.tris) do
+		assert(Triangle:isa(t))
 	end
 	for i=from,to do
 		if not self.tris[i] then
@@ -948,8 +962,9 @@ function Mesh:clearVertexNormals()
 	end
 end
 
-function Mesh:breakTriangles()
-	print('before breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
+-- split all indexes so index<->vertex is 1:1
+function Mesh:breakAllVertexes()
+	print('before breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
 	local nvtxs = vector('MeshVertex_t', self.triIndexes.size)
 	local ntris = vector('uint32_t', self.triIndexes.size)
 	for i=0,self.triIndexes.size-1 do
@@ -958,7 +973,7 @@ function Mesh:breakTriangles()
 	end
 	self.vtxs = nvtxs
 	self.triIndexes = ntris
-	print('after breakTriangles, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
+	print('after breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
 
 	-- TODO update the mesh ranges as well
 	-- assert they do not overlap before
@@ -988,6 +1003,41 @@ function Mesh:breakTriangles()
 	self:calcBBox()
 	self:findEdges()
 	self:calcCOMs()
+end
+
+--[[
+doesn't break intersecting tris.
+just removes any tris that are internal.
+--]]
+function Mesh:removeInternalTris()
+	-- TODO break-triangle operation first ... how to break triangles
+	
+	-- second ... merge vertexes
+	-- in fact I should look at the merge map of vertexes w/o texcoord or normal condition
+	if not self.bbox then self:calcBBox() end
+	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+	local vtxMergeThreshold = bboxCornerDist * 1e-6
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(vtxMergeThreshold)
+
+	-- now find edges based on nearest vtx only
+	-- TODO separate the edge info from Mesh?
+	self:findEdges(function(i)
+		return uniquevs[indexToUniqueV[i]]
+	end)
+
+	-- finally remove internal tris.
+	-- what determines if a triangle is internal?
+	-- 1) it needs to have all edges with >2 neighbors.
+	-- 2) per-edge, the other two tris planes must have this tri behind them
+	-- this won't skip floating edge tris ... those need to be removed separately.
+	-- this also won't remove 'internal' tris if there's a hole on the bounding region.
+	assert(#self.tris*3 == self.triIndexes.size)
+	for i,t in ipairs(self.tris) do
+		-- if the triangle intersects another then it needs to break
+	end
+
+	self.edges = nil
+	self.edgeIndexBuf = nil
 end
 
 -- regenerate the vertex normals based on the face normals, weighted average by angle (tesselation-independent and curvature-driven)
@@ -1039,16 +1089,60 @@ function Mesh:generateVertexNormals()
 	end
 end
 
-function Mesh:recenter(newOrigin)
+-- 'fwd' is used for depth calculation, 'dir' is the ray direction
+function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local bestdot, besti, bestdepth
 	for i=0,self.vtxs.size-1 do
-		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
+		local v = self.vtxs.v[i].pos
+		local delta = v - pos
+		local depth = delta:dot(fwd)
+		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
+		local dot = dir:unit():dot(delta:unit())
+		if dot > cosEpsAngle then
+			if not bestdepth
+			or depth < bestdepth
+			then
+				besti = i
+				bestdepth = depth
+				bestdot = dot
+			end
+		end
 	end
-	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
-	end
-	-- recalculate coms
-	self:calcCOMs()
+	return besti, bestdepth
 end
+
+function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
+	-- assumes dir is 1 unit fwd along the view fwd
+	--dir = dir:normalize()
+	local dirlen = dir:norm()
+	local besti, bestdist
+	assert(#self.tris * 3 == self.triIndexes.size)
+	for ti,t in ipairs(self.tris) do
+		local i = 3*(ti-1)
+		local tnormal, area = t.normal, t.area
+
+		local a,b,c = t:vtxPos(self)
+		local planePt = a
+		if area > 1e-7 then
+			-- make sure it's pointing towards the ray origin
+			if tnormal:dot(dir) < 0 then tnormal = -tnormal end
+
+			local p, s = rayPlaneIntersect(pos, dir, tnormal, planePt)
+			if s >= 0 and (not bestdist or s < bestdist) then
+				-- barycentric coordinates
+				if t:insideBCC(p, self) then
+					besti = i
+					bestdist = s
+				end
+			end
+		end
+	end
+	return besti, bestdist
+end
+
 
 -- all the draw functionality is tied tightly with view.lua so ...
 -- idk if i should move it from one or the other
@@ -1114,60 +1208,6 @@ function Mesh:loadGL(shader)
 		shader:useNone()
 		assert(glreport'here')
 	end
-end
-
--- 'fwd' is used for depth calculation, 'dir' is the ray direction
-function Mesh:findClosestVertexToMouseRay(pos, dir, fwd, cosEpsAngle)
-	-- assumes dir is 1 unit fwd along the view fwd
-	--dir = dir:normalize()
-	local dirlen = dir:norm()
-	local bestdot, besti, bestdepth
-	for i=0,self.vtxs.size-1 do
-		local v = self.vtxs.v[i].pos
-		local delta = v - pos
-		local depth = delta:dot(fwd)
-		--local dot = dir:dot(delta) / (delta:norm() * dirlen)
-		local dot = dir:unit():dot(delta:unit())
-		if dot > cosEpsAngle then
-			if not bestdepth
-			or depth < bestdepth
-			then
-				besti = i
-				bestdepth = depth
-				bestdot = dot
-			end
-		end
-	end
-	return besti, bestdepth
-end
-
-function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
-	-- assumes dir is 1 unit fwd along the view fwd
-	--dir = dir:normalize()
-	local dirlen = dir:norm()
-	local besti, bestdist
-	assert(#self.tris * 3 == self.triIndexes.size)
-	for ti,t in ipairs(self.tris) do
-		local i = 3*(ti-1)
-		local tnormal, area = t.normal, t.area
-
-		local a,b,c = t:vtxPos(self)
-		local planePt = a
-		if area > 1e-7 then
-			-- make sure it's pointing towards the ray origin
-			if tnormal:dot(dir) < 0 then tnormal = -tnormal end
-
-			local p, s = rayPlaneIntersect(pos, dir, tnormal, planePt)
-			if s >= 0 and (not bestdist or s < bestdist) then
-				-- barycentric coordinates
-				if t:insideBCC(p, self) then
-					besti = i
-					bestdist = s
-				end
-			end
-		end
-	end
-	return besti, bestdist
 end
 
 function Mesh:draw(args)
