@@ -15,8 +15,9 @@ local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
 local OBJLoader = require 'mesh.objloader'
 local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
-local tileMesh = require 'mesh.tilemesh'
 local drawUVUnwrapEdges = require 'mesh.unwrapuvs'.drawUVUnwrapEdges
+local tileMesh = require 'mesh.tilemesh'.tileMesh
+local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = cmdline.file
@@ -118,10 +119,12 @@ print('#unique triangles', self.mesh.triIndexBuf.size/3)
 	self.useDrawPolys = true
 	self.drawVertexNormals = false
 	self.drawTriNormals = false
-	self.drawUVUnwrapEdges = false
 	self.useTextures = true
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
+
+	self.drawUVUnwrapEdges = false
+	self.drawTileMeshPlaces = false
 
 	self.editMode = 1
 
@@ -326,6 +329,9 @@ function App:update()
 	end
 	if self.drawUVUnwrapEdges then
 		drawUVUnwrapEdges(mesh)
+	end
+	if self.drawTileMeshPlaces then
+		drawTileMeshPlaces(mesh)
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -575,11 +581,11 @@ function App:updateGUI()
 				mesh:scale(self.rescale:unpack())
 			end
 
-			if ig.igButton'regen normals' then
-				mesh:regenNormals()
+			if ig.igButton'regen vertex normals' then
+				mesh:generateVertexNormals()
 			end
-			if ig.igButton'clear normals' then
-				mesh:clearNormals()
+			if ig.igButton'clear vertex normals' then
+				mesh:clearVertexNormals()
 			end
 			if ig.igButton'merge vertexes' then
 				mesh:mergeMatchingVertexes()
@@ -647,6 +653,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw polys', self, 'useDrawPolys')
 			ig.luatableCheckbox('draw vertex normals', self, 'drawVertexNormals')
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
+			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
 
 			ig.igEndMenu()
 		end

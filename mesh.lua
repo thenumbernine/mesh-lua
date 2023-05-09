@@ -735,7 +735,7 @@ function Mesh:calcVolume()
 	return totalVolume
 end
 
-function Mesh:clearNormals()
+function Mesh:clearVertexNormals()
 	for i=0,self.vtxs.size-1 do
 		self.vtxs.v[i].normal:set(0,0,0)
 	end
@@ -784,11 +784,13 @@ function Mesh:breakTriangles()
 end
 
 -- regenerate the vertex normals based on the face normals, weighted average by face area
-function Mesh:regenNormals()
+function Mesh:generateVertexNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
 --print('zeroing vertex normals')
-	local vtxnormals = vector('vec3f_t', self.vtxs.size)
+	for i=0,self.vtxs.size-1 do
+		self.vtxs.v[i].normal:set(0,0,0)
+	end
 --print('accumulating triangle normals into vertex normals')
 	for i=0,self.triIndexBuf.size-1,3 do
 		local ia = self.triIndexBuf.v[i]
@@ -796,26 +798,35 @@ function Mesh:regenNormals()
 		local ic = self.triIndexBuf.v[i+2]
 		-- not sure what i'm doing with these ...
 		-- cache or regen?
-		local a = self.vtxs.v[ia].pos
-		local b = self.vtxs.v[ib].pos
-		local c = self.vtxs.v[ic].pos
-		local normal, area = triNormal(a,b,c)
-		local normalArea = normal * area
-		vtxnormals.v[ia] = vtxnormals.v[ia] + normalArea
-		vtxnormals.v[ib] = vtxnormals.v[ib] + normalArea
-		vtxnormals.v[ic] = vtxnormals.v[ic] + normalArea
+		local va = self.vtxs.v[ia]
+		local vb = self.vtxs.v[ib]
+		local vc = self.vtxs.v[ic]
+		local pa = self.vtxs.v[ia].pos
+		local pb = self.vtxs.v[ib].pos
+		local pc = self.vtxs.v[ic].pos
+		local ab = (pb - pa):normalize()
+		local bc = (pc - pb):normalize()
+		local ca = (pa - pc):normalize()
+		local normal = ab:cross(bc):normalize()
+		local thetaA = math.acos(math.clamp(-ab:dot(ca),-1,1))
+		local thetaB = math.acos(math.clamp(-bc:dot(ab),-1,1))
+		local thetaC = math.acos(math.clamp(-ca:dot(bc),-1,1))
+		va.normal = va.normal + normal * thetaA
+		vb.normal = vb.normal + normal * thetaB
+		vc.normal = vc.normal + normal * thetaC
 	end
 --print('normals vertex normals')
-	for i=0,vtxnormals.size-1 do
-		if vtxnormals.v[i]:norm() > 1e-7 then
-			vtxnormals.v[i] = vtxnormals.v[i]:normalize()
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i]
+		local len = v.normal:norm()
+		if len > 1e-7 then
+			v.normal = v.normal * (1 / len)
+		else
+			v.normal:set(0,0,0)
 		end
 --print(k, vtxnormals[i])
 	end
-
-	for i=0,self.vtxs.size-1 do
-		self.vtxs.v[i].normal = vtxnormals.v[i]
-	end
+	
 	if self.vtxBuf then
 		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end

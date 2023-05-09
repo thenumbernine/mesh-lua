@@ -22,6 +22,76 @@ local function inv2x2(m)
 		{-m[2][1], m[1][1]}} * (1 / det)
 end
 
+
+-- generate 
+local function clearTNB(mesh)
+	for i,t in ipairs(mesh.tris) do
+		t.uvbasisT = nil
+	end
+end
+
+-- generate tangent, binormal, normal
+local function generateTBN(mesh)
+	--[[ make sure triangles have uvbasisT
+	vectors are columns ...
+	[T|B]' * (pos[i] - pos0) = tc[i] - tc0
+	[T|B] = 3x2, ' is transpose is 2x3
+	let dpos = pos[i] - pos0, so it is 3x3 with 1rd row 0
+	... same with tc
+	... and we can truncate those 0 rows
+	[T|B] * [T|B]' * dpos = [T|B] * dtc
+	[T|B] * [T|B]' = I 2x2 since T and B are orthogonal ... but not vice versa since [T|B] is 3x2
+	dpos * dtc^-1 = [T|B] * dtc * dtc^-1
+	[T|B] = dpos * dtc^-1
+	--]]
+	for i,t in ipairs(mesh.tris) do
+		if not t.uvbasisT then
+			local tp = mesh.triIndexBuf.v + 3*(i-1)
+			local va = mesh.vtxs.v[tp[0]]
+			local vb = mesh.vtxs.v[tp[1]]
+			local vc = mesh.vtxs.v[tp[2]]
+			local dpos1 = vb.pos - va.pos
+			local dpos2 = vc.pos - va.pos
+			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
+			local dtc2 = vc.texcoord - va.texcoord
+
+			-- dtc is matrix with columns of dtc[i]
+			local dtc = matrix_ffi{
+				{dtc1:unpack()},
+				{dtc2:unpack()},
+			}:T()
+			-- now 2x2 invert
+			local dtcInv = inv2x2(dtc)
+			-- get the cols
+			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[2][1])
+			local dtcInv2 = vec2f(dtcInv[1][2], dtcInv[2][2])
+
+			local ex = vec3f(
+				dtcInv1:dot(vec2f(dpos1.x, dpos2.x)),
+				dtcInv1:dot(vec2f(dpos1.y, dpos2.y)),
+				dtcInv1:dot(vec2f(dpos1.z, dpos2.z))
+			):normalize()
+			--[[ don't use ey ... just use N x ex...
+			local ey = vec3f(
+				dtcInv2:dot(vec2f(dpos1.x, dpos2.x)),
+				dtcInv2:dot(vec2f(dpos1.y, dpos2.y)),
+				dtcInv2:dot(vec2f(dpos1.z, dpos2.z))
+			):normalize()
+			--]]
+			--[[ or use the delta as ex ...
+			local ex = dpos1:normalize()
+			--]]
+			local n = dpos1:cross(dpos2):normalize()
+			t.uvbasisT = {
+				ex,
+				n:cross(ex):normalize(),
+				n,
+			}
+--print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
+		end
+	end
+end
+
 local function tileMesh(mesh, omesh)
 
 	local scale = vec3f(.1, .05, .1) * .9
@@ -44,74 +114,10 @@ local function tileMesh(mesh, omesh)
 print('placement', uvxform)
 print('placementInv', uvxformInv)
 
-
-
-
-
---[[ make sure triangles have uvbasisT
-
-R * (pos[i] - pos0) = texcoord[i] - texcoord0
-let pos'[i] = pos[i] - pos0, same with texcoord
-R * pos'[i] = texcoord'[i]
-R^j_k * pos'^k_i = texcord'^j_i
-R^j_k = (pos'^-1)^i_k * texcord'^j_i
-but what about nullspace?
-or 'R' can be in 2D 
-sure enough
-
-with pos and TB as 2x3's vectors in rows
-and texcoord as 2x2, vectors in cols
-pos'_ik = texcoord'_ij * TB_jk
-TB_jk = (texcoord'^-1)_ij * pos'_ik
---]]
-	for i,t in ipairs(mesh.tris) do
-		if not t.uvbasisT then
-			local tp = mesh.triIndexBuf.v + 3*(i-1)
-			local va = mesh.vtxs.v[tp[0]]
-			local vb = mesh.vtxs.v[tp[1]]
-			local vc = mesh.vtxs.v[tp[2]]
-			local dpos1 = vb.pos - va.pos
-			local dpos2 = vc.pos - va.pos
-			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
-			local dtc2 = vc.texcoord - va.texcoord
-
-			local dtc = matrix_ffi{
-				{dtc1:unpack()},
-				{dtc2:unpack()},
-			}
-			-- now 2x2 invert
-			-- if T and B are column-vectors
-			local dtcInv = inv2x2(dtc)
-			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[1][2])
-			local dtcInv2 = vec2f(dtcInv[2][1], dtcInv[2][2])
-
-			local ex = vec3f(
-				dtcInv1:dot(vec2f(dpos1.x, dpos2.x)),
-				dtcInv1:dot(vec2f(dpos1.y, dpos2.y)),
-				dtcInv1:dot(vec2f(dpos1.z, dpos2.z))
-			):normalize()
-			--[[ don't use ey ... just use N x ex...
-			local ey = vec3f(
-				dtcInv2:dot(vec2f(dpos1.x, dpos2.x)),
-				dtcInv2:dot(vec2f(dpos1.y, dpos2.y)),
-				dtcInv2:dot(vec2f(dpos1.z, dpos2.z))
-			):normalize()
-			--]]
-			-- [[ or use the delta as ex ...
-			local ex = dpos1:normalize()
-			--]]
-			local n = dpos1:cross(dpos2):normalize()
-			t.uvbasisT = {
-				ex,
-				n:cross(ex):normalize(),
-				n,
-			}
---print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
-		end
-	end
+	generateTBN(mesh)
 
 	-- for each tri
-	local places = table()
+	self.tilePlaces = table()
 	for ti=0,mesh.triIndexBuf.size-3,3 do
 		local t = assert(mesh.tris[ti/3+1])
 		local tp = mesh.triIndexBuf.v + ti
@@ -166,7 +172,7 @@ TB_jk = (texcoord'^-1)_ij * pos'_ik
 					-- then place an instance of omesh
 					-- get the transform rotation and scale to the location on the poly
 					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
-					places:insert{
+					self.tilePlaces:insert{
 						-- scale, rotate, offset ...
 						pos = vtxpos,	-- not so necessary
 						uvbasisT = t.uvbasisT,
@@ -178,12 +184,12 @@ TB_jk = (texcoord'^-1)_ij * pos'_ik
 			end
 		end
 	end
-print('#places', #places)
+print('#tilePlaces', #self.tilePlaces)
 	
 	-- place instances
 	local nvtxs = vector'MeshVertex_t'
 	local indexesPerGroup = table()
-	for _,place in ipairs(places) do
+	for _,place in ipairs(self.tilePlaces) do
 		local firstVtx = nvtxs.size
 		for i=0,omesh.vtxs.size-1 do
 			local srcv = omesh.vtxs.v[i]
@@ -230,8 +236,8 @@ print('#places', #places)
 		g.triCount = ntris.size - g.triFirstIndex
 	end
 
-	assert(nvtxs.size == omesh.vtxs.size * #places)
-	assert(ntris.size == omesh.triIndexBuf.size * #places)
+	assert(nvtxs.size == omesh.vtxs.size * #self.tilePlaces)
+	assert(ntris.size == omesh.triIndexBuf.size * #self.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
 
@@ -265,6 +271,35 @@ print('ntris.size', ntris.size)
 		mesh:mergeMatchingVertexes()
 	end)
 	--]]
-
 end
-return tileMesh
+
+local function drawTileMeshPlaces(mesh)
+	if not mesh.tilePlaces then return end
+	gl.glPointSize(3)
+	gl.glColor3f(1,1,0)
+	gl.glBegin(gl.GL_POINTS)
+	for _,p in ipairs(mesh.tilePlaces) do
+		gl.glVertex3f(p.pos:unpack())
+	end
+	gl.glPointSize(1)
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for _,p in ipairs(mesh.tilePlaces) do
+		gl.glColor3f(1,0,0)
+		gl.glVertex3f(p.pos:unpack())
+		gl.glVertex3f((p.pos + p.uvbasisT[1]):unpack())
+		gl.glColor3f(0,1,0)
+		gl.glVertex3f(p.pos:unpack())
+		gl.glVertex3f((p.pos + p.uvbasisT[2]):unpack())
+		gl.glColor3f(0,0,1)
+		gl.glVertex3f(p.pos:unpack())
+		gl.glVertex3f((p.pos + p.uvbasisT[3]):unpack())
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
+end
+
+return {
+	tileMesh = tileMesh,
+	drawTileMeshPlaces = drawTileMeshPlaces,
+}
