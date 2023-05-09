@@ -81,7 +81,7 @@ end
 .com = triangle center-of-mass (average of 3 vtxs)
 .area
 .normal = tri surface normal (surface z-axis)
-.uvbasisT = [3] of tangent, bitangent (negative of binormal), normal
+.basis = [3] of tangent, (negative of) binormal, normal
 
 findEdges:
 .edges
@@ -168,14 +168,14 @@ function Mesh:init(o)
 
 	-- array of Triangle's
 	self.tris = table()
-	
+
 	-- holds 0-based ranges of tris
 	self.groups = table()
 end
 
 -- combines 'self' with other meshes.
 -- operates in-place.
--- returns self 
+-- returns self
 function Mesh:combine(...)
 	self.mtlFilenames = table(self.mtlFilenames)
 
@@ -185,13 +185,13 @@ function Mesh:combine(...)
 		local firstVtx = self.vtxs.size
 		self.vtxs:resize(self.vtxs.size + o.vtxs.size)
 		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffi.sizeof(o.vtxs.type) * o.vtxs.size)
-		
+
 		local firstIndex = self.triIndexes.size
 		self.triIndexes:resize(self.triIndexes.size + o.triIndexes.size)
 		for i=0,o.triIndexes.size-1 do
 			self.triIndexes.v[firstIndex + i] = o.triIndexes.v[i] + firstVtx
 		end
-		
+
 		local firstGroup = #self.groups+1
 		self.groups:append(o.groups:mapi(function(g)
 			g = table(g):setmetatable(nil)
@@ -208,7 +208,7 @@ function Mesh:combine(...)
 		for i,t in ipairs(self.tris) do
 			t.index = i
 		end
-	
+
 		self.mtlFilenames:append(o.mtlFilenames)
 	end
 
@@ -217,7 +217,7 @@ function Mesh:combine(...)
 	end):map(function(v,k,t)
 		return k, #t+1
 	end)
-	
+
 	self.edges = nil
 	self.edgeIndexBuf = nil
 	self.loadedGL = nil
@@ -435,13 +435,17 @@ end
 function Mesh:clearTriBasis(mesh)
 	for i,t in ipairs(mesh.tris) do
 		-- TODO unify this with .normal
-		t.uvbasisT = nil
+		t.basis = nil
 	end
 end
 
 -- generate tangent, binormal, normal
+-- TODO merge normal with this
+-- TODO TODO merge position with this so that 'pos normal texcoord-u texcoord-v' are a basis
+-- pos should go first, not last.  just like time should go first, not last.
+-- because ofc pos = eps rot around inf origin = integral of time-velocity = integral of exp map of Lorentz boost-generators (from acceleration)
 function Mesh:generateTriBasis()
-	--[[ make sure triangles have uvbasisT
+	--[[ make sure triangles have basis
 	vectors are columns ...
 	[T|B]' * (pos[i] - pos0) = tc[i] - tc0
 	[T|B] = 3x2, ' is transpose is 2x3
@@ -454,8 +458,13 @@ function Mesh:generateTriBasis()
 	[T|B] = dpos * dtc^-1
 	--]]
 	for i,t in ipairs(self.tris) do
-		if not t.uvbasisT then
-			local tp = self.triIndexes.v + 3*(i-1)
+		if not t.basis then
+			local ti = 3*(i-1)
+			assert(ti >= 0 and ti < self.triIndexes.size)
+			local tp = self.triIndexes.v + ti
+			assert(tp[0] >= 0 and tp[0] < self.vtxs.size)
+			assert(tp[1] >= 0 and tp[1] < self.vtxs.size)
+			assert(tp[2] >= 0 and tp[2] < self.vtxs.size)
 			local va = self.vtxs.v[tp[0]]
 			local vb = self.vtxs.v[tp[1]]
 			local vc = self.vtxs.v[tp[2]]
@@ -463,7 +472,6 @@ function Mesh:generateTriBasis()
 			local dpos2 = vc.pos - va.pos
 			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
 			local dtc2 = vc.texcoord - va.texcoord
-
 			-- dtc is matrix with columns of dtc[i]
 			local dtc = matrix_ffi{
 				{dtc1.x, dtc2.x},
@@ -471,9 +479,13 @@ function Mesh:generateTriBasis()
 			}
 			-- now 2x2 invert
 			local dtcInv = dtc:inv()
+			--assert((dtc * dtcInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
+
 			-- get the cols
 			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[2][1])
 			local dtcInv2 = vec2f(dtcInv[1][2], dtcInv[2][2])
+
+			local n = dpos1:cross(dpos2):normalize()
 
 			local ex = vec3f(
 				dtcInv1:dot(vec2f(dpos1.x, dpos2.x)),
@@ -490,13 +502,11 @@ function Mesh:generateTriBasis()
 			--[[ or use the delta as ex ...
 			local ex = dpos1:normalize()
 			--]]
-			local n = dpos1:cross(dpos2):normalize()
-			t.uvbasisT = {
-				ex,
-				n:cross(ex):normalize(),
-				n,
-			}
---print(i, table.unpack(t.uvbasisT), n:dot(ex), n:dot(ey))
+			-- [[ orthogonalize
+			local ey = n:cross(ex):normalize()
+			--]]
+			t.basis = {ex, ey, n}
+--print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
 		end
 	end
 end
@@ -968,7 +978,7 @@ function Mesh:breakTriangles()
 	self:calcCOMs()
 end
 
--- regenerate the vertex normals based on the face normals, weighted average by angle (tesselation-independent and curvature-driven) 
+-- regenerate the vertex normals based on the face normals, weighted average by angle (tesselation-independent and curvature-driven)
 function Mesh:generateVertexNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
@@ -1011,7 +1021,7 @@ function Mesh:generateVertexNormals()
 		end
 --print(k, vtxnormals[i])
 	end
-	
+
 	if self.vtxBuf then
 		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end
@@ -1128,7 +1138,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 	for ti,t in ipairs(self.tris) do
 		local i = 3*(ti-1)
 		local tnormal, area = t.normal, t.area
-		
+
 		local a,b,c = t:vtxPos(self)
 		local planePt = a
 		if area > 1e-7 then
@@ -1304,16 +1314,16 @@ function Mesh:drawTriBasis()
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
 	for i,t in ipairs(self.tris) do
-		if t.uvbasisT then
+		if t.basis then
 			gl.glColor3f(1,0,0)
 			gl.glVertex3f(t.com:unpack())
-			gl.glVertex3f((t.com + t.uvbasisT[1]):unpack())
+			gl.glVertex3f((t.com + t.basis[1]):unpack())
 			gl.glColor3f(0,1,0)
 			gl.glVertex3f(t.com:unpack())
-			gl.glVertex3f((t.com + t.uvbasisT[2]):unpack())
+			gl.glVertex3f((t.com + t.basis[2]):unpack())
 			gl.glColor3f(0,0,1)
 			gl.glVertex3f(t.com:unpack())
-			gl.glVertex3f((t.com + t.uvbasisT[3]):unpack())
+			gl.glVertex3f((t.com + t.basis[3]):unpack())
 		end
 	end
 	gl.glEnd()

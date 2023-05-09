@@ -53,6 +53,36 @@ function App:initGL(...)
 	self.view.znear = .1
 	self.view.zfar = 40000
 
+	-- gui options
+	self.useWireframe = false
+	self.useDrawVertexes = false
+	self.useDrawBBox = false
+	self.useDrawEdges = false
+	self.useDrawPolys = true
+	self.drawVertexNormals = false
+	self.drawTriNormals = false
+	self.drawTriBasis = false
+	self.useTextures = true
+	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
+	self.useTexFilterNearest = false
+
+	self.drawUVUnwrapEdges = false
+	self.drawTileMeshPlaces = false
+
+	self.editMode = 1
+
+	self.useLighting = false
+	self.lightDir = vec3f(1,1,1)
+
+	self.useCullFace = true
+	self.useDepthTest = true
+	self.useBlend = true
+	self.groupExplodeDist = 0
+	self.triExplodeDist = 0
+	self.bgcolor = vec4f(.2, .3, .5, 1)
+
+
+
 	self.mesh = OBJLoader():load(fn)
 print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexes.size/3)
@@ -62,6 +92,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 
 	if cmdline.tribasis then
 		self.mesh:generateTriBasis()
+		self.drawTriBasis = true
 	end
 
 	-- TODO make this an option with specified threshold.
@@ -114,34 +145,6 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	if cmdline.fwd then
 		self:resetAngle(vec3d(table.unpack(dirs[dirnames:find(cmdline.fwd)])))
 	end
-
-	-- gui options
-	self.useWireframe = false
-	self.useDrawVertexes = false
-	self.useDrawBBox = false
-	self.useDrawEdges = false
-	self.useDrawPolys = true
-	self.drawVertexNormals = false
-	self.drawTriNormals = false
-	self.drawTriBasis = false
-	self.useTextures = true
-	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
-	self.useTexFilterNearest = false
-
-	self.drawUVUnwrapEdges = false
-	self.drawTileMeshPlaces = false
-
-	self.editMode = 1
-
-	self.useLighting = false
-	self.lightDir = vec3f(1,1,1)
-
-	self.useCullFace = true
-	self.useDepthTest = true
-	self.useBlend = true
-	self.groupExplodeDist = 0
-	self.triExplodeDist = 0
-	self.bgcolor = vec4f(.2, .3, .5, 1)
 
 	self.shader = GLProgram{
 		vertexCode = [[

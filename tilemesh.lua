@@ -21,21 +21,22 @@ local function tileMesh(mesh, omesh)
 
 	-- list of column-vectors
 	-- transform from uv-space to placement-space
---[[	
+--[[
 	local uvxform = matrix_ffi{
 		{1, 0},
 		{0, 1},
 	}
---]]	
--- [[	
+--]]
+-- [[
 	local uvxform = matrix_ffi{
-		{.2, 0},
-		{.1, .1},
-	}:T()
+		{.2, .1},
+		{0, .1},
+	}
 --]]
 	local uvxformInv = uvxform:inv()
 print('placement', uvxform)
 print('placementInv', uvxformInv)
+	assert((uvxform * uvxformInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
 
 	mesh:generateTriBasis()
 
@@ -50,7 +51,7 @@ print('placementInv', uvxformInv)
 		-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 		local uvorigin2D = tvtxs[1].texcoord
 		local uvorigin3D = tvtxs[1].pos
-		local tnormal = t.uvbasisT[3]
+		local tnormal = t.basis[3]
 		-- find uv min max
 		-- maybe stretch bounds to include edges of placements?
 		-- interpolate across uv
@@ -78,9 +79,9 @@ print('placementInv', uvxformInv)
 --print(uv)
 
 				local duv = uv - uvorigin2D
-				-- uv = uvbasisT * (vtxpos - uvorigin3D) + uvorigin2D
+				-- uv = basis * (vtxpos - uvorigin3D) + uvorigin2D
 				-- vtxpos = uvbasis * (uv - uvorigin2D) + uvorigin3D
-				local vtxpos = t.uvbasisT[1] * duv.x + t.uvbasisT[2] * duv.y + uvorigin3D
+				local vtxpos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
 				-- if in tri (barycentric coord test)
 
 				local outside
@@ -98,7 +99,7 @@ print('placementInv', uvxformInv)
 					mesh.tilePlaces:insert{
 						-- scale, rotate, offset ...
 						pos = vtxpos,	-- not so necessary
-						uvbasisT = t.uvbasisT,
+						basis = t.basis,
 						scale = scale,
 						-- not necessary
 						uv = uv,
@@ -108,7 +109,7 @@ print('placementInv', uvxformInv)
 		end
 	end
 print('#tilePlaces', #mesh.tilePlaces)
-	
+
 	-- place instances
 	local nvtxs = vector'MeshVertex_t'
 	local indexesPerGroup = table()
@@ -123,18 +124,18 @@ print('#tilePlaces', #mesh.tilePlaces)
 			dstv.normal.x = srcv.normal.x * place.scale.x
 			dstv.normal.y = srcv.normal.y * place.scale.y
 			dstv.normal.z = srcv.normal.z * place.scale.z
-			dstv.normal = place.uvbasisT[1] * dstv.normal.x
-						+ place.uvbasisT[2] * dstv.normal.y
-						+ place.uvbasisT[3] * dstv.normal.z
+			dstv.normal = place.basis[1] * dstv.normal.x
+						+ place.basis[2] * dstv.normal.y
+						+ place.basis[3] * dstv.normal.z
 			dstv.normal = dstv.normal:normalize()
 			-- scale, rotate, translate the positions
 			-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
 			dstv.pos.x = dstv.pos.x * place.scale.x
 			dstv.pos.y = dstv.pos.y * place.scale.y
 			dstv.pos.z = dstv.pos.z * place.scale.z
-			dstv.pos = place.uvbasisT[1] * dstv.pos.x
-					+ place.uvbasisT[2] * dstv.pos.y
-					+ place.uvbasisT[3] * dstv.pos.z
+			dstv.pos = place.basis[1] * dstv.pos.x
+					+ place.basis[2] * dstv.pos.y
+					+ place.basis[3] * dstv.pos.z
 			dstv.pos = dstv.pos + place.pos
 		end
 		local lastVtx = nvtxs.size
@@ -149,7 +150,7 @@ print('#tilePlaces', #mesh.tilePlaces)
 			end
 		end
 	end
-	
+
 	local ntris = vector'uint32_t'
 	for _,g in ipairs(omesh.groups) do
 		g.triFirstIndex = ntris.size
@@ -169,7 +170,7 @@ print('ntris.size', ntris.size)
 	mesh.triIndexes = ntris
 
 	-- reset
-	mesh.tris = range(mesh.triIndexes.size/3):mapi(function(i) return {index=i+1} end)
+	mesh:rebuildTris()
 
 	-- invalidate
 	mesh.edges = nil
@@ -210,13 +211,13 @@ local function drawTileMeshPlaces(mesh)
 	for _,p in ipairs(mesh.tilePlaces) do
 		gl.glColor3f(1,0,0)
 		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.uvbasisT[1]):unpack())
+		gl.glVertex3f((p.pos + p.basis[1]):unpack())
 		gl.glColor3f(0,1,0)
 		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.uvbasisT[2]):unpack())
+		gl.glVertex3f((p.pos + p.basis[2]):unpack())
 		gl.glColor3f(0,0,1)
 		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.uvbasisT[3]):unpack())
+		gl.glVertex3f((p.pos + p.basis[3]):unpack())
 	end
 	gl.glEnd()
 	gl.glLineWidth(1)

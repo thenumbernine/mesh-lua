@@ -245,7 +245,7 @@ do--	else
 --print('picking fallback ', ex)
 --print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.uvbasisT = {
+				t.basis = {
 					n:cross(ex):normalize(),
 					-ex,
 					n,
@@ -253,14 +253,14 @@ do--	else
 			else
 --print('ex = '..ex)
 				-- tangent space.  store as row vectors i.e. transpose, hence the T
-				t.uvbasisT = {
+				t.basis = {
 					ex,
 					n:cross(ex):normalize(),
 					n,
 				}
 			end
 
---print('ey = '..t.uvbasisT[2])
+--print('ey = '..t.basis[2])
 		else
 			assert(tsrc.uvs)
 
@@ -314,7 +314,7 @@ tsrc.v1*-------*
 			-- modularity for choosing unwrap rotation
 			--[[ reset basis every time. dumb.
 			local ex = d1:normalize()
-			t.uvbasisT = {
+			t.basis = {
 				ex,
 				n:cross(ex):normalize(),
 				n,
@@ -324,15 +324,15 @@ tsrc.v1*-------*
 			-- find the rotation from normal 1 to normal 2
 			-- that'll just be the matrix formed from n1 and n2's basis ...
 			local q = quatf():vectorRotate(tsrc.normal, t.normal)
-			t.uvbasisT = {
-				q:rotate(tsrc.uvbasisT[1]),
-				q:rotate(tsrc.uvbasisT[2]),
+			t.basis = {
+				q:rotate(tsrc.basis[1]),
+				q:rotate(tsrc.basis[2]),
 				n,
 			}
 			--]]
 			-- [[ pick the rotation along the cardinal axis that has the greatest change
 			-- BEST FOR CARTESIAN ALIGNED
-			local tsrcnormal = tsrc.uvbasisT[3]
+			local tsrcnormal = tsrc.basis[3]
 			local dn = tnormal - tsrcnormal
 			local q
 			if dn:normSq() < 1e-3 then
@@ -356,30 +356,30 @@ tsrc.v1*-------*
 			end
 --print('q', q)
 --print('n', n)
---print('tsrc ex = '..tsrc.uvbasisT[1])
---print('tsrc ey = '..tsrc.uvbasisT[2])
-			t.uvbasisT = {
-				q:rotate(tsrc.uvbasisT[1]),
-				q:rotate(tsrc.uvbasisT[2]),
+--print('tsrc ex = '..tsrc.basis[1])
+--print('tsrc ey = '..tsrc.basis[2])
+			t.basis = {
+				q:rotate(tsrc.basis[1]),
+				q:rotate(tsrc.basis[2]),
 				n,
 			}
 			--]]
 
---print('|ez-n| = '..(q:rotate(tsrc.uvbasisT[3]) - n):norm())
---print('ex = '..t.uvbasisT[1])
---print('ey = '..t.uvbasisT[2])
+--print('|ez-n| = '..(q:rotate(tsrc.basis[3]) - n):norm())
+--print('ex = '..t.basis[1])
+--print('ey = '..t.basis[2])
 		end
 
 		t.uvs = t.uvs or {}
 		for i=1,3 do
 			local d = v[i] - t.uvorigin3D
 --print('d = '..d)
-			local m = {t.uvbasisT[1], t.uvbasisT[2]}
+			local m = {t.basis[1], t.basis[2]}
 --print('m', table.unpack(m))
 			-- wait if this is d:dot then ... this is really 'uvbasis' not transpose
 			local md = vec2f(
-				d:dot(t.uvbasisT[1]),
-				d:dot(t.uvbasisT[2])
+				d:dot(t.basis[1]),
+				d:dot(t.basis[2])
 			)
 --print('m * d = '..md)
 			t.uvs[i] = md + t.uvorigin2D
