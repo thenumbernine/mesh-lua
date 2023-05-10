@@ -123,8 +123,16 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 			}
 		end)
 	end
-	if cmdline.tilemesh then
-		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh))
+	if cmdline.tilemesh or cmdline.tilemeshmerge then
+		local orig
+		if cmdline.tilemeshmerge then
+			orig = self.mesh:clone()
+		end
+		-- tile omesh onto mesh in-place
+		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge))
+		if cmdline.tilemeshmerge then
+			self.mesh:combine(orig)
+		end
 	end
 --]]
 

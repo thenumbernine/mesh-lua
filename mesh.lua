@@ -1006,12 +1006,152 @@ function Mesh:breakAllVertexes()
 end
 
 --[[
+find all edges that don't have exactly 2 triangle neighbors.
+--]]
+function Mesh:findBadEdges()
+
+	-- find edges based on vtx comparing pos
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
+	self:findEdges(function(i) return uniquevs[indexToUniqueV[i]] end)
+
+
+	local border = table()
+	local totalEdges = 0
+	for a,o in pairs(self.edges) do
+		for b,e in pairs(o) do
+			if #e.tris == 1 then
+				border:insert(e)
+			end
+			totalEdges = totalEdges + 1
+		end
+	end
+print('edges total', totalEdges, 'border', #border)
+
+	-- now put in loops
+	local all = table(border)
+	local loops = table()
+	local lines = table()
+	while #all > 0 do
+		local loop = table()
+		local last = all:remove(1)
+--print('first edge', last[1], last[2])
+		loop:insert{v=1, e=last}
+		local lastvi = 2
+		while true do
+			local found
+			for i=1,#all do
+				local o = all[i]
+--print('checking edge', o[1], o[2])
+				if o[1] == last[lastvi] then
+					last = o
+					lastvi = 2
+					loop:insert{v=3-lastvi, e=o}
+					all:remove(i)
+					found = true
+--print('adding edge', last[1], last[2])
+					break
+				elseif o[2] == last[lastvi] then
+					last = o
+					lastvi = 1
+					loop:insert{v=3-lastvi, e=o}
+					all:remove(i)
+					found = true
+--print('adding edge', last[1], last[2])
+					break
+				end
+			end
+			if not found then
+--print('found no more edges, adding to lines')
+				lines:insert(loop)
+				break
+			else
+				if last[lastvi] == loop[1].e[loop[1].v] then
+--print('reached beginning, adding to loops')
+					loops:insert(loop)
+					break
+				end
+			end
+		end
+	end
+print('#loops', #loops)
+print('#lines', #lines)
+
+	-- no boundary edges that aren't loops
+	-- lines?  how to fix those?
+	if #lines > 0 then error("can't fix stupid") end
+	-- luckily I never have to find out (yet)
+	-- is this even possible?
+
+	if #loops > 1 then
+		print("!!!!!!!!!! failed to find just one loop for shape "..dstfn..' !!!!!!!!!!')
+	end
+
+	local function getIndexForLoopChain(l)
+		local i = l.e[l.v]-1
+		assert(i >= 0 and i < self.vtxs.size)
+		return i
+	end
+
+	for i,loop in ipairs(loops) do
+print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
+		--[[ determine if the loop is planar (and determine its normal)
+		for j=1,#loop-1 do
+			local ia = getIndexForLoopChain(loop[j])
+			local a = self.vtxs.v[ia].pos
+			local ib = getIndexForLoopChain(loop[j%#loop+1])
+			local b = self.vtxs.v[ib].pos
+			local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
+			local c = self.vtxs.v[ic].pos
+			local n = (c - b):cross(b - a)
+			print(n)
+		end
+		--]]
+		--[[ just add the tris as-is
+-- TODO how to determine loop order ...
+-- probably based on normal of opposing edges triangles
+if loop[1].e.tris[1][1].v == loop[1].e[1] then
+loop = loop:reverse()
+end
+		for j=2,#loop-1 do
+			local ia = getIndexForLoopChain(loop[1])
+			self.triIndexes:push_back(ia)
+			local ib = getIndexForLoopChain(loop[j])
+			self.triIndexes:push_back(ib)
+			local ic = getIndexForLoopChain(loop[j+1])
+			self.triIndexes:push_back(ic)
+		end
+		--]]
+		assert(#loop >= 3)
+	end
+
+	return loops, lines
+end
+
+--[[
 doesn't break intersecting tris.
 just removes any tris that are internal.
 --]]
 function Mesh:removeInternalTris()
-	-- TODO break-triangle operation first ... how to break triangles
-	
+	--[[
+	TODO first break-triangle operation first ... how to break triangles
+	otherwise this doesn't go far.
+	how to break triangles?
+	detct collision
+	how to detect collision?
+		ensure each line segment of A, projected to B is not within B
+		and vice versa.
+	what if there is a collision -- how to break?
+	--]]
+
+	for i=#self.tris,1,-1 do
+		for j=i-1,1,-1 do
+			-- TODO ...
+		end
+	end
+
+
+	local edges = self:findBadEdges()
+
 	-- second ... merge vertexes
 	-- in fact I should look at the merge map of vertexes w/o texcoord or normal condition
 	if not self.bbox then self:calcBBox() end

@@ -28,7 +28,8 @@ local function scaleVec(a, b)
 end
 
 -- a and b are tables of columns of vec3f's
-local function matrixMul(a, b)
+-- TODO matrix_ffi
+local function matrixMul3x3(a, b)
 	-- c_ij = a_ik b_kj
 	local c = range(3):mapi(function() return vec3f() end)
 	for i=0,2 do
@@ -43,8 +44,44 @@ local function matrixMul(a, b)
 	return c
 end
 
+local function translateMat4x4(t)
+	return matrix_ffi{
+		{1,0,0,t.x},
+		{0,1,0,t.y},
+		{0,0,1,t.z},
+		{0,0,0,1},
+	}
+end
+
+local function scaleMat4x4(s)
+	return matrix_ffi{
+		{s.x,0,0,0},
+		{0,s.y,0,0},
+		{0,0,s.z,0},
+		{0,0,0,1},
+	}
+end
+
+local function matrix3x3To4x4(b)
+	local m = matrix_ffi{4,4}:zeros()
+	for i=0,2 do
+		for j=0,2 do
+			m.ptr[i + 4 * j] = b[j+1].s[i]
+		end
+	end
+	m.ptr[3 + 4 * 3] = 1
+	return m
+end
+
 local function tileMesh(mesh, omesh)
 
+	-- TODO HERE
+	-- optimize omesh
+	-- merge vtxs
+	-- remove internal tris
+	-- etc
+	omesh = omesh:clone()
+	omesh:mergeMatchingVertexes()
 
 	-- list of column-vectors
 	-- transform from uv-space to placement-space
@@ -55,29 +92,53 @@ local function tileMesh(mesh, omesh)
 		{0, 1},
 	}
 --]]
---[[
-	--local scale = vec3f(.1, .05, .1) * .9
-	local scale = vec3f(1,1,1)
+-- [[
+	local scale = vec3f(.1, .05, .1) * .7
+	--local scale = vec3f(1,1,1)
 	local placementCoordXForm = matrix_ffi{
 		{.2, .1},
 		{0, .1},
 	}
+	local jitter = {0,0}
+	local orientation = {vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
-	
+
 --[[ identity
 	local orientation = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
--- [[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
+--[[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
 
+	local scale = vec3f(1,1,1)
 	-- bbox of brick:
 	-- min: -0.054999999701977, -5.0268096352113e-09, -0.11500000208616
 	-- max: 0.054999999701977, 0.07600000500679, 0.11500000208616
 	-- size: 0.10999999940395, 0.076000012457371, 0.23000000417233
-	local scale = vec3f(1,1,1)
+	-- size: 0.11, 0.076, 0.23
+	-- size: [thickness, height, length]
+	-- ... with an extra .01 gap ...
+	local offsetU = .24
+	local offsetV = .12
+
+	-- true = centered-rectangular lattice
+	-- false = rectangular lattice
+	local stack = false
+
+	-- columns are [v-ofs | u-ofs] in the placement lattice
+	-- hmm the config file says 'u offset' is the short offset and 'v offset' is long for bricks
+	-- but right now i have 'u offset' go left and 'v offset' go down
 	local placementCoordXForm = matrix_ffi{
-		{.23, .11},
-		{0, .11},
+		{offsetU, stack and 0 or offsetU/2},
+		{0, offsetV},
 	}
+
+	-- how much to randomize placement
+	local jitter = {.05, .05}
+
+	-- TODO jitterOrientation
+
+	-- map y-up in brick to e_z = up on surface
+	-- map z-length in brick to e_x = ∂/∂u on surface
+	-- map x-thickness in brick to e_y = ∂/∂v on surface
 	local orientation = table{
 		vec3f(0,1,0),
 		vec3f(0,0,1),	-- model's y+ up maps to z+ which is then mapped to the tri normal dir
@@ -115,6 +176,7 @@ local function tileMesh(mesh, omesh)
 			local v = mesh.vtxs.v[tp[j]]
 			--local tc = v.texcoord
 			-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = ∂/∂u)
+			-- this is already accomplished form unwrapUV(), but if the mesh hasn't been unwrapped this way then this will fix it.
 			local dvpos = v.pos - uvorigin3D
 			local tc = vec2f(
 				dvpos:dot(t.basis[1]),
@@ -131,7 +193,10 @@ local function tileMesh(mesh, omesh)
 --print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
-				local uv = placementCoordXForm * matrix_ffi{pu,pv}
+				local uv = placementCoordXForm * matrix_ffi{
+					pu + (math.random() * 2 - 1) * jitter[1],
+					pv + (math.random() * 2 - 1) * jitter[2],
+				}
 				uv = vec2f(uv:unpack())
 --print(uv)
 				local duv = uv - uvorigin2D
@@ -151,11 +216,24 @@ local function tileMesh(mesh, omesh)
 					-- then place an instance of omesh
 					-- get the transform rotation and scale to the location on the poly
 					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
+
+					-- total transform of scale->rotate->place
+					-- TODO store basis as a matrix_ffi ?
+					-- TODO store a tris[] c buffer containing ... TBN frame, COM, area
+					-- and for Lua stuff add a *new* table
+					local xform = translateMat4x4(vtxpos)
+						* matrix3x3To4x4(t.basis)
+						* matrix3x3To4x4(orientation)
+						* scaleMat4x4(scale)
+
 					mesh.tilePlaces:insert{
-						-- scale, rotate, offset ...
+						--[[ scale, rotate, offset ...
 						pos = vec3f(vtxpos),	-- not so necessary
-						basis = matrixMul(t.basis, orientation),
+						basis = matrixMul3x3(t.basis, orientation),
 						scale = vec3f(scale),
+						--]]
+						-- transform
+						xform = xform,
 						-- not necessary
 						uv = vec2f(uv),
 					}
@@ -175,15 +253,14 @@ print('#tilePlaces', #mesh.tilePlaces)
 			local dstv = nvtxs:emplace_back()
 			dstv.texcoord = srcv.texcoord
 			-- scale, rotate, normalize the normals
-			dstv.normal = scaleVec(srcv.normal, place.scale)
-			dstv.normal = rotateVec(place.basis, dstv.normal)
-			dstv.normal = dstv.normal:normalize()
+			local n = srcv.normal
+			local n4 = place.xform * matrix_ffi{n.x, n.y, n.z, 0}
+			dstv.normal = vec3f(n4.ptr[0], n4.ptr[1], n4.ptr[2])
 			-- scale, rotate, translate the positions
 			-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
-			dstv.pos = srcv.pos
-			dstv.pos = scaleVec(place.scale, dstv.pos)
-			dstv.pos = rotateVec(place.basis, dstv.pos)
-			dstv.pos = dstv.pos + place.pos
+			local p = srcv.pos
+			local p4 = place.xform * matrix_ffi{p.x, p.y, p.z, 1}
+			dstv.pos = vec3f(p4.ptr[0], p4.ptr[1], p4.ptr[2])
 		end
 		local lastVtx = nvtxs.size
 		for _,g in ipairs(omesh.groups) do

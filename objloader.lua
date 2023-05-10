@@ -3,7 +3,6 @@ local file = require 'ext.file'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local string = require 'ext.string'
-local timer = require 'ext.timer'
 local math = require 'ext.math'
 local vector = require 'ffi.cpp.vector'
 local vec3f = require 'vec-ffi.vec3f'
@@ -23,17 +22,24 @@ end
 local function wordsToColor(w)
 	-- TODO error if not 3 or 4?
 	local r,g,b,a = w:mapi(function(x) return tonumber(x) end):unpack(1, 4)
-	r = r or 0
-	g = g or 0
-	b = b or 0
-	a = a or 1
-	return vec4f(r,g,b,a)
+	return vec4f(r or 0, g or 0, b or 0, a or 1)
 end
 
 
 local OBJLoader = class()
 
+OBJLoader.verbose = false
+
+function OBJLoader:init(args)
+	if args then
+		self.verbose = args.verbose
+	end
+end
+
 function OBJLoader:load(filename)
+	if self.verbose then
+		print('OBJLoader:load begin', filename)
+	end
 	local mesh = Mesh()
 
 	local vs = table()
@@ -42,8 +48,6 @@ function OBJLoader:load(filename)
 
 	-- TODO get rid of this old method
 	mesh.tris = table()
-
-timer('loading', function()
 
 	-- mesh groups / materials
 	local group
@@ -117,7 +121,10 @@ timer('loading', function()
 			self:loadMtl(words:concat' ', mesh)
 		end
 	end
-end)
+
+	if self.verbose then
+		print('read '..#vs..' v '..#vts..' vt '..#vns..' vn '..#mesh.tris..' tris from fs')
+	end
 
 	if self.verbose then
 		print('removing unused materials...')
@@ -194,18 +201,24 @@ end)
 	mesh.vtxs = vtxs
 	mesh.triIndexes = triIndexes
 
+
+	if self.verbose then
+		print('calculating triangle properties')
+	end
 	for _,t in ipairs(mesh.tris) do
 		t:calcAux(mesh)
 	end
 
 	if self.verbose then
-		print'done'
+		print('OBJLoader:load end', filename)
 	end
 	return mesh
 end
 
 function OBJLoader:loadMtl(filename, mesh)
-timer('loading mtl file', function()
+	if self.verbose then
+		print('OBJLoader:loadMtl begin', filename)
+	end
 	-- TODO don't store mtlFilenames
 	mesh.mtlFilenames:insert(filename)
 
@@ -318,7 +331,9 @@ timer('loading mtl file', function()
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
 				group.image_Kd = Image(group.map_Kd)
---print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
+				if self.verbose then
+					print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
+				end
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
 				-- manually?  upon first draw?  both?
@@ -331,7 +346,9 @@ timer('loading mtl file', function()
 		-- and don't forget textre map options
 		end
 	end
-end)
+	if self.verbose then
+		print('OBJLoader:loadMtl end', filename)
+	end
 end
 
 function OBJLoader:makeOrFindGroup(name, mesh, inUseMtl)
@@ -376,6 +393,9 @@ end
 
 -- only saves the .obj, not the .mtl
 function OBJLoader:save(filename, mesh)
+	if self.verbose then
+		print('OBJLoader:save begin', filename)
+	end
 	local o = assert(file(filename):open'w')
 	-- TODO write smooth flag, groups, etc
 	if mesh.mtlFilenames then
@@ -384,6 +404,9 @@ function OBJLoader:save(filename, mesh)
 		end
 	end
 
+	if self.verbose then
+		print('rebuilding tri aux info')
+	end
 	mesh:rebuildTris()
 
 	-- keep track of all used indexes by tris
@@ -476,10 +499,11 @@ function OBJLoader:save(filename, mesh)
 		end
 		writeFaceSoFar()
 	end
+	o:close()
 	if self.verbose then
 		print('tri indexes reduced from '..mesh.triIndexes.size..' to '..numTriIndexes)
+		print('OBJLoader:save end', filename)
 	end
-	o:close()
 end
 
 -- TODO
@@ -489,6 +513,9 @@ end
 -- and if store, why not store the .obj filename too?
 -- or why not combine :saveMtl and :save like i do :loadMtl and :load
 function OBJLoader:saveMtl(filename, mesh)
+	if self.verbose then
+		print('OBJLoader:saveMtl begin', filename)
+	end
 	local o = assert(file(filename):open'w')
 	for i,group in ipairs(mesh.groups) do
 		if group.name ~= '' then
@@ -509,6 +536,9 @@ function OBJLoader:saveMtl(filename, mesh)
 		end
 	end
 	o:close()
+	if self.verbose then
+		print('OBJLoader:saveMtl end', filename)
+	end
 end
 
 return OBJLoader

@@ -285,15 +285,10 @@ print(ki)
 		end
 		--]==]
 
-		-- TODO gotta find edges based on vtx comparing pos
-		-- not based on vtx index
+		-- find edges based on vtx comparing pos
+		local uniquevs, indexToUniqueV = mesh:getUniqueVtxs(1e-6)
 		m:findEdges(function(i)
-			for j=0,i-1 do
-				if (m.vtxs.v[j].pos - m.vtxs.v[i].pos):norm() < 1e-6 then
-					return j
-				end
-			end
-			return i
+			return uniquevs[indexToUniqueV[i]]
 		end)
 
 		local border = table()
@@ -308,119 +303,6 @@ print(ki)
 		end
 print('edges total', totalEdges, 'border', #border)
 
-		--[=[
-		TODO turn this into a mesh function: find boundary edges
-		do	-- now put in loops
-			local all = table(border)
-			local loops = table()
-			local lines = table()
-			while #all > 0 do
-				local loop = table()
-				local last = all:remove(1)
---print('first edge', last[1], last[2])
-				loop:insert{v=1, e=last}
-				local lastvi = 2
-				while true do
-					local found
-					for i=1,#all do
-						local o = all[i]
---print('checking edge', o[1], o[2])
-						if o[1] == last[lastvi] then
-							last = o
-							lastvi = 2
-							loop:insert{v=3-lastvi, e=o}
-							all:remove(i)
-							found = true
---print('adding edge', last[1], last[2])
-							break
-						elseif o[2] == last[lastvi] then
-							last = o
-							lastvi = 1
-							loop:insert{v=3-lastvi, e=o}
-							all:remove(i)
-							found = true
---print('adding edge', last[1], last[2])
-							break
-						end
-					end
-					if not found then
---print('found no more edges, adding to lines')
-						lines:insert(loop)
-						break
-					else
-						if last[lastvi] == loop[1].e[loop[1].v] then
---print('reached beginning, adding to loops')
-							loops:insert(loop)
-							break
-						end
-					end
-				end
-			end
-print('#loops', #loops)
-print('#lines', #lines)
-
-			-- no boundary edges that aren't loops
-			-- lines?  how to fix those?
-			if #lines > 0 then error("can't fix stupid") end
-			-- luckily I never have to find out (yet)
-
-			-- which blocks have more than one loop?
-			-- block 4 at (10, 1, 0)
-			-- block 5 at (9, 1, 0)
-			-- block 6 at (8, 1, 0)
-			-- block 7 at (7, 1, 0)
-			-- block 8 at (6, 1, 0)
-			-- block 9 at (5, 1, 0)
-			-- block 10 at (4, 1, 0)
-			-- block 11 at (3, 1, 0)
-			-- block 12 at (2, 1, 0)
-			-- block 13 at (1, 1, 0)
-			-- block 14 at (10, 2, 0)
-			-- and still going ...
-			if #loops > 1 then
-				print("!!!!!!!!!! failed to find just one loop for shape "..dstfn..' !!!!!!!!!!')
-			end
-
-			local function getIndexForLoopChain(l)
-				local i = l.e[l.v]-1
-				assert(i >= 0 and i < m.vtxs.size)
-				return i
-			end
-
-			for i,loop in ipairs(loops) do
-print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
-				--[[ determine if the loop is planar (and determine its normal)
-				for j=1,#loop-1 do
-					local ia = getIndexForLoopChain(loop[j])
-					local a = m.vtxs.v[ia].pos
-					local ib = getIndexForLoopChain(loop[j%#loop+1])
-					local b = m.vtxs.v[ib].pos
-					local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
-					local c = m.vtxs.v[ic].pos
-					local n = (c - b):cross(b - a)
-					print(n)
-				end
-				--]]
-				-- [[ just add the tris as-is
--- TODO how to determine loop order ...
--- probably based on normal of opposing edges triangles
-if loop[1].e.tris[1][1].v == loop[1].e[1] then
-	loop = loop:reverse()
-end
-				for j=2,#loop-1 do
-					local ia = getIndexForLoopChain(loop[1])
-					m.triIndexes:push_back(ia)
-					local ib = getIndexForLoopChain(loop[j])
-					m.triIndexes:push_back(ib)
-					local ic = getIndexForLoopChain(loop[j+1])
-					m.triIndexes:push_back(ic)
-				end
-				--]]
-				assert(#loop >= 3)
-			end
-		end
-		--]=]
-		--]]
 
 		-- [=[ look at vtxs that are along the bbox
 		-- TODO combine this with the edge border loops
