@@ -6,12 +6,14 @@ mesh is modified
 --]]
 local ffi = require 'ffi'
 local range = require 'ext.range'
+local file = require 'ext.file'
 local table = require 'ext.table'
 local timer = require 'ext.timer'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local box2f = require 'vec-ffi.box2f'
 local quatf = require 'vec-ffi.quatf'
+local json = require 'dkjson'
 local vector = require 'ffi.cpp.vector'
 local matrix_ffi = require 'matrix.ffi'
 
@@ -81,6 +83,7 @@ local function tileMesh(mesh, omesh)
 	-- remove internal tris
 	-- etc
 	omesh = omesh:clone()
+	omesh:calcBBox()
 	omesh:mergeMatchingVertexes()
 
 	-- list of column-vectors
@@ -92,7 +95,7 @@ local function tileMesh(mesh, omesh)
 		{0, 1},
 	}
 --]]
--- [[
+--[[
 	local scale = vec3f(.1, .05, .1) * .7
 	--local scale = vec3f(1,1,1)
 	local placementCoordXForm = matrix_ffi{
@@ -100,13 +103,13 @@ local function tileMesh(mesh, omesh)
 		{0, .1},
 	}
 	local jitter = {0,0}
-	local orientation = {vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
+	local spatialConvention = {vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
 
 --[[ identity
-	local orientation = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
+	local spatialConvention = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
---[[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
+-- [[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
 
 	local scale = vec3f(1,1,1)
 	-- bbox of brick:
@@ -132,14 +135,14 @@ local function tileMesh(mesh, omesh)
 	}
 
 	-- how much to randomize placement
-	local jitter = {.05, .05}
+	local jitter = matrix_ffi{.05, .05}
 
 	-- TODO jitterOrientation
 
 	-- map y-up in brick to e_z = up on surface
 	-- map z-length in brick to e_x = ∂/∂u on surface
 	-- map x-thickness in brick to e_y = ∂/∂v on surface
-	local orientation = table{
+	local spatialConvention = table{
 		vec3f(0,1,0),
 		vec3f(0,0,1),	-- model's y+ up maps to z+ which is then mapped to the tri normal dir
 		vec3f(1,0,0),	-- model's z- fwd maps to x+ which is mapped to the tri ∂/∂u
@@ -165,6 +168,32 @@ local function tileMesh(mesh, omesh)
 		local uvorigin2D = vec2f():set(tvtxs[1].texcoord:unpack())
 		local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
 --print('uv origin', ti, uvorigin2D, uvorigin3D)
+	
+		-- the transform from tile-mesh to surface scale/spatialConvention
+		--  store for later
+		local modelToSurfXForm = matrix3x3To4x4(t.basis)
+			* matrix3x3To4x4(spatialConvention)
+			* scaleMat4x4(scale)
+
+		--[[ also store the bbox of the omesh under this transform?
+		-- this might help some edges, but it causes overlaps on planar edges
+		local cornersTC = range(0,7):mapi(function(corner)
+			-- get omesh bbox corner
+			local cv = matrix_ffi{
+				omesh.bbox.s[bit.band(corner,1)].s[0],
+				omesh.bbox.s[bit.band(bit.rshift(corner,1),1)].s[1],
+				omesh.bbox.s[bit.band(bit.rshift(corner,2),1)].s[2],
+				1}
+			-- convert to surface-space
+			local ctc = modelToSurfXForm * cv
+			return matrix_ffi{ctc[1], ctc[2]}
+		end)
+		local cornersPlacement = cornersTC:mapi(function(ctc)
+			-- convert to placement space
+			return placementCoordXFormInv * ctc
+		end)
+		--]]
+
 		-- find uv min max
 		-- maybe stretch bounds to include edges of placements?
 		-- interpolate across uv
@@ -183,53 +212,102 @@ local function tileMesh(mesh, omesh)
 				dvpos:dot(t.basis[2])
 			) + uvorigin2D
 			local placementCoord = placementCoordXFormInv * matrix_ffi{tc.x, tc.y}
-			placementCoord = vec2f(placementCoord:unpack())
-			placementBBox:stretch(placementCoord)
+		
+			-- [[ stretch in placement space to the placement coord
+			placementBBox:stretch(vec2f(placementCoord:unpack()))
+			--]]
+			--[[ don't just stretch the placement coord
+			-- stretch the model's bbox in placement-space
+			for _,cpl in ipairs(cornersPlacement) do
+				placementBBox:stretch(vec2f((placementCoord + cpl):unpack()))
+			end
+			--]]
 --print('stretching', placementCoord)
 		end
-		local from = box2f(placementBBox)
+--local from = box2f(placementBBox)
 		placementBBox.min = placementBBox.min:map(math.floor) - 1
 		placementBBox.max = placementBBox.max:map(math.ceil) + 1
 --print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
-				local uv = placementCoordXForm * matrix_ffi{
-					pu + (math.random() * 2 - 1) * jitter[1],
-					pv + (math.random() * 2 - 1) * jitter[2],
-				}
+				-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
+				-- but adding jitter before the test will cause some points to go outside and fail the test.  this is bad too.
+				-- so I have to test without jitter, then later introduce jitter.
+				local uv = placementCoordXForm * matrix_ffi{pu, pv}
 				uv = vec2f(uv:unpack())
 --print(uv)
 				local duv = uv - uvorigin2D
+				
+				local jitterPlacement = matrix_ffi{
+					(math.random() * 2 - 1) * jitter[1],
+					(math.random() * 2 - 1) * jitter[2],
+				}
+				local jitterUV = placementCoordXForm * jitterPlacement
+
 				--[[
-				texcoord = basis * (vtxpos - uvorigin3D) + uvorigin2D
-				vtxpos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
+				texcoord = uvbasis^-1 * (placePos - uvorigin3D) + uvorigin2D
+				uvbasis * (texcoord - uvorigin2D) = placePos - uvorigin3D
+				placePos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
 
 				with placement-lattice transforms
 				placementCoords = placementXForm * texcoord
 				placementXFormInv * placementCoords = texcoord
 				--]]
-				local vtxpos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
-				-- if in tri (barycentric coord test)
-				local inside = t:insideBCC(vtxpos, mesh)
+				local placePos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
+				-- [[
+				-- if in tri (barycentric coord test) then continue
+				-- TODO bcc test the closest point on the placed mesh bbox to the tri
+				local inside = t:insideBCC(placePos, mesh)
+				--]]
+				--[[ if any corners in placement-space are within the tri ... continue
+				local inside
+				for _,ctc in ipairs(cornersTC) do
+					local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
+					if t:insideBCC(cornerPos, mesh) then
+						inside = true
+						break
+					end
+				end
+				--]]
+
+				-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
+				-- then you have a brick wall with a brick missing from the middle of it.
+				placePos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
 --print(uv, inside)
 				if inside then
-					-- then place an instance of omesh
-					-- get the transform rotation and scale to the location on the poly
-					-- if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
+					--[[
+					then place an instance of omesh
+					get the transform rotation and scale to the location on the poly
+					if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
 
-					-- total transform of scale->rotate->place
-					-- TODO store basis as a matrix_ffi ?
-					-- TODO store a tris[] c buffer containing ... TBN frame, COM, area
-					-- and for Lua stuff add a *new* table
-					local xform = translateMat4x4(vtxpos)
-						* matrix3x3To4x4(t.basis)
-						* matrix3x3To4x4(orientation)
-						* scaleMat4x4(scale)
-
+					total transform of scale->rotate->place
+					TODO store basis as a matrix_ffi ?
+					TODO store a tris[] c buffer containing ... TBN frame, COM, area
+					and for Lua stuff add a *new* table
+					
+					dstvtxpos = vertex location on tiled geometry
+					srcvtxpos = vertex location in the source tile mesh
+					dstvtxpos = placePos + uvbasis * spatialConvention * scale * srcvtxpos
+					
+					solve for srcvtxpos:
+					srcvtxpos = scale^-1 * spatialConvention^-1 * uvbasis^-1 * (dstvtxpos - placePos)
+					substitute srcvtxpos == bboxcorner:
+					bboxcorner = scale^-1 * spatialConvention^-1 * uvbasis^-1 * (dstvtxpos - placePos)
+				
+					substitute placePos:
+					placePos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
+					dstvtxpos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D + uvbasis * spatialConvention * scale * srcvtxpos
+					dstvtxpos - uvorigin3D = uvbasis * (texcoord - uvorigin2D + spatialConvention * scale * srcvtxpos)
+				
+					substitute srcvtxpos == bboxcorner:
+					dstvtxpos - uvorigin3D = uvbasis * (texcoord - uvorigin2D + spatialConvention * scale * bboxcorner)
+					texcoord = uvbasis^-1 * (dstvtxpos - uvorigin3D) + uvorigin2D - spatialConvention * scale * bboxcorner
+					--]]
+					local xform = translateMat4x4(placePos) * modelToSurfXForm
 					mesh.tilePlaces:insert{
 						--[[ scale, rotate, offset ...
-						pos = vec3f(vtxpos),	-- not so necessary
-						basis = matrixMul3x3(t.basis, orientation),
+						pos = vec3f(placePos),	-- not so necessary
+						basis = matrixMul3x3(t.basis, spatialConvention),
 						scale = vec3f(scale),
 						--]]
 						-- transform
@@ -288,6 +366,12 @@ print('#tilePlaces', #mesh.tilePlaces)
 	assert(ntris.size == omesh.triIndexes.size * #mesh.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
+
+	file'placement.json':write(json.encode(mesh.tilePlaces:mapi(function(p)
+		return {
+			transform = range(16):mapi(function(i) return p.xform.ptr[i-1] end),
+		}
+	end), {indent=true}))
 
 	-- replace
 	mesh.vtxs = nvtxs

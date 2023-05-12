@@ -23,6 +23,10 @@ typedef struct MeshVertex_t {
 } MeshVertex_t;
 ]]
 
+local function lerp(a,b,s)
+	return a * (1 - s) + b * s
+end
+
 local Mesh = class()
 
 local function triArea(a,b,c)
@@ -412,11 +416,21 @@ print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size
 end
 
 -- 0-based, index-array so 3x from unique tri
+function Mesh:triVtxs(ti)
+	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	local t = self.triIndexes.v + ti
+	assert(t[0] >= 0 and t[0] < mesh.vtxs.size)
+	assert(t[1] >= 0 and t[1] < mesh.vtxs.size)
+	assert(t[2] >= 0 and t[2] < mesh.vtxs.size)
+	return self.vtxs.v[t[0]],
+			self.vtxs.v[t[1]],
+			self.vtxs.v[t[2]]
+end
+
+-- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxPos(i)
-	local t = self.triIndexes.v + i
-	return self.vtxs.v[t[0]].pos,
-			self.vtxs.v[t[1]].pos,
-			self.vtxs.v[t[2]].pos
+	local a, b, c = self:triVtxPos(i)
+	return a.pos, b.pos, c.pos
 end
 
 function Mesh:removeEmptyTris()
@@ -753,9 +767,9 @@ function Mesh:removeTri(i)
 	assert(#self.tris*3 == self.triIndexes.size)
 	self.triIndexes:erase(self.triIndexes.v + i, self.triIndexes.v + i + 3)
 	for _,g in ipairs(self.groups) do
-		if i < g.triFirstIndex then
+		if i < 3*g.triFirstIndex then
 			g.triFirstIndex = g.triFirstIndex - 1
-		elseif i >= g.triFirstIndex and i < g.triFirstIndex + g.triCount then
+		elseif i >= 3*g.triFirstIndex and i < 3*(g.triFirstIndex + g.triCount) then
 			g.triCount = g.triCount - 1
 		end
 	end
@@ -1227,6 +1241,105 @@ function Mesh:generateVertexNormals()
 	if self.vtxBuf then
 		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end
+end
+
+--[[
+in-place clip a mesh by a plane
+do so by removing all backfacing triangles
+and splitting any overlapping triangles
+
+planeDir = xyz of plane normal (not necessarily normalized)
+planeNegDist = plane w component, equal to -p dot n, where p is some point on the plane and n is the plane normal
+--]]
+function Mesh:clip(planeDir, planeNegDist)
+	for _,g in ipairs(self.groups) do
+		for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
+			local t = self.tris[ti+1]
+			local tp = self.triIndexes.v + 3*ti
+			local vs = range(0,2):mapi(function(j) return self.vtxs.v[tp[j]] end)
+			local planeDists = vs:mapi(function(v) return planeDir:dot(v.pos) + planeNegDist end)
+			local sides = planeDists:mapi(function(d) return d >= 0 end)
+			local frontCount = sides:mapi(function(s) return s and 1 or 0 end):sum()
+print('frontCount', frontCount)
+			if frontCount == 3 then
+print('...keep')
+				-- keep
+			elseif frontCount == 0 then
+print('...remove')
+				self:removeTri(3*ti)	-- remove
+			-- needs a new vertex:
+			else
+				local found
+				for j=0,2 do
+					if (frontCount == 1 and sides[j+1])
+					or (frontCount == 2 and not sides[j+1])
+					then
+print('splitting on '..j..'th side')
+						local j1 = (j+1)%3
+						local j2 = (j1+1)%3
+						-- separate off this triangle
+						local d1 = planeDists[j1+1] - planeDists[j+1]
+						local d2 = planeDists[j2+1] - planeDists[j+1]
+
+						local iv01 = self.vtxs.size
+						local nv01 = self.vtxs:emplace_back()
+						local s01 = (0 - planeDists[j+1]) / d1
+						nv01.pos = lerp(vs[j1+1].pos, vs[j+1].pos, s01)
+						nv01.texcoord = lerp(vs[j1+1].texcoord, vs[j+1].texcoord, s01)
+						nv01.normal = lerp(vs[j1+1].normal, vs[j+1].normal, s01)
+
+						local iv02 = self.vtxs.size
+						local nv02 = self.vtxs:emplace_back()
+						local s02 = (0 - planeDists[j+1]) / d2
+						nv02.pos = lerp(vs[j2+1].pos, vs[j+1].pos, s02)
+						nv02.texcoord = lerp(vs[j2+1].texcoord, vs[j+1].texcoord, s02)
+						nv02.normal = lerp(vs[j2+1].normal, vs[j+1].normal, s02)
+
+						local iv0 = tp[j]
+						local iv1 = tp[j1]
+						local iv2 = tp[j2]
+						-- now go from iv0 iv1 iv2
+						-- to iv0 iv01 iv02, iv01 iv1 iv2, iv01 iv2 iv02
+						-- soo .. replace the current with the first, and insert the other two
+						-- this is rotating it to put j at 0
+						if frontCount == 1 then	-- shorten the leading side
+							tp[0] = iv0
+							tp[1] = iv01
+							tp[2] = iv02
+						else -- replace tp with the base and insert a second base to make a quad
+							-- insert these into the same material group as we're currently in
+							local nti = ti + 1
+							tp[0] = iv01
+							tp[1] = iv1
+							tp[2] = iv2
+							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
+							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 4, iv2)
+							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 5, iv02)
+							self.tris:insert(ti+1, Triangle{
+								index = nti+1,	-- +1 cuz its' 1-based
+							})
+							for _,g2 in ipairs(self.groups) do
+								if nti < g2.triFirstIndex then
+									g2.triFirstIndex = g2.triFirstIndex + 1
+								end
+							end
+							g.triCount = g.triCount + 1
+						end
+						found = true
+						break
+					end
+				end
+				if not found then
+					error'here'
+				end
+			end
+		end
+	end
+
+	self:rebuildTris()
+
+	self.loadedGL = nil
+	self.vtxBuf = nil
 end
 
 -- 'fwd' is used for depth calculation, 'dir' is the ray direction
