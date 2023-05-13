@@ -410,11 +410,11 @@ end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxs(ti)
-	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	assert(ti >= 0 and ti + 3 <= self.triIndexes.size)
 	local t = self.triIndexes.v + ti
-	assert(t[0] >= 0 and t[0] < mesh.vtxs.size)
-	assert(t[1] >= 0 and t[1] < mesh.vtxs.size)
-	assert(t[2] >= 0 and t[2] < mesh.vtxs.size)
+	assert(t[0] >= 0 and t[0] < self.vtxs.size)
+	assert(t[1] >= 0 and t[1] < self.vtxs.size)
+	assert(t[2] >= 0 and t[2] < self.vtxs.size)
 	return self.vtxs.v[t[0]],
 			self.vtxs.v[t[1]],
 			self.vtxs.v[t[2]]
@@ -422,7 +422,7 @@ end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxPos(i)
-	local a, b, c = self:triVtxPos(i)
+	local a, b, c = self:triVtxs(i)
 	return a.pos, b.pos, c.pos
 end
 
@@ -587,18 +587,18 @@ function Mesh:calcAllOverlappingEdges()
 							if math.abs(n1:dot(n2)) > 1 - 1e-3 then
 --print('allOverlappingEdges normals align:', i1-1, j1-1, i2-1, j2-1)
 								-- normals align, calculate distance
-								local rayPos = v11	-- pick any point on line v1: v11 or v12
-								local rayDir = n1
-								local dv = v21 - rayPos	-- ray from the v1 line to any line on v2
-								dv = dv - rayDir * dv:dot(rayDir)		-- project onto the plane normal
-								local dist = dv:norm()
+								local planePos = v11
+								local plane = plane3f():fromDirPt(n1, planePos)	-- pick any point on line v1: v11 or v12
+								-- find ray from the v1 line to any line on v2
+								local dv = plane:projectVec(v21 - planePos) 	-- project onto the plane normal
+								local dist = dv:norm()					-- calculate the distance of the points both projected onto the plane
 								if dist < 1e-3 then
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-									local s11 = 0	--(v11 - rayPos):dot(rayDir) -- assuming v11 is the plane origin
-									local s12 = (v12 - rayPos):dot(rayDir)
+									local s11 = 0	--plane:dist(v11) -- assuming v11 is the plane origin
+									local s12 = plane:dist(v12)
 									-- based on n1 being the plane normal, s11 and s12 are already sorted
-									local s21 = (v21 - rayPos):dot(rayDir)
-									local s22 = (v22 - rayPos):dot(rayDir)
+									local s21 = plane:dist(v21)
+									local s22 = plane:dist(v22)
 									-- since these aren't, they have to be sorted
 									if s21 > s22 then s21, s22 = s22, s21 end
 									if s11 < s22 and s12 > s21 then
@@ -611,8 +611,8 @@ function Mesh:calcAllOverlappingEdges()
 											triVtxIndexes = {j2, j1},
 											intervals = {{s21,s22}, {s11,s12}},
 											dist = dist,
-											rayPos = rayPos,
-											rayDir = rayDir
+											plane = plane,
+											planePos = planePos,
 										}
 										self.allOverlappingEdges:insert(e)
 										t1.allOverlappingEdges:insert(e)
@@ -1446,7 +1446,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 			-- make sure it's pointing towards the ray origin
 			if tnormal:dot(dir) < 0 then tnormal = -tnormal end
 
-			local p, s = plane3f():fromDirAndPt(tnormal, planePt):intersectRay(pos, dir)
+			local p, s = plane3f():fromDirPt(tnormal, planePt):intersectRay(pos, dir)
 			if s >= 0 and (not bestdist or s < bestdist) then
 				-- barycentric coordinates
 				if t:insideBCC(p, self) then
