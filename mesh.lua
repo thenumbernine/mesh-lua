@@ -8,6 +8,7 @@ local vector = require 'ffi.cpp.vector'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local box3f = require 'vec-ffi.box3f'
+local plane3f = require 'vec-ffi.plane3f'
 local matrix_ffi = require 'matrix.ffi'
 matrix_ffi.real = 'float'
 
@@ -70,14 +71,6 @@ local function tetradVolume(a,b,c)
 		- c.z * b.x * a.y) / 6
 end
 Mesh.tetradVolume = tetradVolume
-
-local function rayPlaneIntersect(rayPos, rayDir, planeNormal, planePt)
-	-- ((rayPos + s * rayDir) - planePt) dot planeNormal = 0
-	-- rayPos dot planeNormal + s * rayDir dot planeNormal - planePt dot planeNormal = 0
-	-- s = ((planePt - rayPos) dot planeNormal) / (rayDir dot planeNormal)
-	local s = (planePt - rayPos):dot(planeNormal) / rayDir:dot(planeNormal)
-	return rayPos + rayDir * s, s
-end
 
 --[[ holds extra info per tri:
 .index = what it's 1-based index is
@@ -764,7 +757,9 @@ end
 
 -- index is 0-based in increments of 3
 function Mesh:removeTri(i)
-	assert(#self.tris*3 == self.triIndexes.size)
+	if #self.tris*3 ~= self.triIndexes.size then
+		error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+	end
 	self.triIndexes:erase(self.triIndexes.v + i, self.triIndexes.v + i + 3)
 	for _,g in ipairs(self.groups) do
 		if i < 3*g.triFirstIndex then
@@ -1019,6 +1014,13 @@ function Mesh:breakAllVertexes()
 	self:calcCOMs()
 end
 
+-- used for traversing loops
+local function getIndexForLoopChain(l)
+	local i = l.e[l.v]-1
+	--assert(i >= 0 and i < mesh.vtxs.size)
+	return i
+end
+
 --[[
 find all edges that don't have exactly 2 triangle neighbors.
 --]]
@@ -1027,7 +1029,6 @@ function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
 	self:findEdges(function(i) return uniquevs[indexToUniqueV[i]] end)
-
 
 	local border = table()
 	local totalEdges = 0
@@ -1096,16 +1097,6 @@ print('#lines', #lines)
 	-- luckily I never have to find out (yet)
 	-- is this even possible?
 
-	if #loops > 1 then
-		print("!!!!!!!!!! failed to find just one loop for shape "..dstfn..' !!!!!!!!!!')
-	end
-
-	local function getIndexForLoopChain(l)
-		local i = l.e[l.v]-1
-		assert(i >= 0 and i < self.vtxs.size)
-		return i
-	end
-
 	for i,loop in ipairs(loops) do
 print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
 		--[[ determine if the loop is planar (and determine its normal)
@@ -1162,7 +1153,6 @@ function Mesh:removeInternalTris()
 			-- TODO ...
 		end
 	end
-
 
 	local edges = self:findBadEdges()
 
@@ -1248,25 +1238,33 @@ in-place clip a mesh by a plane
 do so by removing all backfacing triangles
 and splitting any overlapping triangles
 
-planeDir = xyz of plane normal (not necessarily normalized)
-planeNegDist = plane w component, equal to -p dot n, where p is some point on the plane and n is the plane normal
+plane = clip plane (not necessarily normalized)
 --]]
-function Mesh:clip(planeDir, planeNegDist)
+function Mesh:clip(plane)
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 	for _,g in ipairs(self.groups) do
 		for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
 			local t = self.tris[ti+1]
 			local tp = self.triIndexes.v + 3*ti
 			local vs = range(0,2):mapi(function(j) return self.vtxs.v[tp[j]] end)
-			local planeDists = vs:mapi(function(v) return planeDir:dot(v.pos) + planeNegDist end)
+			local planeDists = vs:mapi(function(v) return plane:dist(v.pos) end)
 			local sides = planeDists:mapi(function(d) return d >= 0 end)
 			local frontCount = sides:mapi(function(s) return s and 1 or 0 end):sum()
-print('frontCount', frontCount)
+--print('frontCount', frontCount)
 			if frontCount == 3 then
-print('...keep')
+--print('...keep')
 				-- keep
 			elseif frontCount == 0 then
-print('...remove')
+--print('...remove')
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 				self:removeTri(3*ti)	-- remove
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 			-- needs a new vertex:
 			else
 				local found
@@ -1274,7 +1272,7 @@ print('...remove')
 					if (frontCount == 1 and sides[j+1])
 					or (frontCount == 2 and not sides[j+1])
 					then
-print('splitting on '..j..'th side')
+--print('splitting on '..j..'th side')
 						local j1 = (j+1)%3
 						local j2 = (j1+1)%3
 						-- separate off this triangle
@@ -1307,6 +1305,9 @@ print('splitting on '..j..'th side')
 							tp[1] = iv01
 							tp[2] = iv02
 						else -- replace tp with the base and insert a second base to make a quad
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 							-- insert these into the same material group as we're currently in
 							local nti = ti + 1
 							tp[0] = iv01
@@ -1324,6 +1325,9 @@ print('splitting on '..j..'th side')
 								end
 							end
 							g.triCount = g.triCount + 1
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 						end
 						found = true
 						break
@@ -1336,10 +1340,69 @@ print('splitting on '..j..'th side')
 		end
 	end
 
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 	self:rebuildTris()
+	self:mergeMatchingVertexes()	-- better to merge vtxs than remove empty tris cuz it will keep seams in models
+	--self:removeEmptyTris()
+
+if #self.tris*3 ~= self.triIndexes.size then
+	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+end
 
 	self.loadedGL = nil
 	self.vtxBuf = nil
+end
+
+function Mesh:fillHoles()
+	local loops, lines = self:findBadEdges()
+
+	-- just add it to the last group
+	local _, g = self.groups:find(nil, function(g)
+		return (g.triFirstIndex + g.triCount) * 3 == self.triIndexes.size
+	end)
+	assert(g, "are you sure you have any groups in this mesh?")
+
+	for i,loop in ipairs(loops) do
+print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
+		--[[ determine if the loop is planar (and determine its normal)
+		for j=1,#loop-1 do
+			local ia = getIndexForLoopChain(loop[j])
+			local a = self.vtxs.v[ia].pos
+			local ib = getIndexForLoopChain(loop[j%#loop+1])
+			local b = self.vtxs.v[ib].pos
+			local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
+			local c = self.vtxs.v[ic].pos
+			local n = (c - b):cross(b - a)
+			print(n)
+		end
+		--]]
+		-- [[ just add the tris as-is
+		--[=[ TODO how to determine loop order ...
+		-- probably based on normal of opposing edges triangles
+		if loop[1].e.tris[1][1].v == loop[1].e[1] then
+		end
+		--]=]
+		-- TODO when to reverse ...
+		loop = loop:reverse()
+
+		-- TODO pick origin of fan as a corner and reduce # of tris (or gen a lot of 0-area tris to be reduced later)
+		-- TODO this only works for convex polygons ...what about concave shapes? gets more complicated.
+		for j=2,#loop-1 do
+			local ia = getIndexForLoopChain(loop[1])
+			self.triIndexes:push_back(ia)
+			local ib = getIndexForLoopChain(loop[j])
+			self.triIndexes:push_back(ib)
+			local ic = getIndexForLoopChain(loop[j+1])
+			self.triIndexes:push_back(ic)
+			g.triCount = g.triCount + 1
+		end
+		--]]
+		assert(#loop >= 3)
+	end
+
+	self:rebuildTris()
 end
 
 -- 'fwd' is used for depth calculation, 'dir' is the ray direction
@@ -1383,7 +1446,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 			-- make sure it's pointing towards the ray origin
 			if tnormal:dot(dir) < 0 then tnormal = -tnormal end
 
-			local p, s = rayPlaneIntersect(pos, dir, tnormal, planePt)
+			local p, s = plane3f():fromDirAndPt(tnormal, planePt):intersectRay(pos, dir)
 			if s >= 0 and (not bestdist or s < bestdist) then
 				-- barycentric coordinates
 				if t:insideBCC(p, self) then
