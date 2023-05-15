@@ -32,9 +32,7 @@ local Mesh = class()
 
 local function triArea(a,b,c)
 	-- TODO check nans here?
-	local ab = b - a
-	local ac = c - a
-	local n = ab:cross(ac)
+	local n = (b - a):cross(c - a)
 	return .5 * n:norm()
 end
 Mesh.triArea = triArea
@@ -42,15 +40,9 @@ Mesh.triArea = triArea
 -- TODO the more I use this (and build off it ... giving triangle TNB frames ...)
 -- the more I think I should re-introduce storing the triangle normal
 local function triNormal(a,b,c)
-	local ab = b - a
-	local bc = c - b
-	local n = ab:cross(bc)
-	local len = n:norm()
-	if len < 1e-7 or not math.isfinite(len) then
-		return vec3f(0,0,0), len * .5
-	else
-		return n / len, len * .5	-- returns the unit normal, triangle area
-	end
+	local n, len = (b - a):cross(c - b):unitOrZero()
+	return n, len * .5
+	-- returns the unit normal, triangle area
 end
 Mesh.triNormal = triNormal
 
@@ -545,8 +537,6 @@ function Mesh:generateTriBasis()
 end
 
 
-
-
 -- fill the allOverlappingEdges table
 -- TODO instead generate this upon request?
 function Mesh:calcAllOverlappingEdges()
@@ -1015,11 +1005,18 @@ function Mesh:breakAllVertexes()
 end
 
 -- used for traversing loops
-local function getIndexForLoopChain(l)
+function Mesh:getIndexForLoopChain(l)
 	local i = l.e[l.v]-1
-	--assert(i >= 0 and i < mesh.vtxs.size)
+	assert(i >= 0 and i < self.vtxs.size)
 	return i
 end
+function Mesh:getVtxForLoopChain(l)
+	return self.vtxs.v[self:getIndexForLoopChain(l)]
+end
+function Mesh:getPosForLoopChain(l)
+	return self:getVtxForLoopChain(l).pos
+end
+
 
 --[[
 find all edges that don't have exactly 2 triangle neighbors.
@@ -1098,15 +1095,12 @@ print('#lines', #lines)
 	-- is this even possible?
 
 	for i,loop in ipairs(loops) do
-print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
+print('loop '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
 		--[[ determine if the loop is planar (and determine its normal)
 		for j=1,#loop-1 do
-			local ia = getIndexForLoopChain(loop[j])
-			local a = self.vtxs.v[ia].pos
-			local ib = getIndexForLoopChain(loop[j%#loop+1])
-			local b = self.vtxs.v[ib].pos
-			local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
-			local c = self.vtxs.v[ic].pos
+			local a = self:getPosForLoopChain(loop[j])
+			local b = self:getPosForLoopChain(loop[j%#loop+1])
+			local c = self:getPosForLoopChain(loop[(j+1)%#loop+1])
 			local n = (c - b):cross(b - a)
 			print(n)
 		end
@@ -1118,12 +1112,9 @@ if loop[1].e.tris[1][1].v == loop[1].e[1] then
 loop = loop:reverse()
 end
 		for j=2,#loop-1 do
-			local ia = getIndexForLoopChain(loop[1])
-			self.triIndexes:push_back(ia)
-			local ib = getIndexForLoopChain(loop[j])
-			self.triIndexes:push_back(ib)
-			local ic = getIndexForLoopChain(loop[j+1])
-			self.triIndexes:push_back(ic)
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[1]))
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j]))
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j+1]))
 		end
 		--]]
 		assert(#loop >= 3)
@@ -1365,18 +1356,31 @@ function Mesh:fillHoles()
 	assert(g, "are you sure you have any groups in this mesh?")
 
 	for i,loop in ipairs(loops) do
-print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat', ')
-		--[[ determine if the loop is planar (and determine its normal)
+print('loop '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
+		-- [[ determine if the loop is planar (and determine its normal)
+		local planenormal
+		local planeorigin = self:getPosForLoopChain(loop[1])
 		for j=1,#loop-1 do
-			local ia = getIndexForLoopChain(loop[j])
-			local a = self.vtxs.v[ia].pos
-			local ib = getIndexForLoopChain(loop[j%#loop+1])
-			local b = self.vtxs.v[ib].pos
-			local ic = getIndexForLoopChain(loop[(j+1)%#loop+1])
-			local c = self.vtxs.v[ic].pos
-			local n = (c - b):cross(b - a)
-			print(n)
+			local a = self:getPosForLoopChain(loop[j])
+			local b = self:getPosForLoopChain(loop[j%#loop+1])
+			local c = self:getPosForLoopChain(loop[(j+1)%#loop+1])
+			local n, len = (b - a):cross(c - a):unitOrZero()
+			if len > 1e-1 then
+				-- should I average them ?  or should I enforce that they all match?
+				if not planenormal then
+					planenormal = n
+				else
+					if planenormal:dot(n) < 1 - 1e-1 then
+						return false, "loop is not planar"
+					end
+				end
+			end
 		end
+		if not planenormal then
+			return false, "plane normal not found"
+		end
+		local ex, ey = planenormal:perpendicular2()
+print('plane basis ex ey n', ex, ey, planenormal)
 		--]]
 		-- [[ just add the tris as-is
 		--[=[ TODO how to determine loop order ...
@@ -1387,14 +1391,52 @@ print('loop '..loop:mapi(function(l) return getIndexForLoopChain(l) end):concat'
 		-- TODO when to reverse ...
 		loop = loop:reverse()
 
+		-- now I need a basis point (loop[0] works)
+		-- and I need a basis vector (orthogonal to plane normal works)
+		-- and I need to know the handedness of the edge loop around the vector
+		-- and then I need to sort along one basis vector
+		-- track edges
+		-- and fill in rhombuses as I go
+		
+		for _,l in ipairs(loop) do
+			local d = self:getPosForLoopChain(l) - planeorigin
+			l.uv = vec2f(d:dot(ex), d:dot(ey))
+		end
+
+		-- sort by ex
+		local sorted = table(loop):sort(function(a,b)
+			return a.uv.x < b.uv.x
+		end)
+		-- go through and build edges
+		local sofar = table()
+		local intpts = table()
+		for i,s in ipairs(sorted) do
+			-- if opposing edges of any containing s are found in 'sofar'
+			-- remove them and add 
+
+			if #sorted == 0 then
+				-- insert as is
+				sorted:insert(s)
+				intpts:insert(s.uv)
+			else	-- TODO or keep track of uniqe bins for unique pts
+				-- if s is in any sucessive edges in 'sofar' then insert it (sorted by uv.y ?)
+
+				-- trace down each active edge, find its intersection with the current s.uv.x coordinate, triangulate from the last set of edge-intersects with the current set 
+				
+				sorted:insert(s)
+				intpts:insert(s.uv)
+			end
+		end
+
 		-- TODO pick origin of fan as a corner and reduce # of tris (or gen a lot of 0-area tris to be reduced later)
 		-- TODO this only works for convex polygons ...what about concave shapes? gets more complicated.
+		-- TODO TODO for that, sweep across the poly, keep track of edges, do just like with software rendering
 		for j=2,#loop-1 do
-			local ia = getIndexForLoopChain(loop[1])
+			local ia = self:getIndexForLoopChain(loop[1])
 			self.triIndexes:push_back(ia)
-			local ib = getIndexForLoopChain(loop[j])
+			local ib = self:getIndexForLoopChain(loop[j])
 			self.triIndexes:push_back(ib)
-			local ic = getIndexForLoopChain(loop[j+1])
+			local ic = self:getIndexForLoopChain(loop[j+1])
 			self.triIndexes:push_back(ic)
 			g.triCount = g.triCount + 1
 		end
