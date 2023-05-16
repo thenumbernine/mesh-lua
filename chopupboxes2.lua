@@ -24,10 +24,10 @@ mesh:breakAllVertexes()
 print'filling in first holes'
 mesh:fillHoles()
 
---[[ test - chop once then fill holes
 print'clipping'
 mesh:clip(plane3f({1,0,0},-6))
 mesh:fillHoles()
+--[[ test - chop once then fill holes
 mesh:clip(plane3f({-1,0,0},7))
 mesh:fillHoles()
 mesh:clip(plane3f({0,1,0},-6))
@@ -44,7 +44,7 @@ timer('saving', function()
 	loader:save(outfn, mesh)
 end)
 
--- [[ now chop up boxes
+--[[ now chop up boxes
 file'blocks':mkdir()
 for i=mesh.bbox.min.x,mesh.bbox.max.x-1 do
 	for j=mesh.bbox.min.y,mesh.bbox.max.y-1 do

@@ -672,7 +672,6 @@ function Mesh:findEdges(getIndex)
 			local a = getIndex(tp[0])
 			local b = getIndex(tp[1])
 			local c = getIndex(tp[2])
-			assert(i/3+1 >= 0 and i/3+1 <= #self.tris)
 			local ti = i/3+1
 			local t = self.tris[ti]
 			if not Triangle:isa(t) then
@@ -1065,6 +1064,8 @@ function Mesh:findBadEdges()
 	end
 print('edges total', totalEdges, 'border', #border)
 
+assert(#self.tris*3 == self.triIndexes.size)
+for i,t in ipairs(self.tris) do assert(t.index == i) end
 	-- now put in loops
 	local all = table(border)
 	local loops = table()
@@ -1073,30 +1074,46 @@ print('edges total', totalEdges, 'border', #border)
 		local loop = table()
 		local last = all:remove(1)
 --print('first edge', last[1], last[2])
-		loop:insert{v=1, e=last}
-		local lastvi = 2
+		-- loop traversal / first edge vtx should be based on edge/tri orientation
+		-- the loop should go opposite the triangle orientation
+		-- for our single tri touching the edge ...
+		-- find vtx j on the tri such that tri[j], tri[j+1] == e[1], e[2] , order-independent
+		-- then for whatever j+1 is on e, start with that one
+		assert(#last.tris == 1, "found an edge which isn't really an edge...")
+		local lastvi
+		for j=0,2 do
+			local ti = last.tris[1].index-1
+			local tj1 = uniquevs[indexToUniqueV[self.triIndexes.v[j+3*ti]]]
+			local tj2 = uniquevs[indexToUniqueV[self.triIndexes.v[(j+1)%3+3*ti]]]
+			local e1 = uniquevs[indexToUniqueV[last[1]-1]]
+			local e2 = uniquevs[indexToUniqueV[last[2]-1]]
+			if tj1 == e1 and tj2 == e2 then
+				assert(not lastvi, "we have a tri with two edges that use the same vtxs...")
+				lastvi = 2	-- so we start on 2
+			elseif tj1 == e2 and tj2 == e1 then
+				assert(not lastvi, "we have a tri with two edges that use the same vtxs...")
+				lastvi = 1	-- so we start on 1
+			end
+		end
+		assert(lastvi, "we have a first edge with a single tri which it doesn't touch...")
+		loop:insert{v=3-lastvi, e=last}
 		while true do
 			local found
 			for i=1,#all do
 				local o = all[i]
 --print('checking edge', o[1], o[2])
-				if o[1] == last[lastvi] then
-					last = o
-					lastvi = 2
-					loop:insert{v=3-lastvi, e=o}
-					all:remove(i)
-					found = true
+				for j=1,2 do
+					if o[j] == last[lastvi] then
+						last = o
+						lastvi = 3-j
+						loop:insert{v=3-lastvi, e=o}
+						all:remove(i)
+						found = true
 --print('adding edge', last[1], last[2])
-					break
-				elseif o[2] == last[lastvi] then
-					last = o
-					lastvi = 1
-					loop:insert{v=3-lastvi, e=o}
-					all:remove(i)
-					found = true
---print('adding edge', last[1], last[2])
-					break
+						break
+					end
 				end
+				if found then break end
 			end
 			if not found then
 --print('found no more edges, adding to lines')
@@ -1143,7 +1160,7 @@ end
 			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j+1]))
 		end
 		--]]
-		assert(#loop >= 3)
+		--assert(#loop >= 3)
 	end
 
 	-- here ... optional?
@@ -1456,7 +1473,10 @@ print('plane basis ex ey n', ex, ey, planenormal)
 		end
 		--]=]
 		-- TODO when to reverse ...
-		loop = loop:reverse()
+		-- this should be based on which side is inside
+		-- how to detect that?
+		-- ray test from loop center in direction of loop normal
+		--loop = loop:reverse()
 
 		-- now I need a basis point (loop[0] works)
 		-- and I need a basis vector (orthogonal to plane normal works)
