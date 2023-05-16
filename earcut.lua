@@ -2,6 +2,10 @@
 local class = require 'ext.class'
 local table = require 'ext.table'
 
+local function compareX(a, b)
+	return a.x < b.x
+end
+
 local Node = class()
 
 function Node:init(i, x, y)
@@ -49,6 +53,13 @@ local function insertNode(i, x, y, last)
 		last.next = p
 	end
 	return p
+end
+
+-- check if a point lies within a convex triangle
+local function pointInTriangle(ax, ay, bx, by, cx, cy, px, py)
+	return (cx - px) * (ay - py) >= (ax - px) * (cy - py)
+	and (ax - px) * (by - py) >= (bx - px) * (ay - py)
+	and (bx - px) * (cy - py) >= (cx - px) * (by - py)
 end
 
 -- signed area of a triangle
@@ -404,10 +415,6 @@ local function earcutLinked(ear, triangles, dim, minX, minY, invSize, pass)
 	end
 end
 
-local function compareX(a, b)
-	return a.x < b.x
-end
-
 -- find a bridge between vertices that connects hole with an outer ring and and link it
 local function eliminateHole(hole, outerNode)
 	local bridge = findHoleBridge(hole, outerNode)
@@ -520,13 +527,6 @@ local function getLeftmost(start)
 		p = p.next
 	until p == start
 	return leftmost
-end
-
--- check if a point lies within a convex triangle
-local function pointInTriangle(ax, ay, bx, by, cx, cy, px, py)
-	return (cx - px) * (ay - py) >= (ax - px) * (cy - py)
-	and (ax - px) * (by - py) >= (bx - px) * (ay - py)
-	and (bx - px) * (cy - py) >= (cx - px) * (by - py)
 end
 
 -- check if a diagonal between two polygon nodes is valid (lies in polygon interior)
