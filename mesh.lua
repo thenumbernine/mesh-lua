@@ -419,11 +419,13 @@ function Mesh:triVtxPos(i)
 end
 
 function Mesh:removeEmptyTris()
+	print('before removeEmptyTris', #self.tris)
 	for i,t in ipairs(self.tris) do
 		if t.area < 1e-7 then
 			self:removeTri(3*(i-1))
 		end
 	end
+	print('after removeEmptyTris', #self.tris)
 end
 
 -- rebuild .tris from .triIndexes
@@ -1142,6 +1144,41 @@ end
 		end
 		--]]
 		assert(#loop >= 3)
+	end
+
+	-- here ... optional?
+	-- filter out loops with zero area
+	for i=#loops,1,-1 do
+		local loop = loops[i]
+		local n
+		local totalArea = 0
+		for j=2,#loop-1 do
+			local a = self:getPosForLoopChain(loop[1])
+			local b = self:getPosForLoopChain(loop[j])
+			local c = self:getPosForLoopChain(loop[j+1])
+			local ab = b - a
+			local ac = c - a
+			local x = ab:cross(ac)
+			local xlen = x:norm()
+			if xlen > 1e-7 then
+				local area
+				if not n then
+					n = x / xlen
+					area = .5 * xlen
+--print('normal', n)
+				else
+					area = .5 * ab:cross(ac):dot(n)
+				end
+--print('adding', area)
+				totalArea = totalArea + area
+			end
+		end
+		if totalArea < 1e-7 then
+			print('loop has area '..totalArea..' ... removing')
+			loops:remove(i)
+		else
+			print('loop has area '..totalArea..' ... keeping')
+		end
 	end
 
 	return loops, lines

@@ -20,8 +20,10 @@ mesh:breakAllVertexes()
 
 -- in my tri fan implementation this does fill the bottom of map001 correctly
 -- in earcut it is failing ...
+print'filling in first holes'
 mesh:fillHoles()
 
+print'clipping'
 --[[ test - chop once
 --mesh:clip(vec3f(-1,0,0),6)
 mesh:clip(plane3f({1,0,0},-7))

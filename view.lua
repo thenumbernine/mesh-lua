@@ -363,6 +363,19 @@ function App:update()
 	if self.useDrawVertexes then
 		mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
 	end
+	if self.debugDrawLoops then
+	--debugDrawLines	
+		gl.glColor3f(1,1,1)
+		gl.glLineWidth(3)
+		for _,loop in ipairs(self.debugDrawLoops) do
+			gl.glBegin(gl.GL_LINE_LOOP)
+			for _,l in ipairs(loop) do
+				gl.glVertex3f(mesh:getPosForLoopChain(l):unpack())
+			end
+			gl.glEnd()
+		end
+		gl.glLineWidth(1)
+	end
 	if self.useDrawBBox then
 		if not mesh.bbox then mesh:calcBBox() end
 		gl.glColor3f(1,0,1)
@@ -629,6 +642,9 @@ function App:updateGUI()
 			if ig.igButton'break vertexes' then
 				mesh:breakAllVertexes()
 			end
+			if ig.igButton'remove empty tris' then
+				mesh:removeEmptyTris()
+			end
 
 			-- triangles
 			if ig.igButton'gen. tri basis' then
@@ -695,6 +711,13 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
+
+			if ig.igButton'find holes' then
+				self.debugDrawLoops, self.debugDrawLines = self.mesh:findBadEdges()
+			end
+			if ig.igButton'clear hole annotations' then
+				self.debugDrawLoops, self.debugDrawLines = nil
+			end
 
 			ig.igEndMenu()
 		end
