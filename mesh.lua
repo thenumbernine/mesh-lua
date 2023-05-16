@@ -1121,7 +1121,7 @@ print('#lines', #lines)
 	-- is this even possible?
 
 	for i,loop in ipairs(loops) do
-print('loop '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
+print('loop #'..i..': '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
 		--[[ determine if the loop is planar (and determine its normal)
 		for j=1,#loop-1 do
 			local a = self:getPosForLoopChain(loop[j])
@@ -1174,10 +1174,10 @@ end
 			end
 		end
 		if totalArea < 1e-7 then
-			print('loop has area '..totalArea..' ... removing')
+			print('loop #'..i..' has area '..totalArea..' ... removing')
 			loops:remove(i)
 		else
-			print('loop has area '..totalArea..' ... keeping')
+			print('loop #'..i..' has area '..totalArea..' ... keeping')
 		end
 	end
 
@@ -1357,10 +1357,6 @@ end
 							tp[(j+1)%3] = iv01
 							tp[(j+2)%3] = iv02
 						else -- replace tp with the base and insert a second base to make a quad
-							--[=[ debug  - remove
-							self:removeTri(3*ti)	-- remove
-							--]=]
-							-- [=[
 if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
 end
@@ -1389,7 +1385,6 @@ end
 							--[[
 							self:insertTri(iv01, iv2, iv02, nti)
 							--]]
-							--]=]
 						end
 						found = true
 						break
@@ -1418,6 +1413,7 @@ end
 end
 
 function Mesh:fillHoles()
+print('Mesh:fillHoles begin')
 	local loops, lines = self:findBadEdges()
 
 	-- just add it to the last group
@@ -1427,7 +1423,7 @@ function Mesh:fillHoles()
 	assert(g, "are you sure you have any groups in this mesh?")
 
 	for i,loop in ipairs(loops) do
-print('loop '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
+print('loop #'..i..': '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):concat', ')
 		-- [[ determine if the loop is planar (and determine its normal)
 		local planenormal
 		local planeorigin = self:getPosForLoopChain(loop[1])
@@ -1441,8 +1437,8 @@ print('loop '..loop:mapi(function(l) return self:getIndexForLoopChain(l) end):co
 				if not planenormal then
 					planenormal = n
 				else
-					if planenormal:dot(n) < 1 - 1e-1 then
-						return false, "loop is not planar"
+					if math.abs(planenormal:dot(n)) < 1 - 1e-1 then
+						error("old normal was "..planenormal..", new normal is "..n..", loop is not planar")
 					end
 				end
 			end
@@ -1474,47 +1470,15 @@ print'calc uv'
 			l.uv = vec2f(d:dot(ex), d:dot(ey))
 		end
 
-		--[=[ idk what i was doing here ...
-print'sort'
-		-- sort by ex
-		local sorted = table(loop):sort(function(a,b)
-			return a.uv.x < b.uv.x
-		end)
-print'build edges'		
-		-- go through and build edges
-		local sofar = table()
-		local intpts = table()
-		for i,s in ipairs(sorted) do
-			-- if opposing edges of any containing s are found in 'sofar'
-			-- remove them and add 
-
-			if #sorted == 0 then
-				-- insert as is
-				sorted:insert(s)
-				intpts:insert(s.uv)
-			else	-- TODO or keep track of uniqe bins for unique pts
-				-- if s is in any sucessive edges in 'sofar' then insert it (sorted by uv.y ?)
-
-				-- trace down each active edge, find its intersection with the current s.uv.x coordinate, triangulate from the last set of edge-intersects with the current set 
-				
-				sorted:insert(s)
-				intpts:insert(s.uv)
-			end
-		end
-		--]=]
-
-		--[=[ naive implementation
+		--[=[ naive fan implementation - only works on convex polygons
 		-- TODO pick origin of fan as a corner and reduce # of tris (or gen a lot of 0-area tris to be reduced later)
 		-- TODO this only works for convex polygons ...what about concave shapes? gets more complicated.
 		-- TODO TODO for that, sweep across the poly, keep track of edges, do just like with software rendering
 print'adding indices'		
 		for j=2,#loop-1 do
-			local ia = self:getIndexForLoopChain(loop[1])
-			self.triIndexes:push_back(ia)
-			local ib = self:getIndexForLoopChain(loop[j])
-			self.triIndexes:push_back(ib)
-			local ic = self:getIndexForLoopChain(loop[j+1])
-			self.triIndexes:push_back(ic)
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[1]))
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j]))
+			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j+1]))
 			g.triCount = g.triCount + 1
 		end
 		--]=]
@@ -1543,6 +1507,7 @@ print('adding to loop-index', o, 'vtx index', self:getIndexForLoopChain(loop[o])
 
 	self.vtxBuf = nil
 	self:rebuildTris()
+print('Mesh:fillHoles end')
 end
 
 -- 'fwd' is used for depth calculation, 'dir' is the ray direction

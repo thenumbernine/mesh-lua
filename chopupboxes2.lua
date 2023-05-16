@@ -1,5 +1,6 @@
 #!/usr/bin/env luajit
 local timer = require 'ext.timer'
+local file = require 'ext.file'
 local vec3f = require 'vec-ffi.vec3f'
 local plane3f = require 'vec-ffi.plane3f'
 
@@ -23,12 +24,19 @@ mesh:breakAllVertexes()
 print'filling in first holes'
 mesh:fillHoles()
 
+--[[ test - chop once then fill holes
 print'clipping'
--- [[ test - chop once
---mesh:clip(vec3f(-1,0,0),6)
-mesh:clip(plane3f({1,0,0},-7.5))
---]]
---[[ then fill holes
+mesh:clip(plane3f({1,0,0},-6))
+mesh:fillHoles()
+mesh:clip(plane3f({-1,0,0},7))
+mesh:fillHoles()
+mesh:clip(plane3f({0,1,0},-6))
+mesh:fillHoles()
+mesh:clip(plane3f({0,-1,0},7))
+mesh:fillHoles()
+mesh:clip(plane3f({0,0,1},-1))
+mesh:fillHoles()
+mesh:clip(plane3f({0,0,-1},2))
 mesh:fillHoles()
 --]]
 
@@ -36,19 +44,28 @@ timer('saving', function()
 	loader:save(outfn, mesh)
 end)
 
---[[ now chop up boxes
+-- [[ now chop up boxes
+file'blocks':mkdir()
 for i=mesh.bbox.min.x,mesh.bbox.max.x-1 do
 	for j=mesh.bbox.min.y,mesh.bbox.max.y-1 do
 		for k=mesh.bbox.min.z,mesh.bbox.max.z-1 do
 			local block = mesh:clone()
-			block:clip(vec3f(-1,0,0), i)
-			block:clip(vec3f(0,-1,0), j)
-			block:clip(vec3f(0,0,-1), k)
-			block:clip(vec3f(1,0,0), -i-1)
-			block:clip(vec3f(0,1,0), -j-1)
-			block:clip(vec3f(0,0,1), -k-1)
+			block:clip(plane3f(vec3f(-1,0,0), i))
+			block:fillHoles()
+			block:clip(plane3f(vec3f(0,-1,0), j))
+			block:fillHoles()
+			block:clip(plane3f(vec3f(0,0,-1), k))
+			block:fillHoles()
+			block:clip(plane3f(vec3f(1,0,0), -i-1))
+			block:fillHoles()
+			block:clip(plane3f(vec3f(0,1,0), -j-1))
+			block:fillHoles()
+			block:clip(plane3f(vec3f(0,0,1), -k-1))
+			block:fillHoles()
 			if block.triIndexes.size > 0 then
-				print(i,j,k,block.triIndexes.size)
+				print('generating', i, j, k)
+				--print(i,j,k,block.triIndexes.size)
+				loader:save('blocks/'..table{i,j,k}:concat'_'..'.obj', block)
 			end
 		end
 	end
