@@ -823,6 +823,30 @@ function Mesh:removeUnusedVtxs()
 	end)
 end
 
+--[[ fixme
+--nti is the 0-based triangle index
+function Mesh:insertTri(a,b,c,nti)
+	self.triIndexes:insert(self.triIndexes:begin() + 3*nti, a)
+	self.triIndexes:insert(self.triIndexes:begin() + 3*nti+1, b)
+	self.triIndexes:insert(self.triIndexes:begin() + 3*nti+2, c)
+	self.tris:insert(nti, Triangle{
+		index = nti+1,	-- +1 cuz its' 1-based
+	})
+	for _,g in ipairs(self.groups) do
+		if nti < g.triFirstIndex then
+			g.triFirstIndex = g.triFirstIndex + 1
+		elseif g.triFirstIndex <= nti and nti < g.triFirstIndex + g.triCount then
+			g.triCount = g.triCount + 1
+		end
+	end
+	if #self.tris*3 ~= self.triIndexes.size then
+		error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
+	end
+end
+--]]
+
+
+
 -- common interface?  for dif 3d format types?
 function Mesh:vtxiter()
 	return coroutine.wrap(function()
@@ -1304,6 +1328,7 @@ end
 							tp[0] = iv01
 							tp[1] = iv1
 							tp[2] = iv2
+							-- [[ TODO use insertTri instead
 							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
 							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 4, iv2)
 							self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 5, iv02)
@@ -1319,6 +1344,10 @@ end
 if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
 end
+							--]]
+							--[[
+							self:insertTri(iv01, iv2, iv02, nti)
+							--]]
 						end
 						found = true
 						break
@@ -1397,16 +1426,19 @@ print('plane basis ex ey n', ex, ey, planenormal)
 		-- and then I need to sort along one basis vector
 		-- track edges
 		-- and fill in rhombuses as I go
-		
+print'calc uv'		
 		for _,l in ipairs(loop) do
 			local d = self:getPosForLoopChain(l) - planeorigin
 			l.uv = vec2f(d:dot(ex), d:dot(ey))
 		end
 
+		--[=[ idk what i was doing here ...
+print'sort'
 		-- sort by ex
 		local sorted = table(loop):sort(function(a,b)
 			return a.uv.x < b.uv.x
 		end)
+print'build edges'		
 		-- go through and build edges
 		local sofar = table()
 		local intpts = table()
@@ -1427,10 +1459,13 @@ print('plane basis ex ey n', ex, ey, planenormal)
 				intpts:insert(s.uv)
 			end
 		end
+		--]=]
 
+		--[=[ naive implementation
 		-- TODO pick origin of fan as a corner and reduce # of tris (or gen a lot of 0-area tris to be reduced later)
 		-- TODO this only works for convex polygons ...what about concave shapes? gets more complicated.
 		-- TODO TODO for that, sweep across the poly, keep track of edges, do just like with software rendering
+print'adding indices'		
 		for j=2,#loop-1 do
 			local ia = self:getIndexForLoopChain(loop[1])
 			self.triIndexes:push_back(ia)
@@ -1440,10 +1475,31 @@ print('plane basis ex ey n', ex, ey, planenormal)
 			self.triIndexes:push_back(ic)
 			g.triCount = g.triCount + 1
 		end
+		--]=]
+		-- [=[ earcut
+		local indata = range(#loop*2):mapi(function(l,i)
+			return loop[bit.rshift(i-1,1)+1].uv.s[bit.band(i-1,1)]
+		end)
+print('indata', require 'ext.tolua'(indata))
+		local outdata = require 'mesh.earcut'(indata, {})
+print('outdata', require 'ext.tolua'(outdata))
+		assert(#outdata % 3 == 0)
+		-- TODO when to reverse ...
+		for ti=0,#outdata/3-1 do
+			for k=0,2 do
+				local j = 2-k+3*ti+1
+				local o = outdata[j]
+print('adding to loop-index', o, 'vtx index', self:getIndexForLoopChain(loop[o]), 'uv', loop[o].uv, 'pos', self:getPosForLoopChain(loop[o]))
+				self.triIndexes:emplace_back()[0] = self:getIndexForLoopChain(loop[o])
+			end
+		end
+		g.triCount = g.triCount + #outdata/3
+		--]=]
 		--]]
 		assert(#loop >= 3)
 	end
 
+	self.vtxBuf = nil
 	self:rebuildTris()
 end
 
