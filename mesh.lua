@@ -1455,7 +1455,7 @@ print('loop #'..i..': '..loop:mapi(function(l) return self:getIndexForLoopChain(
 					planenormal = n
 				else
 					if math.abs(planenormal:dot(n)) < 1 - 1e-1 then
-						error("old normal was "..planenormal..", new normal is "..n..", loop is not planar")
+						io.stderr:write("old normal was "..planenormal..", new normal is "..n..", loop is not planar\n")
 					end
 				end
 			end
