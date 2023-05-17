@@ -1,7 +1,9 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local file = require 'ext.file'
 local table = require 'ext.table'
+local math = require 'ext.math'
 local timer = require 'ext.timer'
 local gl = require 'gl'
 local GLProgram = require 'gl.program'
@@ -87,8 +89,9 @@ function App:initGL(...)
 	self.bgcolor = vec4f(.2, .3, .5, 1)
 
 
-
-	self.mesh = OBJLoader():load(fn)
+	self.curfn = fn
+	self.curdir = file(fn):getdir()
+	self.mesh = OBJLoader():load(self.curfn)
 print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexes.size/3)
 
@@ -429,7 +432,7 @@ function App:update()
 	App.super.update(self)
 
 	if self.editMode == 3 then
-		if self.mouse.leftPress then
+		do--if self.mouse.leftPress then
 			local i, bestDist = self:findClosestTriToMouse()
 			local bestgroup
 			if i then
@@ -438,12 +441,14 @@ function App:update()
 						bestgroup = g.name
 					end
 				end
-				print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
+				--print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
 
 				local pos, dir = self:mouseRay()
 				self.bestTriPt = pos + dir * bestDist
 			end
 		end
+	else
+		self.bestTriPt = nil
 	end
 
 	if self.editMode == 1 then
@@ -553,9 +558,42 @@ function App:resetAngle(fwd)
 -- qmatrix should match matrix if fromMatrix worked
 end
 
+function App:cycleFile(ofs)
+	assert(self.curdir)
+	if not self.curdirfiles then
+		self.curdirfiles = table()
+		for f in file(self.curdir):dir() do
+			if f:match'%.obj$' then
+				self.curdirfiles:insert(f)
+			end
+		end
+		self.curdirfiles:sort()
+	end
+	if #self.curdirfiles == 0 then
+		print("found no files in dir..?")
+		return
+	end
+	local _,fn = file(self.curfn):getdir()
+	local i = self.curdirfiles:find(fn)
+	if not i then
+		print("couldn't find current file "..tostring(self.curfn))
+		i = 1
+	end
+	i = (i-1+ofs)%#self.curdirfiles+1
+	self.curfn = file(self.curdir)(self.curdirfiles[i]).path
+print('on file '..i..' name '..self.curfn)
+	self.mesh = OBJLoader():load(self.curfn)
+	self.mesh:prepare()
+end
+
 function App:updateGUI()
 	local mesh = self.mesh
 	if ig.igBeginMainMenuBar() then
+		--[[ TODO
+		if ig.igBeginMenu'File' then
+			... open ...
+		end
+		--]]
 		if ig.igBeginMenu'View' then
 
 			for _,x in ipairs{'x', 'y', 'z'} do
@@ -566,6 +604,7 @@ function App:updateGUI()
 			end
 			ig.luatableInputFloat('view znear', self.view, 'znear')
 			ig.luatableInputFloat('view zfar', self.view, 'zfar')
+			ig.luatableInputFloat('view fov', self.view, 'fovY')
 			ig.luatableCheckbox('ortho view', self.view, 'ortho')
 
 			for i,name in ipairs(dirnames) do
@@ -734,6 +773,24 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		ig.igEndMainMenuBar()
+	end
+
+	if self.bestTriPt then
+		ig.igBeginTooltip()
+		local prec = 1e-4
+		ig.igText(''..self.bestTriPt:map(function(x) return math.round(x/prec)*prec end))
+		ig.igEndTooltip()
+	end
+
+	if ig.igBegin'test' then
+		if ig.igButton'<' then
+			self:cycleFile(-1)
+		end
+		ig.igSameLine()
+		if ig.igButton'>' then
+			self:cycleFile(1)
+		end
+		ig.igEnd()
 	end
 end
 
