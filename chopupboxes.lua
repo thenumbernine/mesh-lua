@@ -217,11 +217,11 @@ loader:saveMtl(mesh.mtlFilenames[1], mesh)
 -- tough problem
 -- easy solution: use planes and clip
 -- harder solution ... extrude.
-file'blocks':mkdir()
-assert(file'blocks':isdir())
+file'blocks-v1':mkdir()
+assert(file'blocks-v1':isdir())
 
 for tboxIndex,tbox in ipairs(tboxes) do
-	local dstfn = 'blocks/'..tboxIndex..'.obj'
+	local dstfn = 'blocks-v1/'..tboxIndex..'.obj'
 	timer('saving '..dstfn, function()
 		local m = Mesh()
 		local x,y,z = tbox[1]:unpack()

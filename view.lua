@@ -84,6 +84,7 @@ function App:initGL(...)
 	self.useCullFace = default(cmdline.cull, true)
 	self.useDepthTest = true
 	self.useBlend = true
+	self.useAlphaTest = true
 	self.groupExplodeDist = 0
 	self.triExplodeDist = 0
 	self.bgcolor = vec4f(.2, .3, .5, 1)
@@ -295,6 +296,12 @@ function App:update()
 
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
+	else
+		gl.glDisable(gl.GL_DEPTH_TEST)
+	end
+	if self.useAlphaTest then
+		gl.glEnable(gl.GL_ALPHA_TEST)
+		gl.glAlphaFunc(gl.GL_GEQUAL, 0.5)
 	end
 	if self.useBlend then
 		gl.glEnable(gl.GL_BLEND)
@@ -354,6 +361,14 @@ function App:update()
 		}
 		self.shader:useNone()
 	end
+	
+	if self.useBlend then
+		gl.glDisable(gl.GL_BLEND)
+	end
+	if self.useAlphaTest then
+		gl.glDisable(gl.GL_ALPHA_TEST)
+	end
+
 	if self.drawUVUnwrapEdges then
 		drawUVUnwrapEdges(mesh)
 	end
@@ -589,11 +604,17 @@ end
 function App:updateGUI()
 	local mesh = self.mesh
 	if ig.igBeginMainMenuBar() then
-		--[[ TODO
 		if ig.igBeginMenu'File' then
-			... open ...
+			--... open ...
+			if ig.igButton'Prev' then
+				self:cycleFile(-1)
+			end
+			ig.igSameLine()
+			if ig.igButton'Next' then
+				self:cycleFile(1)
+			end
+			ig.igEndMenu()
 		end
-		--]]
 		if ig.igBeginMenu'View' then
 
 			for _,x in ipairs{'x', 'y', 'z'} do
@@ -724,6 +745,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('use cull face', self, 'useCullFace')
 			ig.luatableCheckbox('use depth test', self, 'useDepthTest')
 			ig.luatableCheckbox('use blend', self, 'useBlend')
+			ig.luatableCheckbox('use alpha test', self, 'useAlphaTest')
 			ig.luatableCheckbox('use textures', self, 'useTextures')
 			ig.luatableCheckbox('flip texture', self, 'useFlipTexture')
 			if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
@@ -780,17 +802,6 @@ function App:updateGUI()
 		local prec = 1e-4
 		ig.igText(''..self.bestTriPt:map(function(x) return math.round(x/prec)*prec end))
 		ig.igEndTooltip()
-	end
-
-	if ig.igBegin'test' then
-		if ig.igButton'<' then
-			self:cycleFile(-1)
-		end
-		ig.igSameLine()
-		if ig.igButton'>' then
-			self:cycleFile(1)
-		end
-		ig.igEnd()
 	end
 end
 
