@@ -5,6 +5,7 @@ local file = require 'ext.file'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
+local sdl = require 'ffi.sdl'
 local gl = require 'gl'
 local GLProgram = require 'gl.program'
 local glCallOrRun = require 'gl.call'
@@ -91,11 +92,12 @@ function App:initGL(...)
 
 
 	self.curfn = fn
-	self.curdir = file(fn):getdir()
+	local curname
+	self.curdir,curname = file(fn):getdir()
+	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	self.mesh = OBJLoader():load(self.curfn)
 print('#unique vertexes', self.mesh.vtxs.size)
 print('#unique triangles', self.mesh.triIndexes.size/3)
-
 	-- TODO how to request this?  dirty bits?
 	self.mesh:prepare()
 
@@ -588,15 +590,17 @@ function App:cycleFile(ofs)
 		print("found no files in dir..?")
 		return
 	end
-	local _,fn = file(self.curfn):getdir()
-	local i = self.curdirfiles:find(fn)
+	local _,prevfn = file(self.curfn):getdir()
+	local i = self.curdirfiles:find(prevfn)
 	if not i then
 		print("couldn't find current file "..tostring(self.curfn))
 		i = 1
 	end
 	i = (i-1+ofs)%#self.curdirfiles+1
 	self.curfn = file(self.curdir)(self.curdirfiles[i]).path
+	local _, curname = file(self.curfn):getdir()
 print('on file '..i..' name '..self.curfn)
+	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	self.mesh = OBJLoader():load(self.curfn)
 	self.mesh:prepare()
 end
