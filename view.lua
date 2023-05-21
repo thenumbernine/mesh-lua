@@ -144,6 +144,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 
 	print('triangle bounded volume', self.mesh:calcVolume())
 	print('bbox', self.mesh.bbox)
+	print('bbox size', self.mesh.bbox.max - self.mesh.bbox.min)
 	print('bbox volume', (self.mesh.bbox.max - self.mesh.bbox.min):volume())
 	print('mesh.bbox corner-to-corner distance: '..(self.mesh.bbox.max - self.mesh.bbox.min):norm())
 
