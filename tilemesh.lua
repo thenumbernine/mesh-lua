@@ -109,7 +109,8 @@ local function tileMesh(mesh, omesh)
 --[[ identity
 	local spatialConvention = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
--- [[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
+-- [=[
+--[[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
 
 	local scale = vec3f(1,1,1)
 	-- bbox of brick:
@@ -121,6 +122,20 @@ local function tileMesh(mesh, omesh)
 	-- ... with an extra .01 gap ...
 	local offsetU = .24
 	local offsetV = .12
+
+	-- how much to randomize placement
+	local jitter = matrix_ffi{.05, .05}
+
+--]]
+-- [[ same but for roof_tile
+	local scale = vec3f(1,1,1)
+	local offsetU = .43
+	local offsetV = .33
+	local stack = false
+	local jitter = matrix_ffi{0, 0}
+--]]
+
+	-- TODO jitterOrientation
 
 	-- true = centered-rectangular lattice
 	-- false = rectangular lattice
@@ -134,10 +149,6 @@ local function tileMesh(mesh, omesh)
 		{0, offsetV},
 	}
 
-	-- how much to randomize placement
-	local jitter = matrix_ffi{.05, .05}
-
-	-- TODO jitterOrientation
 
 	-- map y-up in brick to e_z = up on surface
 	-- map z-length in brick to e_x = ∂/∂u on surface
@@ -147,7 +158,8 @@ local function tileMesh(mesh, omesh)
 		vec3f(0,0,1),	-- model's y+ up maps to z+ which is then mapped to the tri normal dir
 		vec3f(1,0,0),	-- model's z- fwd maps to x+ which is mapped to the tri ∂/∂u
 	}
---]]
+
+--]=]
 
 	local placementCoordXFormInv = placementCoordXForm:inv()
 --print('placementXForm', placementCoordXForm)
