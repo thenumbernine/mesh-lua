@@ -759,7 +759,6 @@ function Mesh:removeTri(i)
 			g.triCount = g.triCount - 1
 		end
 	end
-	-- phasing this out
 	self.tris:remove(i/3+1)
 	for j=i/3+1,#self.tris do
 		self.tris[j].index = j

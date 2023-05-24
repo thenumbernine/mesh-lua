@@ -18,7 +18,8 @@ local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
 local OBJLoader = require 'mesh.objloader'
 local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
-local drawUVUnwrapEdges = require 'mesh.unwrapuvs'.drawUVUnwrapEdges
+local drawUnwrapUVGraph = require 'mesh.unwrapuvs'.drawUnwrapUVGraph
+local drawUnwrapUVEdges = require 'mesh.unwrapuvs'.drawUnwrapUVEdges
 local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
 matrix_ffi.real = 'float'	-- default matrix_ffi type
@@ -74,7 +75,8 @@ function App:initGL(...)
 	self.useFlipTexture = false	-- opengl vs directx? v=0 is bottom or top?
 	self.useTexFilterNearest = false
 
-	self.drawUVUnwrapEdges = false
+	self.drawUnwrapUVGraph = false
+	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
 
 	self.editMode = 1
@@ -372,8 +374,11 @@ function App:update()
 		gl.glDisable(gl.GL_ALPHA_TEST)
 	end
 
-	if self.drawUVUnwrapEdges then
-		drawUVUnwrapEdges(mesh)
+	if self.drawUnwrapUVGraph then
+		drawUnwrapUVGraph(mesh)
+	end
+	if self.drawUnwrapUVEdges then
+		drawUnwrapUVEdges(mesh)
 	end
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
@@ -625,6 +630,9 @@ function App:updateGUI()
 			for _,x in ipairs{'x', 'y', 'z'} do
 				ig.luatableInputFloatAsText('view pos '..x, self.view.pos, x)
 			end
+			for _,x in ipairs{'x', 'y', 'z'} do
+				ig.luatableInputFloatAsText('view orbit '..x, self.view.orbit, x)
+			end
 			for _,x in ipairs{'x', 'y', 'z', 'w'} do
 				ig.luatableInputFloatAsText('view angle '..x, self.view.angle, x)
 			end
@@ -736,7 +744,8 @@ function App:updateGUI()
 				end
 			end
 
-			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUVUnwrapEdges')
+			ig.luatableCheckbox('draw uv unwrap graph', self, 'drawUnwrapUVGraph')
+			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUnwrapUVEdges')
 
 			self.tileMeshFilename = self.tileMeshFilename or ''
 			ig.luatableInputText('tile mesh filename', self, 'tileMeshFilename')

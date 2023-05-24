@@ -762,7 +762,7 @@ tsrc.v1*-------*
 	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))
 end
 
-function drawUVUnwrapEdges(mesh)
+function drawUnwrapUVGraph(mesh)
 	local gl = require 'gl'
 	local eps = 1e-3
 	-- [[ show unwrap info
@@ -833,7 +833,12 @@ function drawUVUnwrapEdges(mesh)
 	--]]
 end
 
+function drawUnwrapUVEdges(mesh)
+	-- TODO draw the edges that are folded over.
+end
+
 return {
 	unwrapUVs = unwrapUVs,
-	drawUVUnwrapEdges = drawUVUnwrapEdges,
+	drawUnwrapUVGraph = drawUnwrapUVGraph,
+	drawUnwrapUVEdges = drawUnwrapUVEdges,
 }
