@@ -8,6 +8,7 @@ local quatf = require 'vec-ffi.quatf'
 local function unwrapUVs(args)
 	local mesh = assert(args.mesh)
 	local angleThreshold = args.angleThreshold or 5
+	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
 
 	mesh:breakAllVertexes()
 	mesh:calcAllOverlappingEdges()
@@ -437,8 +438,6 @@ tsrc.v1*-------*
 		end
 	end
 
-	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
-
 	-- walls
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
 		alreadyFilled:insertUnique(t)
@@ -834,9 +833,11 @@ function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-function drawUnwrapUVEdges(mesh)
+function drawUnwrapUVEdges(mesh, angleThreshold)
+	angleThreshold = angleThreshold or 5
+	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
 	
-	-- all edges which weren't folded over should be our clip edges
+	--[=[ all edges which weren't folded over should be our clip edges
 	if not mesh.unwrapEdgeIdent then
 		-- [[ edges is 1-based [v1][v2] indexed
 		-- can't use edges, they're based on vtx equality ... or can I ... 
@@ -862,31 +863,33 @@ function drawUnwrapUVEdges(mesh)
 			end
 		end
 	end
+	--]=]
 	
 	local gl = require 'gl'
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
-	--[[ this is for drawing overlap-edges
-	for _,info in ipairs(mesh.unwrapUVEdges or {}) do
-		local e = info[3]
+	-- [[ this is for drawing overlap-edges
+	for _,e in ipairs(mesh.allOverlappingEdges or {}) do
+	--for _,info in ipairs(mesh.unwrapUVEdges or {}) do
+		--local e = info[3]
 		if e then -- member of allOverlappingEdges
-			if info.floodFill then
-				gl.glColor3f(0,0,1)
-			else
+			if e.tris[1].normal:dot(e.tris[2].normal) <= cosAngleThreshold then
 				gl.glColor3f(1,0,0)
+			else
+				gl.glColor3f(0,0,1)
 			end
 			-- pick one of the two edges.  either will produce the same line ray 
 			-- use intervals for start/finish along edge
 			local v1 = e.planePos + e.plane.n * e.intervals[1][1]
 			local v2 = e.planePos + e.plane.n * e.intervals[1][2]
-			v1 = v1 + (e.tris[1].normal + e.tris[2].normal) * .01
-			v2 = v2 + (e.tris[1].normal + e.tris[2].normal) * .01
+			--v1 = v1 + (e.tris[1].normal + e.tris[2].normal) * .01
+			--v2 = v2 + (e.tris[1].normal + e.tris[2].normal) * .01
 			gl.glVertex3fv(v1.s)
 			gl.glVertex3fv(v2.s)
 		end
 	end
 	--]]
-	-- [[ this is for drwing edges that aren't in that set
+	--[[ this is for drwing edges that aren't in that set
 	for a,o in pairs(mesh.unwrapEdgeIdent) do
 		for b,ident in pairs(o) do
 			if ident == 'clip' then

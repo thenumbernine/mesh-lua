@@ -378,7 +378,7 @@ function App:update()
 		drawUnwrapUVGraph(mesh)
 	end
 	if self.drawUnwrapUVEdges then
-		drawUnwrapUVEdges(mesh)
+		drawUnwrapUVEdges(mesh, self.angleThreshold)
 	end
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
