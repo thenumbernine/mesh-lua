@@ -837,71 +837,24 @@ function drawUnwrapUVEdges(mesh, angleThreshold)
 	angleThreshold = angleThreshold or 5
 	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
 	
-	--[=[ all edges which weren't folded over should be our clip edges
-	if not mesh.unwrapEdgeIdent then
-		-- [[ edges is 1-based [v1][v2] indexed
-		-- can't use edges, they're based on vtx equality ... or can I ... 
-		-- I can't use edges for folding cuz we want folds on edges that don't have vtxs at matching positions
-		-- but now I want the edges not folded over, so I can use edges?
-		assert(mesh.edges)
-		mesh.unwrapEdgeIdent = {}
-		for v1,o in pairs(mesh.edges) do
-			mesh.unwrapEdgeIdent[v1] = {}
-			for v2,edge in pairs(o) do
-				mesh.unwrapEdgeIdent[v1][v2] = 'clip'
-			end
-		end
-		--]]
-		for _,info in ipairs(mesh.unwrapUVEdges) do
-			local overlappingEdge = info[3]
-			for j=1,2 do
-				local v1 = mesh.triIndexes.v[3*(overlappingEdge.tris[j].index-1) + overlappingEdge.triVtxIndexes[j]-1] + 1
-				local v2 = mesh.triIndexes.v[3*(overlappingEdge.tris[j].index-1) + overlappingEdge.triVtxIndexes[j]%3] + 1
-				if v1 > v2 then v1,v2 = v2,v1 end
-				mesh.unwrapEdgeIdent[v1] = mesh.unwrapEdgeIdent[v1] or {}
-				mesh.unwrapEdgeIdent[v1][v2] = 'dontclip'
-			end
-		end
-	end
-	--]=]
-	
 	local gl = require 'gl'
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
-	-- [[ this is for drawing overlap-edges
 	for _,e in ipairs(mesh.allOverlappingEdges or {}) do
-	--for _,info in ipairs(mesh.unwrapUVEdges or {}) do
-		--local e = info[3]
-		if e then -- member of allOverlappingEdges
+		if e then
 			if e.tris[1].normal:dot(e.tris[2].normal) <= cosAngleThreshold then
 				gl.glColor3f(1,0,0)
-			else
-				gl.glColor3f(0,0,1)
+				-- pick one of the two edges.  either will produce the same line ray 
+				-- use intervals for start/finish along edge
+				local v1 = e.planePos + e.plane.n * e.intervals[1][1]
+				local v2 = e.planePos + e.plane.n * e.intervals[1][2]
+				--v1 = v1 + (e.tris[1].normal + e.tris[2].normal) * .01
+				--v2 = v2 + (e.tris[1].normal + e.tris[2].normal) * .01
+				gl.glVertex3fv(v1.s)
+				gl.glVertex3fv(v2.s)
 			end
-			-- pick one of the two edges.  either will produce the same line ray 
-			-- use intervals for start/finish along edge
-			local v1 = e.planePos + e.plane.n * e.intervals[1][1]
-			local v2 = e.planePos + e.plane.n * e.intervals[1][2]
-			--v1 = v1 + (e.tris[1].normal + e.tris[2].normal) * .01
-			--v2 = v2 + (e.tris[1].normal + e.tris[2].normal) * .01
-			gl.glVertex3fv(v1.s)
-			gl.glVertex3fv(v2.s)
 		end
 	end
-	--]]
-	--[[ this is for drwing edges that aren't in that set
-	for a,o in pairs(mesh.unwrapEdgeIdent) do
-		for b,ident in pairs(o) do
-			if ident == 'clip' then
-				gl.glColor3f(1,0,0)
-			else
-				gl.glColor3f(0,1,1)
-			end
-			gl.glVertex3fv(mesh.vtxs.v[a-1].pos.s)
-			gl.glVertex3fv(mesh.vtxs.v[b-1].pos.s)
-		end
-	end
-	--]]
 	gl.glEnd()
 	gl.glLineWidth(1)
 end
