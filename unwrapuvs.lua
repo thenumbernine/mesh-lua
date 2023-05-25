@@ -833,8 +833,25 @@ function drawUnwrapUVGraph(mesh)
 	--]]
 end
 
+-- draw the edges that are folded over.
 function drawUnwrapUVEdges(mesh)
-	-- TODO draw the edges that are folded over.
+	local gl = require 'gl'
+	gl.glColor3f(0,1,1)
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for _,info in ipairs(mesh.unwrapUVEdges or {}) do
+		local e = info[3]
+		if e then -- member of allOverlappingEdges
+			-- pick one of the two edges.  either will produce the same line ray 
+			local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]-1]]
+			local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]]
+			-- use intervals for start/finish along edge
+			gl.glVertex3fv(math.mix(v1.pos, v2.pos, e.intervals[1][1]).s)
+			gl.glVertex3fv(math.mix(v1.pos, v2.pos, e.intervals[1][2]).s)
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
 end
 
 return {

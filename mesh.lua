@@ -24,10 +24,6 @@ typedef struct MeshVertex_t {
 } MeshVertex_t;
 ]]
 
-local function lerp(a,b,s)
-	return a * (1 - s) + b * s
-end
-
 local Mesh = class()
 
 local function triArea(a,b,c)
@@ -1350,16 +1346,16 @@ end
 						local iv01 = self.vtxs.size
 						local nv01 = self.vtxs:emplace_back()
 						local s01 = (0 - planeDists[j+1]) / d1
-						nv01.pos = lerp(vs[j+1].pos, vs[j1+1].pos, s01)
-						nv01.texcoord = lerp(vs[j+1].texcoord, vs[j1+1].texcoord, s01)
-						nv01.normal = lerp(vs[j+1].normal, vs[j1+1].normal, s01)
+						nv01.pos = math.mix(vs[j+1].pos, vs[j1+1].pos, s01)
+						nv01.texcoord = math.mix(vs[j+1].texcoord, vs[j1+1].texcoord, s01)
+						nv01.normal = math.mix(vs[j+1].normal, vs[j1+1].normal, s01)
 
 						local iv02 = self.vtxs.size
 						local nv02 = self.vtxs:emplace_back()
 						local s02 = (0 - planeDists[j+1]) / d2
-						nv02.pos = lerp(vs[j+1].pos, vs[j2+1].pos, s02)
-						nv02.texcoord = lerp(vs[j+1].texcoord, vs[j2+1].texcoord, s02)
-						nv02.normal = lerp(vs[j+1].normal, vs[j2+1].normal, s02)
+						nv02.pos = math.mix(vs[j+1].pos, vs[j2+1].pos, s02)
+						nv02.texcoord = math.mix(vs[j+1].texcoord, vs[j2+1].texcoord, s02)
+						nv02.normal = math.mix(vs[j+1].normal, vs[j2+1].normal, s02)
 
 						local iv0 = tp[j]
 						local iv1 = tp[j1]
