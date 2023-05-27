@@ -110,7 +110,7 @@ local function tileMesh(mesh, omesh)
 	local spatialConvention = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
 --]]
 -- [=[
---[[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
+-- [[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
 
 	local scale = vec3f(1,1,1)
 	-- bbox of brick:
@@ -127,7 +127,7 @@ local function tileMesh(mesh, omesh)
 	local jitter = matrix_ffi{.05, .05}
 
 --]]
--- [[ same but for roof_tile
+--[[ same but for roof_tile
 	local scale = vec3f(1,1,1)
 	local offsetU = .43
 	local offsetV = .33
@@ -281,6 +281,9 @@ local function tileMesh(mesh, omesh)
 					end
 				end
 				--]]
+
+				-- TODO if it's outside, but a bbox corner is inside, then find the closest edge on the tri
+				-- if it's a uvunwrap flood-fill edge then keep, if it's not then skip
 
 				-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
 				-- then you have a brick wall with a brick missing from the middle of it.

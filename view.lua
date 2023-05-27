@@ -641,16 +641,25 @@ function App:updateGUI()
 			ig.luatableInputFloat('view fov', self.view, 'fovY')
 			ig.luatableCheckbox('ortho view', self.view, 'ortho')
 
+			ig.igText('up')
+			ig.igPushID_Str('up')
 			for i,name in ipairs(dirnames) do
-				if ig.luatableRadioButton('up '..name, self, 'updirIndex', i) then
+				ig.igSameLine()
+				if ig.luatableRadioButton(name, self, 'updirIndex', i) then
 					self:resetAngle()
 				end
 			end
+			ig.igPopID()
+			
+			ig.igText('reset view')
+			ig.igPushID_Str('reset view')
 			for i,name in ipairs(dirnames) do
-				if ig.igButton('reset view '..name) then
+				ig.igSameLine()
+				if ig.igButton(name) then
 					self:resetAngle(vec3d(table.unpack(dirs[i])))
 				end
 			end
+			ig.igPopID()
 
 			if ig.igButton'set to origin' then
 				self:setCenter(vec3f(0,0,0))

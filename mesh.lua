@@ -1040,9 +1040,13 @@ end
 
 --[[
 find all edges that don't have exactly 2 triangle neighbors.
+hmm ... I would like to use this but with the 'allOverlappingEdges' structure ...
+
+hmm hmm maybe I need a mesh with all vertexes merged into their neighboring edges/triangles
+and mapping that information back to the original mesh
+
 --]]
 function Mesh:findBadEdges()
-
 	-- find edges based on vtx comparing pos
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
 	self:findEdges(function(i) return uniquevs[indexToUniqueV[i]] end)
@@ -1057,10 +1061,11 @@ function Mesh:findBadEdges()
 			totalEdges = totalEdges + 1
 		end
 	end
-print('edges total', totalEdges, 'border', #border)
 
+print('edges total', totalEdges, 'border', #border)
 assert(#self.tris*3 == self.triIndexes.size)
 for i,t in ipairs(self.tris) do assert(t.index == i) end
+	
 	-- now put in loops
 	local all = table(border)
 	local loops = table()
