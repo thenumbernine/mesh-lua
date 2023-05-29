@@ -23,7 +23,7 @@ local d = json.decode(file(placefn):read())
 print('# placed', #d.instances)
 
 local instfns = table.mapi(d.instances, function(inst)
-	return true, inst.filename
+	return true, assert(inst.filename, "expected filename")
 end):keys():sort()
 print('unique files:', tolua(instfns))
 

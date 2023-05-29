@@ -862,12 +862,22 @@ function drawUnwrapUVEdges(mesh, angleThreshold)
 
 				-- pick one of the two edges.  either will produce the same line ray 
 				-- use intervals for start/finish along edge
-				local v1 = e.planePos + e.plane.n * math.max(e.intervals[1][1], e.intervals[2][1])
-				local v2 = e.planePos + e.plane.n * math.min(e.intervals[1][2], e.intervals[2][2])
-				v1 = v1 + (t1.normal + t2.normal) * 1e-2
-				v2 = v2 + (t1.normal + t2.normal) * 1e-2
+				local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
+				local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+				local v1 = e.planePos + e.plane.n * s0
+				local v2 = e.planePos + e.plane.n * s1
+				v1 = v1 + (t1.normal + t2.normal) * 1e-3
+				v2 = v2 + (t1.normal + t2.normal) * 1e-3
 				gl.glVertex3fv(v1.s)
 				gl.glVertex3fv(v2.s)
+
+--[[ 
+				local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
+				local normAvg = (t1.normal + t2.normal):normalize()
+				gl.glColor3f(1,1,0)
+				gl.glVertex3fv(centerPt.s)
+				gl.glVertex3fv((centerPt + normAvg * ((s1 - s0) * .5)).s)
+--]]
 			end
 		end
 	end

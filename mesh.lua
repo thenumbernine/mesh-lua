@@ -551,6 +551,11 @@ function Mesh:calcAllOverlappingEdges()
 --for _,t in ipairs(self.tris) do
 --	print('n = '..t.normal)
 --end
+	local normEpsilon = 1e-7
+	--local edgeDistEpsilon = 1e-7 -- too strict for roof
+	local edgeDistEpsilon = 1e-3
+	local edgeAngleThreshold = math.rad(1e-1)
+	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
 	for i1=#self.tris,2,-1 do
 		local tp1 = self.triIndexes.v + 3 * (i1 - 1)
 		for j1=1,3 do
@@ -559,9 +564,9 @@ function Mesh:calcAllOverlappingEdges()
 			local v12 = self.vtxs.v[tp1[j1%3]].pos
 --print('tri', i1, 'pos', j1, '=', v11)
 			local n1 = v12 - v11
-			local n1NormSq = n1:normSq()
-			if n1NormSq  > 1e-3 then
-				n1 = n1 / math.sqrt(n1NormSq)
+			local n1Norm = n1:norm()
+			if n1Norm > normEpsilon then
+				n1 = n1 / n1Norm
 				for i2=i1-1,1,-1 do
 					local t2 = self.tris[i2]
 					local tp2 = self.triIndexes.v + 3 * (i2 - 1)
@@ -569,10 +574,10 @@ function Mesh:calcAllOverlappingEdges()
 						local v21 = self.vtxs.v[tp2[j2-1]].pos
 						local v22 = self.vtxs.v[tp2[j2%3]].pos
 						local n2 = v22 - v21
-						local n2NormSq = n2:normSq()
-						if n2NormSq  > 1e-3 then
-							n2 = n2 / math.sqrt(n2NormSq)
-							if math.abs(n1:dot(n2)) > 1 - 1e-3 then
+						local n2Norm = n2:norm()
+						if n2Norm  > normEpsilon then
+							n2 = n2 / n2Norm
+							if math.abs(n1:dot(n2)) > cosEdgeAngleThreshold then
 --print('allOverlappingEdges normals align:', i1-1, j1-1, i2-1, j2-1)
 								-- normals align, calculate distance
 								local planePos = v11
@@ -580,7 +585,7 @@ function Mesh:calcAllOverlappingEdges()
 								-- find ray from the v1 line to any line on v2
 								local dv = plane:projectVec(v21 - planePos) 	-- project onto the plane normal
 								local dist = dv:norm()					-- calculate the distance of the points both projected onto the plane
-								if dist < 1e-3 then
+								if dist < edgeDistEpsilon then
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
 									local s11 = 0	--plane:dist(v11) -- assuming v11 is the plane origin
 									local s12 = plane:dist(v12)

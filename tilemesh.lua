@@ -126,6 +126,8 @@ local function tileMesh(mesh, omesh)
 	-- how much to randomize placement
 	local jitter = matrix_ffi{.05, .05}
 
+	instfn = 'brick.obj'
+
 --]]
 --[[ same but for roof_tile
 	local scale = vec3f(1,1,1)
@@ -176,8 +178,11 @@ local function tileMesh(mesh, omesh)
 		local tvtxs = range(0,2):mapi(function(i)
 			return mesh.vtxs.v[tp[i]]
 		end)
-		-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
-		local uvorigin2D = vec2f():set(tvtxs[1].texcoord:unpack())
+		local uvorigin2D = vec2f()
+			-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
+			+ tvtxs[1].texcoord
+			-- add a small epsilon to make sure placement of the first meshes isn't right on a triangle edge, such that subsequent folds around edges might incur floating point error and cause a row of meshes to pass some epsilon and stop abruptly (as we saw happening on the target_complex curved wall model).
+			+ vec2f(.01, .01)
 		local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
 --print('uv origin', ti, uvorigin2D, uvorigin3D)
 	
@@ -187,23 +192,25 @@ local function tileMesh(mesh, omesh)
 			* matrix3x3To4x4(spatialConvention)
 			* scaleMat4x4(scale)
 
-		--[[ also store the bbox of the omesh under this transform?
+		-- [[ also store the bbox of the omesh under this transform?
 		-- this might help some edges, but it causes overlaps on planar edges
+		-- TODO these aren't in texcoord space, they're in the global mesh space ... 
 		local cornersTC = range(0,7):mapi(function(corner)
 			-- get omesh bbox corner
-			local cv = matrix_ffi{
-				omesh.bbox.s[bit.band(corner,1)].s[0],
-				omesh.bbox.s[bit.band(bit.rshift(corner,1),1)].s[1],
-				omesh.bbox.s[bit.band(bit.rshift(corner,2),1)].s[2],
-				1}
-			-- convert to surface-space
-			local ctc = modelToSurfXForm * cv
+			local c = omesh.bbox:corner(corner)
+			-- convert to texcoord space
+			local ctc = 
+				matrix3x3To4x4(spatialConvention)
+				* scaleMat4x4(scale)
+				* matrix_ffi{c.s[0], c.s[1], c.s[2], 1}
+			-- convert to texcoord space
 			return matrix_ffi{ctc[1], ctc[2]}
 		end)
 		local cornersPlacement = cornersTC:mapi(function(ctc)
 			-- convert to placement space
 			return placementCoordXFormInv * ctc
 		end)
+		print('tri has placement bbox\n', cornersPlacement:mapi(tostring):concat'\n\t')
 		--]]
 
 		-- find uv min max
@@ -225,10 +232,10 @@ local function tileMesh(mesh, omesh)
 			) + uvorigin2D
 			local placementCoord = placementCoordXFormInv * matrix_ffi{tc.x, tc.y}
 		
-			-- [[ stretch in placement space to the placement coord
+			--[[ stretch in placement space to the placement coord
 			placementBBox:stretch(vec2f(placementCoord:unpack()))
 			--]]
-			--[[ don't just stretch the placement coord
+			-- [[ don't just stretch the placement coord
 			-- stretch the model's bbox in placement-space
 			for _,cpl in ipairs(cornersPlacement) do
 				placementBBox:stretch(vec2f((placementCoord + cpl):unpack()))
@@ -236,10 +243,10 @@ local function tileMesh(mesh, omesh)
 			--]]
 --print('stretching', placementCoord)
 		end
---local from = box2f(placementBBox)
-		placementBBox.min = placementBBox.min:map(math.floor) - 1
-		placementBBox.max = placementBBox.max:map(math.ceil) + 1
---print('placementBBox', from, 'to' , placementBBox)
+local from = box2f(placementBBox)
+		placementBBox.min = placementBBox.min:map(math.floor) - 2
+		placementBBox.max = placementBBox.max:map(math.ceil) + 2
+print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
 				-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
@@ -271,15 +278,19 @@ local function tileMesh(mesh, omesh)
 				-- TODO bcc test the closest point on the placed mesh bbox to the tri
 				local inside = t:insideBCC(placePos, mesh)
 				--]]
-				--[[ if any corners in placement-space are within the tri ... continue
-				local inside
-				for _,ctc in ipairs(cornersTC) do
-					local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
-					if t:insideBCC(cornerPos, mesh) then
-						inside = true
-						break
+				-- [[ if any corners in placement-space are within the tri ... continue
+				if not inside then
+					for _,ctc in ipairs(cornersTC) do
+						local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
+						if t:insideBCC(cornerPos, mesh) then
+							inside = true
+							break
+						end
 					end
 				end
+				--]]
+				--[[ just place all
+				inside = true
 				--]]
 
 				-- TODO if it's outside, but a bbox corner is inside, then find the closest edge on the tri
@@ -382,11 +393,15 @@ print('#tilePlaces', #mesh.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
 
-	file'placement.json':write(json.encode(mesh.tilePlaces:mapi(function(p)
-		return {
-			transform = range(16):mapi(function(i) return p.xform.ptr[i-1] end),
-		}
-	end), {indent=true}))
+	file'placement.json':write(json.encode(
+	{
+		instances = mesh.tilePlaces:mapi(function(p)
+			return {
+				filename = assert(instfn),
+				transform = range(16):mapi(function(i) return p.xform.ptr[i-1] end),
+			}
+		end),
+	}, {indent=true}))
 
 	-- replace
 	mesh.vtxs = nvtxs
@@ -418,6 +433,7 @@ print('ntris.size', ntris.size)
 		mesh:mergeMatchingVertexes()
 	end)
 	--]]
+	return mesh
 end
 
 local function drawTileMeshPlaces(mesh)
