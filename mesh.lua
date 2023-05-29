@@ -258,6 +258,18 @@ function Mesh:rotate(q)
 	return self
 end
 
+function Mesh:transform(xform)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i]
+		local npos = xform * matrix_ffi{v.pos.x, v.pos.y, v.pos.z, 1}
+		v.pos:set(npos:unpack())
+		local nnormal = xform * matrix_ffi{v.normal.x, v.normal.y, v.normal.z, 0}
+		v.normal = vec3f():set(nnormal:unpack()):normalize()
+	end
+	self:refreshVtxs()
+	return self
+end
+
 function Mesh:recenter(newOrigin)
 	for i=0,self.vtxs.size-1 do
 		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
@@ -1315,6 +1327,7 @@ and splitting any overlapping triangles
 plane = clip plane (not necessarily normalized)
 --]]
 function Mesh:clip(plane)
+	local modified
 if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
 end
@@ -1331,6 +1344,7 @@ end
 --print('...keep')
 				-- keep
 			elseif frontCount == 0 then
+				modified = true
 --print('...remove')
 if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
@@ -1341,6 +1355,7 @@ if #self.tris*3 ~= self.triIndexes.size then
 end
 			-- needs a new vertex:
 			else
+				modified = true
 				local found
 				for j=0,2 do
 					if (frontCount == 1 and sides[j+1])
@@ -1432,6 +1447,8 @@ end
 
 	self.loadedGL = nil
 	self.vtxBuf = nil
+
+	return modified
 end
 
 function Mesh:fillHoles()

@@ -137,7 +137,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 			orig = self.mesh:clone()
 		end
 		-- tile omesh onto mesh in-place
-		self.mesh = tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge))
+		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge))
 		if cmdline.tilemeshmerge then
 			self.mesh:combine(orig)
 		end

@@ -12,10 +12,12 @@ local timer = require 'ext.timer'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local box2f = require 'vec-ffi.box2f'
+local plane3f = require 'vec-ffi.plane3f'
 local quatf = require 'vec-ffi.quatf'
 local json = require 'dkjson'
 local vector = require 'ffi.cpp.vector'
 local matrix_ffi = require 'matrix.ffi'
+local Mesh = require 'mesh'
 
 -- R is a table of column vec3f's, v is a vec3f
 local function rotateVec(R, v)
@@ -170,6 +172,8 @@ local function tileMesh(mesh, omesh)
 
 	mesh:generateTriBasis()
 
+	local merged = Mesh()
+
 	-- for each tri
 	mesh.tilePlaces = table()
 	for ti=0,mesh.triIndexes.size-3,3 do
@@ -272,20 +276,43 @@ print('placementBBox', from, 'to' , placementBBox)
 				placementCoords = placementXForm * texcoord
 				placementXFormInv * placementCoords = texcoord
 				--]]
-				local placePos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
-				-- [[
+				local placePos = t.basis[1] * (duv.x + jitterUV[1]) + t.basis[2] * (duv.y + jitterUV[2]) + uvorigin3D
+				
+				-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
+				-- then you have a brick wall with a brick missing from the middle of it.
+				local xform = translateMat4x4(placePos) * modelToSurfXForm
+
+				--[[
 				-- if in tri (barycentric coord test) then continue
 				-- TODO bcc test the closest point on the placed mesh bbox to the tri
 				local inside = t:insideBCC(placePos, mesh)
 				--]]
 				-- [[ if any corners in placement-space are within the tri ... continue
-				if not inside then
-					for _,ctc in ipairs(cornersTC) do
-						local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
-						if t:insideBCC(cornerPos, mesh) then
-							inside = true
-							break
+				local allInside = true
+				local anyInside = false
+				for _,ctc in ipairs(cornersTC) do
+					local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
+					local cornerInside = t:insideBCC(cornerPos, mesh)
+					allInside = allInside and cornerInside
+					anyInside = anyInside or cornerInside
+				end
+				--]]
+				-- [[ if anywhere is touching the tri, then clip it ... by ... ???
+				if anyInside and not allInside then
+					local clipped = omesh:clone():transform(xform)
+					local wasclipped
+					for j=1,3 do
+						local edgeDir = tvtxs[j%3+1].pos - tvtxs[j].pos
+						local plane = plane3f():fromDirPt(
+							t.normal:cross(edgeDir):normalize(),
+							tvtxs[j].pos
+						)
+						if clipped:clip(plane) then
+							wasclipped = true
 						end
+					end
+					if wasclipped then
+						merged:combine(clipped)
 					end
 				end
 				--]]
@@ -296,11 +323,11 @@ print('placementBBox', from, 'to' , placementBBox)
 				-- TODO if it's outside, but a bbox corner is inside, then find the closest edge on the tri
 				-- if it's a uvunwrap flood-fill edge then keep, if it's not then skip
 
-				-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
-				-- then you have a brick wall with a brick missing from the middle of it.
-				placePos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
+
 --print(uv, inside)
-				if inside then
+				if allInside then
+				--testing:
+				--if anyInside and not allInside then
 					--[[
 					then place an instance of omesh
 					get the transform rotation and scale to the location on the poly
@@ -329,17 +356,9 @@ print('placementBBox', from, 'to' , placementBBox)
 					dstvtxpos - uvorigin3D = uvbasis * (texcoord - uvorigin2D + spatialConvention * scale * bboxcorner)
 					texcoord = uvbasis^-1 * (dstvtxpos - uvorigin3D) + uvorigin2D - spatialConvention * scale * bboxcorner
 					--]]
-					local xform = translateMat4x4(placePos) * modelToSurfXForm
 					mesh.tilePlaces:insert{
-						--[[ scale, rotate, offset ...
-						pos = vec3f(placePos),	-- not so necessary
-						basis = matrixMul3x3(t.basis, spatialConvention),
-						scale = vec3f(scale),
-						--]]
-						-- transform
 						xform = xform,
-						-- not necessary
-						uv = vec2f(uv),
+						uv = vec2f(uv),	-- not necessary
 					}
 				end
 			end
@@ -410,6 +429,10 @@ print('ntris.size', ntris.size)
 	-- reset
 	mesh:rebuildTris()
 
+	if merged then
+		mesh:combine(merged)
+	end
+
 	-- invalidate
 	mesh.edges = nil
 	mesh.edgeIndexBuf = nil
@@ -433,7 +456,6 @@ print('ntris.size', ntris.size)
 		mesh:mergeMatchingVertexes()
 	end)
 	--]]
-	return mesh
 end
 
 local function drawTileMeshPlaces(mesh)
