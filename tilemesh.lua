@@ -269,17 +269,20 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 
 	mesh:generateTriBasis()
 
-
+	-- assert bcc works
 	for ti=0,mesh.triIndexes.size-3,3 do
 		local t = assert(mesh.tris[ti/3+1])
 		for j=0,2 do
 			local tp = mesh.triIndexes.v + ti
 			local a,b,c = t:vtxPos(mesh)
-			print('bccs', t:calcBCC(a, mesh), t:calcBCC(b, mesh), t:calcBCC(c, mesh))
-			--print('dists', (b-a):length(), (c-b):length(), (a-c):length())
+			-- assert each point is at its respective basis element (1,0,0) (0,1,0) (0,0,1)
+			assert((t:calcBCC(a, mesh) - vec3f(1,0,0)):norm() < 1e-7)
+			assert((t:calcBCC(b, mesh) - vec3f(0,1,0)):norm() < 1e-7)
+			assert((t:calcBCC(c, mesh) - vec3f(0,0,1)):norm() < 1e-7)
+			-- assert that the COM is at (1/3, 1/3, 1/3)
+			assert((t:calcBCC(t.com, mesh) - vec3f(1,1,1)/3):norm() < 1e-7)
 		end
 	end
-os.exit()
 
 	local merged = Mesh()
 
@@ -388,11 +391,14 @@ os.exit()
 				placementCoords = placementXForm * texcoord
 				placementXFormInv * placementCoords = texcoord
 				--]]
-				local placePos = t.basis[1] * (duv.x + jitterUV[1]) + t.basis[2] * (duv.y + jitterUV[2]) + uvorigin3D
-				
+				-- this is the lattice (unjittered) pos
+				-- needs testing of position versus triangle b.c.c. to not cause gaps in the lattice
+				local placePos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
 				-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
 				-- then you have a brick wall with a brick missing from the middle of it.
-				local xform = translateMat4x4(placePos) * modelToSurfXForm
+				local jitteredPos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
+				
+				local xform = translateMat4x4(jitteredPos) * modelToSurfXForm
 
 				-- [[
 				-- if in tri (barycentric coord test) then continue
