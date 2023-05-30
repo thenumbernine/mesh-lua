@@ -128,12 +128,17 @@ function Triangle:calcBCC(p, mesh)
 
 	local bcc = vec3f()
 	for j=0,2 do
-		local v1 = mesh.vtxs.v[tp[j]].pos
-		local v2 = mesh.vtxs.v[tp[(j+1)%3]].pos
-		local tocom = (v2 - v1):cross(self.normal)
+		local v1 = mesh.vtxs.v[tp[(j+1)%3]].pos
+		local v2 = mesh.vtxs.v[tp[(j+2)%3]].pos
+		local v3 = mesh.vtxs.v[tp[(j+0)%3]].pos
+		local vavg = .5 * (v1 + v2)
+		local edgeDir = v2 - v1
+		local tocom = self.normal:cross(edgeDir):normalize()
+		local edgePlane = plane3f():fromDirPt(tocom, vavg)
+		local oppDist = edgePlane:dist(v3)
 		-- TODO rescale correctly
 		-- right now they're only good for signedness test
-		bcc.s[j] = -(p - v1):dot(tocom)
+		bcc.s[j] = (p - v1):dot(tocom) / oppDist
 	end
 	return bcc
 end

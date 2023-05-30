@@ -77,7 +77,104 @@ local function matrix3x3To4x4(b)
 	return m
 end
 
-local function tileMesh(mesh, omesh)
+local function tileMesh(mesh, omesh, angleThresholdInDeg)
+	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
+	
+	mesh:calcAllOverlappingEdges()
+
+	-- [[ group all tris based on boundaries of angles
+	local triGroups = table(mesh.tris):mapi(function(t)
+		return table{t}
+	end)
+	do
+		local found
+		repeat
+			found = false
+			for _,e in ipairs(mesh.allOverlappingEdges) do
+				if e.tris[1].normal:dot(e.tris[2].normal) > cosAngleThreshold then
+					local i1, g1 = triGroups:find(nil, function(g) return g:find(e.tris[1]) end)
+					local i2, g2 = triGroups:find(nil, function(g) return g:find(e.tris[2]) end)
+					if i1 ~= i2 then
+						triGroups[i1]:append(triGroups[i2])
+						triGroups:remove(i2)
+						found = true
+						break
+					end
+				end
+			end
+		until not found
+	end
+	print('found '..#triGroups..' groups of triangles')
+	for _,g in ipairs(triGroups) do
+		io.write('...group of '..#g..' :')
+		for _,t in ipairs(g) do
+			io.write(' ', t.index)
+		end
+		print()
+	end
+	-- make a mapping back from triangles to their groups
+	local triGroupForTri = mesh.tris:mapi(function(t)
+		for _,g in ipairs(triGroups) do
+			if g:find(t) then return g, t end
+		end
+		error("shouldn't get here")
+	end)
+	-- gather all edges to this group
+	local groupBorderEdgeInfo = {}
+	for _,e in ipairs(mesh.allOverlappingEdges) do
+		local t1, t2 = table.unpack(e.tris)
+		local g1 = triGroupForTri[t1]
+		local g2 = triGroupForTri[t2]
+		if g1 ~= g2 then
+			-- find the dividing plane of this edge
+			-- TODO I could just cache in 'allOverlappingEdges' ...
+			-- * whether the normals pass the threshold test
+			-- * what the avg normal dir of its two tris is
+			-- * what the plane of avg cross edge vec is
+			local normAvg = (t1.normal + t2.normal):normalize()
+			-- here I'm averaging the two edges origins
+			-- maybe I should do this from the start (instead of just using 1 of the 2 edges?)
+			-- TODO member functions for edge getters
+			assert(t1.index >= 1 and t1.index <= #mesh.tris)
+			assert(t2.index >= 1 and t2.index <= #mesh.tris)
+			assert(e.triVtxIndexes[1] >= 1 and e.triVtxIndexes[1] <= 3)
+			assert(e.triVtxIndexes[2] >= 1 and e.triVtxIndexes[2] <= 3)
+			local i11 = 3 * (t1.index-1) + e.triVtxIndexes[1]-1
+			assert(i11 >= 0)
+			assert(i11 < mesh.triIndexes.size)
+			assert(mesh.triIndexes.v[i11] >= 0)
+			assert(mesh.triIndexes.v[i11] < mesh.vtxs.size)
+			local i21 =   3 * (t2.index-1) + e.triVtxIndexes[2]-1
+			assert(i21 >= 0)
+			assert(i21 < mesh.triIndexes.size)
+			assert(mesh.triIndexes.v[i21] >= 0)
+			assert(mesh.triIndexes.v[i21] < mesh.vtxs.size)
+			local i12 = 3 * (t1.index-1) + e.triVtxIndexes[1]%3
+			assert(i12 >= 0)
+			assert(i12 < mesh.triIndexes.size)
+			assert(mesh.triIndexes.v[i12] >= 0)
+			assert(mesh.triIndexes.v[i12] < mesh.vtxs.size)
+			local planePos = .5 * (mesh.vtxs.v[i11].pos + mesh.vtxs.v[i21].pos)
+			local edgeDir = mesh.vtxs.v[i12].pos - mesh.vtxs.v[i11].pos
+			local plane = plane3f():fromDirPt(
+				normAvg:cross(edgeDir):normalize(),
+				planePos
+			)
+			local t1side = plane:test(t1.com)
+			local t2side = plane:test(t2.com)
+			if t1side == t2side then
+				print("com", t1.com, "side", t1side)
+				print("com", t2.com, "side", t2side)
+				print("plane", plane)
+				error("bad edge")
+			end
+			groupBorderEdgeInfo[g1] = groupBorderEdgeInfo[g1] or table()
+			groupBorderEdgeInfo[g1]:insert{edge = e, plane = t1side and plane or -plane}
+			groupBorderEdgeInfo[g2] = groupBorderEdgeInfo[g2] or table()
+			groupBorderEdgeInfo[g2]:insert{edge = e, plane = t2side and plane or -plane}
+		end
+	end
+	--]]
 
 	-- TODO HERE
 	-- optimize omesh
@@ -172,6 +269,18 @@ local function tileMesh(mesh, omesh)
 
 	mesh:generateTriBasis()
 
+
+	for ti=0,mesh.triIndexes.size-3,3 do
+		local t = assert(mesh.tris[ti/3+1])
+		for j=0,2 do
+			local tp = mesh.triIndexes.v + ti
+			local a,b,c = t:vtxPos(mesh)
+			print('bccs', t:calcBCC(a, mesh), t:calcBCC(b, mesh), t:calcBCC(c, mesh))
+			--print('dists', (b-a):length(), (c-b):length(), (a-c):length())
+		end
+	end
+os.exit()
+
 	local merged = Mesh()
 
 	-- for each tri
@@ -182,6 +291,9 @@ local function tileMesh(mesh, omesh)
 		local tvtxs = range(0,2):mapi(function(i)
 			return mesh.vtxs.v[tp[i]]
 		end)
+		
+		print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t) return t.index end):concat', ')
+
 		local uvorigin2D = vec2f()
 			-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 			+ tvtxs[1].texcoord
@@ -214,7 +326,7 @@ local function tileMesh(mesh, omesh)
 			-- convert to placement space
 			return placementCoordXFormInv * ctc
 		end)
-		print('tri has placement bbox\n', cornersPlacement:mapi(tostring):concat'\n\t')
+		--print('tri has placement bbox\n', cornersPlacement:mapi(tostring):concat'\n\t')
 		--]]
 
 		-- find uv min max
@@ -247,10 +359,10 @@ local function tileMesh(mesh, omesh)
 			--]]
 --print('stretching', placementCoord)
 		end
-local from = box2f(placementBBox)
+--local from = box2f(placementBBox)
 		placementBBox.min = placementBBox.min:map(math.floor) - 2
 		placementBBox.max = placementBBox.max:map(math.ceil) + 2
-print('placementBBox', from, 'to' , placementBBox)
+--print('placementBBox', from, 'to' , placementBBox)
 		for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 			for pv=placementBBox.min.y,placementBBox.max.y+.01 do
 				-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
@@ -282,10 +394,11 @@ print('placementBBox', from, 'to' , placementBBox)
 				-- then you have a brick wall with a brick missing from the middle of it.
 				local xform = translateMat4x4(placePos) * modelToSurfXForm
 
-				--[[
+				-- [[
 				-- if in tri (barycentric coord test) then continue
 				-- TODO bcc test the closest point on the placed mesh bbox to the tri
-				local inside = t:insideBCC(placePos, mesh)
+				local bcc = t:calcBCC(placePos, mesh)
+				local posInside = bcc.x >= 0 and bcc.y >= 0 and bcc.z >= 0
 				--]]
 				-- [[ if any corners in placement-space are within the tri ... continue
 				local allInside = true
@@ -297,25 +410,105 @@ print('placementBBox', from, 'to' , placementBBox)
 					anyInside = anyInside or cornerInside
 				end
 				--]]
-				-- [[ if anywhere is touching the tri, then clip it ... by ... ???
+				-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
 				if anyInside and not allInside then
-					local clipped = omesh:clone():transform(xform)
-					local wasclipped
+					-- [[
+					-- if position is outside the tri then constrain to be inside the tri
+					local minSide = range(0,2):sort(function(a,b)
+						return bcc.s[a] < bcc.s[b]
+					end)[1]
+					print('bcc', bcc, 'minSide', minSide)
+					local n1 = 3*(t.index-1) + (minSide+1)%3
+					local n2 = 3*(t.index-1) + (minSide+2)%3
+					-- side == 0 => alonge edge from 1 to 2
+					-- then look for all edges that touch this side
+					local es = table(mesh.allOverlappingEdges):filter(function(e)
+						-- only for edges with > threshold
+						local t1, t2 = table.unpack(e.tris)
+						if t1.normal:dot(t.normal) < cosAngleThreshold then
+							for j,tj in ipairs(e.tris) do
+								local o1 = 3*(tj.index-1) + e.triVtxIndexes[j]-1
+								local o2 = 3*(tj.index-1) + e.triVtxIndexes[j]%3 
+								if (o1 == n1 and o2 == n2)
+								or (o1 == n2 and o2 == n1)
+								then
+									return true
+								end
+							end
+						end
+					end)
+					assert(#es == 0 or #es == 1)
+					local e = es[1]
+					--print('e', e)
+					if not e then
+						-- if the closest edge turns out to be an internal edge then clip based solely on posInside
+						-- (otherwise we'll get duplcates along the edge)
+						allInside = posInside
+					else
+						--[==[
+						-- if it happens to be an external edge, theeennn we can clip along it
+						-- (and any other external edges?)
+						local clipped = omesh:clone():transform(xform)
+						local wasclipped
+						local t0, t1 = table.unpack(e.tris)
+						if t0.normal:dot(t1.normal) < cosAngleThreshold then
+							local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
+							local plane = plane3f():fromDirPt(
+								(t0.normal + t1.normal):cross(edgeDir):normalize(),
+								e.planePos --tvtxs[j].pos
+							)
+							if not plane:test(t.com) then plane = -plane end
+							if clipped:clip(plane) then
+								wasclipped = true
+							end
+						end
+						if wasclipped then
+							merged:combine(clipped)
+						end
+						--]==]
+					end
+					--]]
+
+					--[[ ... clip by our tri 3 sides
+					-- downside: this fails upon tris next to thin tris next to edges
 					for j=1,3 do
 						local edgeDir = tvtxs[j%3+1].pos - tvtxs[j].pos
 						local plane = plane3f():fromDirPt(
 							t.normal:cross(edgeDir):normalize(),
-							tvtxs[j].pos
-						)
+							tvtxs[j].pos)
 						if clipped:clip(plane) then
 							wasclipped = true
 						end
 					end
+					--]]
+					--[[ clip by any overlappingedges that touch this tri
+					for _,e in ipairs(mesh.allOverlappingEdges) do
+						if e.tris[1] == t or e.tris[2] == t then
+							local t0, t1 = table.unpack(e.tris)
+							if t0.normal:dot(t1.normal) < cosAngleThreshold then
+								local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
+								local plane = plane3f():fromDirPt(
+									(t0.normal + t1.normal):cross(edgeDir):normalize(),
+									e.planePos --tvtxs[j].pos
+								)
+								if not plane:test(t.com) then plane = -plane end
+								if clipped:clip(plane) then
+									wasclipped = true
+								end
+							end
+						end
+					end
+					--]]
+					--[[
 					if wasclipped then
 						merged:combine(clipped)
 					end
+					--]]
+					--[[
+					merged:combine(omesh:clone():transform(xform))
+					--]]
 				end
-				--]]
+				--]=]
 				--[[ just place all
 				inside = true
 				--]]

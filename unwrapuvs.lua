@@ -7,8 +7,8 @@ local quatf = require 'vec-ffi.quatf'
 
 local function unwrapUVs(args)
 	local mesh = assert(args.mesh)
-	local angleThreshold = args.angleThreshold or 5
-	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
+	local angleThresholdInDeg = args.angleThresholdInDeg or 5
+	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 
 	mesh:breakAllVertexes()
 	mesh:calcAllOverlappingEdges()
@@ -833,9 +833,9 @@ function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-function drawUnwrapUVEdges(mesh, angleThreshold)
-	angleThreshold = angleThreshold or 5
-	local cosAngleThreshold = math.cos(math.rad(angleThreshold))
+function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
+	angleThresholdInDeg = angleThresholdInDeg or 5
+	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 	
 	local gl = require 'gl'
 	gl.glLineWidth(3)
@@ -846,6 +846,7 @@ function drawUnwrapUVEdges(mesh, angleThreshold)
 			local t1, t2 = table.unpack(e.tris)
 			local dot = t1.normal:dot(t2.normal) 
 			if dot <= cosAngleThreshold then
+				-- TODO member functions for edge getters
 				local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]-1]].pos
 				local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]%3]].pos
 				local t2edge = v2 - v1

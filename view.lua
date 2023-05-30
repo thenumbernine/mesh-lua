@@ -57,7 +57,7 @@ end
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
-	self.unwrapAngleThreshold = 5
+	self.unwrapAngleThresholdInDeg = 5
 
 	self.view.znear = .1
 	self.view.zfar = 40000
@@ -127,7 +127,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 		timer('unwrapping uvs', function()
 			unwrapUVs{
 				mesh = self.mesh,
-				angleThreshold = self.unwrapAngleThreshold,
+				angleThresholdInDeg = self.unwrapAngleThresholdInDeg,
 			}
 		end)
 	end
@@ -137,7 +137,7 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 			orig = self.mesh:clone()
 		end
 		-- tile omesh onto mesh in-place
-		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge))
+		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge), self.unwrapAngleThresholdInDeg)
 		if cmdline.tilemeshmerge then
 			self.mesh:combine(orig)
 		end
@@ -378,7 +378,7 @@ function App:update()
 		drawUnwrapUVGraph(mesh)
 	end
 	if self.drawUnwrapUVEdges then
-		drawUnwrapUVEdges(mesh, self.angleThreshold)
+		drawUnwrapUVEdges(mesh, self.angleThresholdInDeg)
 	end
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
@@ -739,13 +739,13 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'UV' then
-			ig.luatableInputFloat('unwrap angle threshold', self, 'unwrapAngleThreshold')
+			ig.luatableInputFloat('unwrap angle threshold', self, 'unwrapAngleThresholdInDeg')
 
 			if ig.igButton'unwrap uvs' then
 				timer('unwrapping uvs', function()
 					unwrapUVs{
 						mesh = self.mesh,
-						angleThreshold = self.unwrapAngleThreshold,
+						angleThresholdInDeg = self.unwrapAngleThresholdInDeg,
 					}
 				end)
 				if mesh.loadedGL then
