@@ -11,7 +11,7 @@ local function unwrapUVs(args)
 	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 
 	mesh:breakAllVertexes()
-	mesh:calcAllOverlappingEdges()
+	mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	-- invalidate
 	mesh.vtxBuf = nil
 	mesh.vtxAttrs = nil
@@ -833,53 +833,49 @@ function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
-	angleThresholdInDeg = angleThresholdInDeg or 5
-	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
-	
+function drawUnwrapUVEdges(mesh)
 	local gl = require 'gl'
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
 	for _,e in ipairs(mesh.allOverlappingEdges or {}) do
-		if e then
-			-- out of all edges, find edges that *aren't* planar ...
+		-- out of all edges, find edges that *aren't* planar ...
+		if e 
+		and not e.isPlanar
+		then
 			local t1, t2 = table.unpack(e.tris)
-			local dot = t1.normal:dot(t2.normal) 
-			if dot <= cosAngleThreshold then
-				-- TODO member functions for edge getters
-				local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]-1]].pos
-				local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]%3]].pos
-				local t2edge = v2 - v1
-				local t2plane = t2.normal:cross(t2edge)
-				-- get the vectors along each triangles (perpendicular to the normals)
-				-- if t1's normal dot t2's plane vector > 0 then it's an internal angle
-				-- else it's an external angle
-				if t1.normal:dot(t2plane) > 0 then
-					gl.glColor3f(0,1,0)
-				else
-					gl.glColor3f(0,0,1)
-				end
-				-- neither class matters, just clip along the plane made from the edge vec cross the avg of the two normals
+			-- TODO member functions for edge getters
+			local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]-1]].pos
+			local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]%3]].pos
+			local t2edge = v2 - v1
+			local t2plane = t2.normal:cross(t2edge)
+			-- get the vectors along each triangles (perpendicular to the normals)
+			-- if t1's normal dot t2's plane vector > 0 then it's an internal angle
+			-- else it's an external angle
+			if t1.normal:dot(t2plane) > 0 then
+				gl.glColor3f(0,1,0)
+			else
+				gl.glColor3f(0,0,1)
+			end
+			-- neither class matters, just clip along the plane made from the edge vec cross the avg of the two normals
 
-				-- pick one of the two edges.  either will produce the same line ray 
-				-- use intervals for start/finish along edge
-				local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
-				local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
-				local v1 = e.planePos + e.plane.n * s0
-				local v2 = e.planePos + e.plane.n * s1
-				v1 = v1 + (t1.normal + t2.normal) * 1e-3
-				v2 = v2 + (t1.normal + t2.normal) * 1e-3
-				gl.glVertex3fv(v1.s)
-				gl.glVertex3fv(v2.s)
+			-- pick one of the two edges.  either will produce the same line ray 
+			-- use intervals for start/finish along edge
+			local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
+			local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			v1 = v1 + (t1.normal + t2.normal) * 1e-3
+			v2 = v2 + (t1.normal + t2.normal) * 1e-3
+			gl.glVertex3fv(v1.s)
+			gl.glVertex3fv(v2.s)
 
 --[[ 
-				local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
-				local normAvg = (t1.normal + t2.normal):normalize()
-				gl.glColor3f(1,1,0)
-				gl.glVertex3fv(centerPt.s)
-				gl.glVertex3fv((centerPt + normAvg * ((s1 - s0) * .5)).s)
+			local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
+			local normAvg = (t1.normal + t2.normal):normalize()
+			gl.glColor3f(1,1,0)
+			gl.glVertex3fv(centerPt.s)
+			gl.glVertex3fv((centerPt + normAvg * ((s1 - s0) * .5)).s)
 --]]
-			end
 		end
 	end
 	gl.glEnd()

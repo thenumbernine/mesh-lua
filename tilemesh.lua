@@ -79,8 +79,10 @@ end
 
 local function tileMesh(mesh, omesh, angleThresholdInDeg)
 	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
-	
-	mesh:calcAllOverlappingEdges()
+
+	if not mesh.allOverlappingEdges then
+		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+	end
 
 	-- [[ group all tris based on boundaries of angles
 	local triGroups = table(mesh.tris):mapi(function(t)
@@ -91,7 +93,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 		repeat
 			found = false
 			for _,e in ipairs(mesh.allOverlappingEdges) do
-				if e.tris[1].normal:dot(e.tris[2].normal) > cosAngleThreshold then
+				if e.isPlanar then
 					local i1, g1 = triGroups:find(nil, function(g) return g:find(e.tris[1]) end)
 					local i2, g2 = triGroups:find(nil, function(g) return g:find(e.tris[2]) end)
 					if i1 ~= i2 then
@@ -112,6 +114,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 		end
 		print()
 	end
+	mesh.triGroups = triGroups
 	-- make a mapping back from triangles to their groups
 	local triGroupForTri = mesh.tris:mapi(function(t)
 		for _,g in ipairs(triGroups) do
@@ -131,33 +134,18 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 			-- * whether the normals pass the threshold test
 			-- * what the avg normal dir of its two tris is
 			-- * what the plane of avg cross edge vec is
-			local normAvg = (t1.normal + t2.normal):normalize()
 			-- here I'm averaging the two edges origins
 			-- maybe I should do this from the start (instead of just using 1 of the 2 edges?)
 			-- TODO member functions for edge getters
-			assert(t1.index >= 1 and t1.index <= #mesh.tris)
-			assert(t2.index >= 1 and t2.index <= #mesh.tris)
-			assert(e.triVtxIndexes[1] >= 1 and e.triVtxIndexes[1] <= 3)
-			assert(e.triVtxIndexes[2] >= 1 and e.triVtxIndexes[2] <= 3)
 			local i11 = 3 * (t1.index-1) + e.triVtxIndexes[1]-1
-			assert(i11 >= 0)
-			assert(i11 < mesh.triIndexes.size)
-			assert(mesh.triIndexes.v[i11] >= 0)
-			assert(mesh.triIndexes.v[i11] < mesh.vtxs.size)
-			local i21 =   3 * (t2.index-1) + e.triVtxIndexes[2]-1
-			assert(i21 >= 0)
-			assert(i21 < mesh.triIndexes.size)
-			assert(mesh.triIndexes.v[i21] >= 0)
-			assert(mesh.triIndexes.v[i21] < mesh.vtxs.size)
+			local i21 = 3 * (t2.index-1) + e.triVtxIndexes[2]-1
 			local i12 = 3 * (t1.index-1) + e.triVtxIndexes[1]%3
-			assert(i12 >= 0)
-			assert(i12 < mesh.triIndexes.size)
-			assert(mesh.triIndexes.v[i12] >= 0)
-			assert(mesh.triIndexes.v[i12] < mesh.vtxs.size)
 			local planePos = .5 * (mesh.vtxs.v[i11].pos + mesh.vtxs.v[i21].pos)
 			local edgeDir = mesh.vtxs.v[i12].pos - mesh.vtxs.v[i11].pos
+			--local edgeDir = e.plane.n
+			-- TODO store this in edge, but that means using the average-pos instead of one edge's pos
 			local plane = plane3f():fromDirPt(
-				normAvg:cross(edgeDir):normalize(),
+				e.normAvg:cross(edgeDir):normalize(),
 				planePos
 			)
 			local t1side = plane:test(t1.com)
@@ -174,6 +162,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 			groupBorderEdgeInfo[g2]:insert{edge = e, plane = t2side and plane or -plane}
 		end
 	end
+	mesh.groupBorderEdgeInfo = groupBorderEdgeInfo 
 	--]]
 
 	-- TODO HERE
@@ -295,7 +284,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 			return mesh.vtxs.v[tp[i]]
 		end)
 		
-		print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t) return t.index end):concat', ')
+print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t) return t.index end):concat', ')
 
 		local uvorigin2D = vec2f()
 			-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
@@ -311,12 +300,14 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 			* matrix3x3To4x4(spatialConvention)
 			* scaleMat4x4(scale)
 
+		local omeshBBox = omesh.bbox
+
 		-- [[ also store the bbox of the omesh under this transform?
 		-- this might help some edges, but it causes overlaps on planar edges
 		-- TODO these aren't in texcoord space, they're in the global mesh space ... 
 		local cornersTC = range(0,7):mapi(function(corner)
 			-- get omesh bbox corner
-			local c = omesh.bbox:corner(corner)
+			local c = omeshBBox:corner(corner)
 			-- convert to texcoord space
 			local ctc = 
 				matrix3x3To4x4(spatialConvention)
@@ -398,11 +389,15 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 				-- then you have a brick wall with a brick missing from the middle of it.
 				local jitteredPos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
 				
-				local xform = translateMat4x4(jitteredPos) * modelToSurfXForm
+				local xform = translateMat4x4(placePos) * modelToSurfXForm
 
+				--[[ just place all
+				allInside = true
+				--]]
 				-- [[
-				-- if in tri (barycentric coord test) then continue
-				-- TODO bcc test the closest point on the placed mesh bbox to the tri
+				-- test if it's if in tri (barycentric coord test) then continue
+				-- use the unjittered positions for the test so we don't get holes in the lattice
+				-- later we will bcc test the closest point on the placed mesh bbox to the tri
 				local bcc = t:calcBCC(placePos, mesh)
 				local posInside = bcc.x >= 0 and bcc.y >= 0 and bcc.z >= 0
 				--]]
@@ -417,13 +412,15 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 				end
 				--]]
 				-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
-				if anyInside and not allInside then
+				if anyInside 
+				and not allInside 
+				then
 					-- [[
 					-- if position is outside the tri then constrain to be inside the tri
 					local minSide = range(0,2):sort(function(a,b)
 						return bcc.s[a] < bcc.s[b]
 					end)[1]
-					print('bcc', bcc, 'minSide', minSide)
+					--print('bcc', bcc, 'minSide', minSide)
 					local n1 = 3*(t.index-1) + (minSide+1)%3
 					local n2 = 3*(t.index-1) + (minSide+2)%3
 					-- side == 0 => alonge edge from 1 to 2
@@ -431,7 +428,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 					local es = table(mesh.allOverlappingEdges):filter(function(e)
 						-- only for edges with > threshold
 						local t1, t2 = table.unpack(e.tris)
-						if t1.normal:dot(t.normal) < cosAngleThreshold then
+						if not e.isPlanar then
 							for j,tj in ipairs(e.tris) do
 								local o1 = 3*(tj.index-1) + e.triVtxIndexes[j]-1
 								local o2 = 3*(tj.index-1) + e.triVtxIndexes[j]%3 
@@ -451,13 +448,19 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 						-- (otherwise we'll get duplcates along the edge)
 						allInside = posInside
 					else
-						--[==[
+						-- [==[
 						-- if it happens to be an external edge, theeennn we can clip along it
 						-- (and any other external edges?)
 						local clipped = omesh:clone():transform(xform)
 						local wasclipped
 						local t0, t1 = table.unpack(e.tris)
-						if t0.normal:dot(t1.normal) < cosAngleThreshold then
+						local function isUpward(t)
+							return math.abs(t.normal.y) > math.sqrt(.5)
+						end
+						if not e.isPlanar
+						-- don't clip against edges that fold upwards
+						and isUpward(e.tris[1]) == isUpward(e.tris[2])
+						then
 							local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
 							local plane = plane3f():fromDirPt(
 								(t0.normal + t1.normal):cross(edgeDir):normalize(),
@@ -491,7 +494,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 					for _,e in ipairs(mesh.allOverlappingEdges) do
 						if e.tris[1] == t or e.tris[2] == t then
 							local t0, t1 = table.unpack(e.tris)
-							if t0.normal:dot(t1.normal) < cosAngleThreshold then
+							if not e.isPlanar then
 								local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
 								local plane = plane3f():fromDirPt(
 									(t0.normal + t1.normal):cross(edgeDir):normalize(),
@@ -515,9 +518,6 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 					--]]
 				end
 				--]=]
-				--[[ just place all
-				inside = true
-				--]]
 
 				-- TODO if it's outside, but a bbox corner is inside, then find the closest edge on the tri
 				-- if it's a uvunwrap flood-fill edge then keep, if it's not then skip
@@ -659,6 +659,7 @@ end
 
 local function drawTileMeshPlaces(mesh)
 	if not mesh.tilePlaces then return end
+	local gl = require 'gl'
 	gl.glPointSize(3)
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
@@ -683,7 +684,66 @@ local function drawTileMeshPlaces(mesh)
 	gl.glLineWidth(1)
 end
 
+local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
+	assert(angleThresholdInDeg)
+	local gl = require 'gl'
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glLineWidth(3)
+	--[[
+	for _,g in ipairs(mesh.triGroups) do
+		for _,info in ipairs(mesh.groupBorderEdgeInfo[g]) do
+			local e = info.edge
+	--]]
+	-- [[
+	do
+		if not mesh.allOverlappingEdges then
+			mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+		end
+		for _,e in ipairs(mesh.allOverlappingEdges) do
+	--]]
+			local t1, t2 = table.unpack(e.tris)
+			
+			local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
+			local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			v1 = v1 + (t1.normal + t2.normal) * 1e-3
+			v2 = v2 + (t1.normal + t2.normal) * 1e-3
+			gl.glBegin(gl.GL_LINES)
+			gl.glVertex3f(v1:unpack())
+			gl.glVertex3f(v2:unpack())
+			gl.glEnd()
+
+			--[[ make plane perpendicular to normal
+			local bs = table{
+				e.normAvg:cross(vec3f(1,0,0)),
+				e.normAvg:cross(vec3f(0,1,0)),
+				e.normAvg:cross(vec3f(0,0,1)),
+			}
+			local blens = bs:mapi(function(b) return b:norm() end)
+			local i = select(2, blens:inf())
+			print('i', i)
+			local b1, b2 = bs[i%3+1], bs[(i+1)%3+1]
+			assert(b1)
+			assert(b2)
+			gl.glColor4f(1,1,0,.1)
+			gl.glBegin(gl.GL_QUADS)
+			gl.glVertex3f((e.planePos + b1 * 100):unpack())
+			gl.glVertex3f((e.planePos + b2 * 100):unpack())
+			gl.glVertex3f((e.planePos - b1 * 100):unpack())
+			gl.glVertex3f((e.planePos - b2 * 100):unpack())
+			gl.glEnd()
+			--]]
+		end
+	end
+	gl.glLineWidth(1)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
+end
+
 return {
 	tileMesh = tileMesh,
 	drawTileMeshPlaces = drawTileMeshPlaces,
+	drawTileMeshPlanes = drawTileMeshPlanes,
 }

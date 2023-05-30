@@ -384,8 +384,8 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
 	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
 	local vtxMergeThreshold = bboxCornerDist * 1e-6
-print('vtxMergeThreshold', vtxMergeThreshold)
-print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
+--print('vtxMergeThreshold', vtxMergeThreshold)
+--print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
 
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
 		vtxMergeThreshold,
@@ -399,7 +399,7 @@ print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.siz
 			self:mergeVertex(i,j)
 		end
 	end
-print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
+--print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
 	assert(#self.tris*3 == self.triIndexes.size)
 
 	-- invalidate
@@ -545,16 +545,19 @@ function Mesh:generateTriBasis()
 --print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
 		end
 	end
+	--[[
 	print('tri basis:')
 	for i,t in ipairs(self.tris) do
 		print(t.basis:unpack())
 	end
+	--]]
 end
 
 
 -- fill the allOverlappingEdges table
 -- TODO instead generate this upon request?
-function Mesh:calcAllOverlappingEdges()
+function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 	--[[
 	these are whatever mesh edges are partially overlapping one another.
 	they are a result of a shitty artist.
@@ -616,13 +619,19 @@ function Mesh:calcAllOverlappingEdges()
 										assert(i2 < i1)
 										local t1 = self.tris[i1]
 										local t2 = self.tris[i2]
+										normAvg = (t1.normal + t2.normal):normalize()
 										local e = {
 											tris = {t2, t1},
 											triVtxIndexes = {j2, j1},
 											intervals = {{s21,s22}, {s11,s12}},
 											dist = dist,
 											plane = plane,
+											-- TODO use the average of the two edges intersection with the plane, not just one edge arbitrarily
 											planePos = planePos,
+											-- TODO abs?  allow flipping of surface orientation?
+											isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
+											normAvg = normAvg,
+											--clipPlane = plane3f():fromDirPt(normAvg, planePos)
 										}
 										self.allOverlappingEdges:insert(e)
 										t1.allOverlappingEdges:insert(e)
