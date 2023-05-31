@@ -115,7 +115,10 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	-- after doing this you have to call findEdges and calcCOMs
 	if cmdline.mergevtxs then
 		timer('merging vertexes', function()
+			-- merge vtxs with vtxs
 			self.mesh:mergeMatchingVertexes()
+			-- merge vtxs with edges
+			self.mesh:mergeVtxsWithEdges()
 		end)
 		-- refresh edges, com0, and com1
 		self.mesh:findEdges()
@@ -396,7 +399,7 @@ function App:update()
 	end
 	if self.debugDrawLoops then
 	--debugDrawLines	
-		gl.glColor3f(1,1,1)
+		gl.glColor3f(1,0,0)
 		gl.glLineWidth(3)
 		for _,loop in ipairs(self.debugDrawLoops) do
 			gl.glBegin(gl.GL_LINE_LOOP)
@@ -459,32 +462,34 @@ function App:update()
 
 	App.super.update(self)
 
-	if self.editMode == 3 then
-		do--if self.mouse.leftPress then
-			local i, bestDist = self:findClosestTriToMouse()
-			local bestgroup
-			if i then
-				for j,g in ipairs(mesh.groups) do
-					if i >= 3*g.triFirstIndex and i < 3*(g.triFirstIndex + g.triCount) then
-						bestgroup = g.name
-					end
-				end
-				--print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
-
-				local pos, dir = self:mouseRay()
-				self.bestTriPt = pos + dir * bestDist
-			end
-		end
-	else
-		self.bestTriPt = nil
-	end
-
 	if self.editMode == 1 then
 		self.hoverVtx = nil
+		self.hoverTri = nil
+		self.bestTriPt = nil
 	elseif self.editMode == 2 then
 		self.hoverVtx = self:findClosestVtxToMouse()
 		if self.mouse.leftPress then
 			self.dragVtx = self.hoverVtx
+		end
+	elseif self.editMode == 3 then
+		local i, bestDist = self:findClosestTriToMouse()
+		self.hoverTri = i
+		--[[
+		local bestgroup
+		if i then
+			for j,g in ipairs(mesh.groups) do
+				if i >= 3*g.triFirstIndex and i < 3*(g.triFirstIndex + g.triCount) then
+					bestgroup = g.name
+				end
+			end
+			--print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
+
+			local pos, dir = self:mouseRay()
+			self.bestTriPt = pos + dir * bestDist
+		end
+		--]]
+		if self.mouse.leftPress then
+			self.dragTri = self.hoverTri
 		end
 	end
 
@@ -533,29 +538,41 @@ end
 
 function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 	local mesh = self.mesh
+	local pos, dir	-- calc only once per call
+	local function moveVtx(i)
+		if not pos then
+			pos, dir = self:mouseRay()
+		end
+		local vtx = self.mesh.vtxs.v[i]
+		local dist = -self.view.angle:zAxis():dot(vtx.pos - pos)
+		if not shiftDown then
+			local tanFovY = math.tan(math.rad(self.view.fovY / 2))
+			local screenDelta = vec3d(
+				(dx / self.width * 2) * self.width / self.height * tanFovY,
+				(-dy / self.height * 2) * tanFovY,
+				0
+			)
+			local vtxDelta = self.view.angle:rotate(screenDelta) * dist
+			vtx.pos = vtx.pos + vtxDelta
+		else
+			vtx.pos = vtx.pos + self.view.angle:rotate(vec3d(0, 0, dy))
+		end
+		-- update in the cpu buffer if it's been generated
+		if mesh.loadedGL then
+			mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof'vec3f_t', vtx.pos.s)
+		end
+	end
 	if self.editMode == 1 then
 		-- orbit behavior
 		App.super.mouseDownEvent(self, dx, dy, shiftDown, guiDown, altDown)
 	elseif self.editMode == 2 then
-		local i = self.dragVtx
-		if i then
-			local pos, dir = self:mouseRay()
-			local dist = -self.view.angle:zAxis():dot(self.mesh.vtxs.v[i].pos - pos)
-			if not shiftDown then
-				local tanFovY = math.tan(math.rad(self.view.fovY / 2))
-				local screenDelta = vec3d(
-					(dx / self.width * 2) * self.width / self.height * tanFovY,
-					(-dy / self.height * 2) * tanFovY,
-					0
-				)
-				local vtxDelta = self.view.angle:rotate(screenDelta) * dist
-				mesh.vtxs.v[i].pos = mesh.vtxs.v[i].pos + vtxDelta
-			else
-				mesh.vtxs.v[i].pos = mesh.vtxs.v[i].pos + self.view.angle:rotate(vec3d(0, 0, dy))
-			end
-			-- update in the cpu buffer if it's been generated
-			if mesh.loadedGL then
-				mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof'vec3f_t', mesh.vtxs.v[i].pos.s)
+		if self.dragVtx then
+			moveVtx(self.dragVtx)
+		end
+	elseif self.editMode == 3 then
+		if self.dragTri then
+			for j=0,2 do
+				moveVtx(mesh.triIndexes.v[self.dragTri + j])
 			end
 		end
 	end

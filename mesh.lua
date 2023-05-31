@@ -413,6 +413,104 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	self.allOverlappingEdges = nil
 end
 
+-- if a vertex is near an edge (and no vertex) then split the edge and make another vertex next to it
+-- TODO this is tempting me to store data like the OBJ file format, as unique positions and unique traits, but not as unique vertexes grouping all those traits...
+function Mesh:mergeVtxsWithEdges()
+	print('mergeVtxsWithEdges BEGIN')
+	if not self.bbox then self:calcBBox() end
+	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+	local vtxMergeThreshold = bboxCornerDist * 1e-6
+	local edgeLenEpsilon = 1e-7		-- how long an edge has to be for considering splitting it
+	local edgeDistEpsilon = 1e-1	-- how close a vertex has to be to the edge
+	local intervalEpsilon = 1e-1	-- how cloes to the interval endpoints a vertex has to be to consider splitting
+	for i=0,self.vtxs.size-1 do
+		local vi = ffi.new('MeshVertex_t', self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
+		local found
+		-- see if there is a vertex nearby
+		--[[ maybe I don't have to?
+		for j=0,self.vtxs.size-1 do
+			if j ~= i then
+				if (vi.pos - self.vtxs.v[j].pos):norm() < vtxMergeThreshold then
+					found = true
+					break
+				end
+			end
+		end
+		--]]
+		-- if not then see if there's an edge nearby (i.e. don't split vertexes near edges if the edge has already been split for them)
+		if not found then
+			for _,g in ipairs(self.groups) do
+				for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
+					local tp = self.triIndexes.v + 3*ti
+					for j=0,2 do
+						local iv0 = tp[j]
+						local iv1 = tp[(j+1)%3]
+						local iv2 = tp[(j+2)%3]
+						if iv0 ~= i and iv1 ~= i and iv2 ~= i then
+							local v0 = ffi.new('MeshVertex_t', self.vtxs.v[iv0])
+							local v1 = ffi.new('MeshVertex_t', self.vtxs.v[iv1])
+							local edgeDir = v1.pos - v0.pos
+							local edgePlanePos = .5 * (v1.pos + v0.pos)
+							local edgeDirLen = edgeDir:norm()
+							if edgeDirLen > edgeLenEpsilon then
+								edgeDir = edgeDir / edgeDirLen 
+								local edgePlane = plane3f():fromDirPt(edgeDir, edgePlanePos)
+								local s0 = edgePlane:dist(v0.pos)	-- dist along the edge of v0
+								local s1 = edgePlane:dist(v1.pos)	-- dist along the edge of v1
+								assert(s1 >= s0) -- because edgeDir points from v0 to v1
+								local s = edgePlane:dist(vi.pos)	-- dist along the edge of vi
+								local edgeDist = edgePlane:project(vi.pos - edgePlanePos):norm()	-- how far from the edge is vi
+								--print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
+								-- if this vtx is close to the dge
+								if edgeDist < edgeDistEpsilon
+								-- and it is far from either endpoint of the edge
+								and math.abs(s - s0) > intervalEpsilon
+								and math.abs(s - s1) > intervalEpsilon
+								and s0 < s and s < s1
+								then
+									-- then we have to split this triangle at this point in the interval
+print("splitting edge", v0.pos, v1.pos, 'at', vi.pos)
+									local f = (s - s0) / (s1 - s0)
+									local iv01 = self.vtxs.size
+									local nvtx = self.vtxs:emplace_back()
+									nvtx.pos = math.mix(v0.pos, v1.pos, f)
+									nvtx.texcoord = math.mix(v0.texcoord, v1.texcoord, f)
+									nvtx.normal = math.mix(v0.normal, v1.normal, f)
+
+									-- [[
+									local nti = ti + 1
+									tp[j] = iv0
+									tp[(j+1)%3] = iv01
+									tp[(j+2)%3] = iv2
+									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
+									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv1)
+									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv2)
+									self.tris:insert(ti+1, Triangle{
+										index = nti+1,	-- 1-based
+									})
+									for _,g2 in ipairs(self.groups) do
+										if nti < g2.triFirstIndex then
+											g2.triFirstIndex = g2.triFirstIndex + 1
+										end
+									end
+									g.triCount = g.triCount + 1
+									--]]
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	print('mergeVtxsWithEdges END')
+	self:rebuildTris()
+	self:mergeMatchingVertexes()	-- better to merge vtxs than remove empty tris cuz it will keep seams in models
+	self.loadedGL = nil
+	self.vtxBuf = nil
+	return modified
+end
+
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxs(ti)
 	assert(ti >= 0 and ti + 3 <= self.triIndexes.size)
@@ -1099,6 +1197,7 @@ hmm ... I would like to use this but with the 'allOverlappingEdges' structure ..
 hmm hmm maybe I need a mesh with all vertexes merged into their neighboring edges/triangles
 and mapping that information back to the original mesh
 
+TODO I might need this but for all edge segments, based on 'allOverlappingEdges' and each subinterval of each triangle edge.
 --]]
 function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos
@@ -1484,7 +1583,6 @@ end
 
 	self.loadedGL = nil
 	self.vtxBuf = nil
-
 	return modified
 end
 

@@ -751,6 +751,7 @@ tsrc.v1*-------*
 		t.uvs = nil
 	end
 
+--[[
 	print('tri basis:')
 	for i,t in ipairs(mesh.tris) do
 		if t.basis then
@@ -759,6 +760,7 @@ tsrc.v1*-------*
 	end
 
 	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))
+--]]
 end
 
 function drawUnwrapUVGraph(mesh)
@@ -834,48 +836,56 @@ end
 
 -- draw the edges that are folded over.
 function drawUnwrapUVEdges(mesh)
+	if not mesh.allOverlappingEdges then
+		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+	end
+	local alpha = .5
 	local gl = require 'gl'
 	gl.glLineWidth(3)
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
 	gl.glBegin(gl.GL_LINES)
-	for _,e in ipairs(mesh.allOverlappingEdges or {}) do
+	for _,e in ipairs(mesh.allOverlappingEdges) do
+		local t1, t2 = table.unpack(e.tris)
 		-- out of all edges, find edges that *aren't* planar ...
-		if e 
-		and not e.isPlanar
-		then
-			local t1, t2 = table.unpack(e.tris)
+		if not e.isPlanar then
 			local t2plane = t2.normal:cross(e.plane.n)
 			-- get the vectors along each triangles (perpendicular to the normals)
 			-- if t1's normal dot t2's plane vector > 0 then it's an internal angle
 			-- else it's an external angle
 			if t1.normal:dot(t2plane) > 0 then
-				gl.glColor3f(0,1,0)
+				gl.glColor4f(0,1,0, alpha)
 			else
-				gl.glColor3f(0,0,1)
+				gl.glColor4f(0,0,1, alpha)
 			end
 			-- neither class matters, just clip along the plane made from the edge vec cross the avg of the two normals
+		else
+			gl.glColor4f(1,1,1, alpha)
+		end
 
-			-- pick one of the two edges.  either will produce the same line ray 
-			-- use intervals for start/finish along edge
-			local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
-			local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-			v1 = v1 + (t1.normal + t2.normal) * 1e-3
-			v2 = v2 + (t1.normal + t2.normal) * 1e-3
-			gl.glVertex3fv(v1.s)
-			gl.glVertex3fv(v2.s)
+		-- pick one of the two edges.  either will produce the same line ray 
+		-- use intervals for start/finish along edge
+		local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
+		local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+		local v1 = e.planePos + e.plane.n * s0
+		local v2 = e.planePos + e.plane.n * s1
+		v1 = v1 + (t1.normal + t2.normal) * 1e-3
+		v2 = v2 + (t1.normal + t2.normal) * 1e-3
+		gl.glVertex3fv(v1.s)
+		gl.glVertex3fv(v2.s)
 
 --[[ 
-			local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
-			local normAvg = (t1.normal + t2.normal):normalize()
-			gl.glColor3f(1,1,0)
-			gl.glVertex3fv(centerPt.s)
-			gl.glVertex3fv((centerPt + normAvg * ((s1 - s0) * .5)).s)
+		local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
+		local normAvg = (t1.normal + t2.normal):normalize()
+		gl.glColor3f(1,1,0)
+		gl.glVertex3fv(centerPt.s)
+		gl.glVertex3fv((centerPt + normAvg * ((s1 - s0) * .5)).s)
 --]]
-		end
 	end
 	gl.glEnd()
 	gl.glLineWidth(1)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
 end
 
 return {
