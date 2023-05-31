@@ -129,37 +129,18 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 		local g1 = triGroupForTri[t1]
 		local g2 = triGroupForTri[t2]
 		if g1 ~= g2 then
-			-- find the dividing plane of this edge
-			-- TODO I could just cache in 'allOverlappingEdges' ...
-			-- * whether the normals pass the threshold test
-			-- * what the avg normal dir of its two tris is
-			-- * what the plane of avg cross edge vec is
-			-- here I'm averaging the two edges origins
-			-- maybe I should do this from the start (instead of just using 1 of the 2 edges?)
-			-- TODO member functions for edge getters
-			local i11 = 3 * (t1.index-1) + e.triVtxIndexes[1]-1
-			local i21 = 3 * (t2.index-1) + e.triVtxIndexes[2]-1
-			local i12 = 3 * (t1.index-1) + e.triVtxIndexes[1]%3
-			local planePos = .5 * (mesh.vtxs.v[i11].pos + mesh.vtxs.v[i21].pos)
-			local edgeDir = mesh.vtxs.v[i12].pos - mesh.vtxs.v[i11].pos
-			--local edgeDir = e.plane.n
-			-- TODO store this in edge, but that means using the average-pos instead of one edge's pos
-			local plane = plane3f():fromDirPt(
-				e.normAvg:cross(edgeDir):normalize(),
-				planePos
-			)
-			local t1side = plane:test(t1.com)
-			local t2side = plane:test(t2.com)
+			local t1side = e.clipPlane:test(t1.com)
+			local t2side = e.clipPlane:test(t2.com)
 			if t1side == t2side then
 				print("com", t1.com, "side", t1side)
 				print("com", t2.com, "side", t2side)
-				print("plane", plane)
+				print("plane", e.clipPlane)
 				error("bad edge")
 			end
 			groupBorderEdgeInfo[g1] = groupBorderEdgeInfo[g1] or table()
-			groupBorderEdgeInfo[g1]:insert{edge = e, plane = t1side and plane or -plane}
+			groupBorderEdgeInfo[g1]:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
 			groupBorderEdgeInfo[g2] = groupBorderEdgeInfo[g2] or table()
-			groupBorderEdgeInfo[g2]:insert{edge = e, plane = t2side and plane or -plane}
+			groupBorderEdgeInfo[g2]:insert{edge = e, plane = t2side and e.clipPlane or -e.clipPlane}
 		end
 	end
 	mesh.groupBorderEdgeInfo = groupBorderEdgeInfo 

@@ -554,8 +554,17 @@ function Mesh:generateTriBasis()
 end
 
 
--- fill the allOverlappingEdges table
--- TODO instead generate this upon request?
+--[[
+fill the allOverlappingEdges table
+TODO instead generate this upon request?
+
+angleThresholdInDeg is used for 'isPlanar' calculations
+and this can be relatively loose (5 deg or so) for allowing planar uv unwrapping around curves.
+
+normEpsilon is for validating that the norm is nonzero
+edgeDistEpsilon is for finding overlapping edges that don't share vertexes but we still want to uv-unwrap fold over.
+edgeAngleThreshold is used for ensuring those edges are aligned, so this must be tighter than angleThresholdInDeg.
+--]]
 function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 	--[[
@@ -572,7 +581,7 @@ function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 --	print('n = '..t.normal)
 --end
 	local normEpsilon = 1e-7
-	--local edgeDistEpsilon = 1e-7 -- too strict for roof
+	--local edgeDistEpsilon = 1e-7 -- ... is too strict for roof
 	local edgeDistEpsilon = 1e-3
 	local edgeAngleThreshold = math.rad(1e-1)
 	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
@@ -583,33 +592,47 @@ function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 			local v11 = self.vtxs.v[tp1[j1-1]].pos
 			local v12 = self.vtxs.v[tp1[j1%3]].pos
 --print('tri', i1, 'pos', j1, '=', v11)
-			local n1 = v12 - v11
-			local n1Norm = n1:norm()
-			if n1Norm > normEpsilon then
-				n1 = n1 / n1Norm
+			local edgeDir1 = v12 - v11
+			local edgeDir1Norm = edgeDir1:norm()
+			if edgeDir1Norm > normEpsilon then
+				edgeDir1 = edgeDir1 / edgeDir1Norm
 				for i2=i1-1,1,-1 do
 					local t2 = self.tris[i2]
 					local tp2 = self.triIndexes.v + 3 * (i2 - 1)
 					for j2=1,3 do
 						local v21 = self.vtxs.v[tp2[j2-1]].pos
 						local v22 = self.vtxs.v[tp2[j2%3]].pos
-						local n2 = v22 - v21
-						local n2Norm = n2:norm()
-						if n2Norm  > normEpsilon then
-							n2 = n2 / n2Norm
-							if math.abs(n1:dot(n2)) > cosEdgeAngleThreshold then
+						local edgeDir2 = v22 - v21
+						local edgeDir2Norm = edgeDir2:norm()
+						if edgeDir2Norm  > normEpsilon then
+							edgeDir2 = edgeDir2 / edgeDir2Norm
+							if math.abs(edgeDir1:dot(edgeDir2)) > cosEdgeAngleThreshold then
 --print('allOverlappingEdges normals align:', i1-1, j1-1, i2-1, j2-1)
 								-- normals align, calculate distance
-								local planePos = v11
-								local plane = plane3f():fromDirPt(n1, planePos)	-- pick any point on line v1: v11 or v12
+								--local planePos = v11
+							
+								-- pick any point on line v1: v11 or v12
+								-- or an average is best (when testing tri COM on either side tof the dividing plane)
+								-- use the average of the two edges intersection with the plane, not just one edge arbitrarily
+								local planePos = .5 * (v21 + v11)
+								-- average the two edge-dirs
+								local edgeDir
+								if edgeDir1:dot(edgeDir2) < 0 then
+									edgeDir = (edgeDir1 - edgeDir2):normalize()
+								else
+									edgeDir = (edgeDir1 + edgeDir2):normalize()
+								end
+								-- this is the edge projection plane, used for calculating distances to determine the interval of edge tri edge along this (the averaged edge)
+								local plane = plane3f():fromDirPt(edgeDir, planePos)	
 								-- find ray from the v1 line to any line on v2
-								local dv = plane:projectVec(v21 - planePos) 	-- project onto the plane normal
-								local dist = dv:norm()					-- calculate the distance of the points both projected onto the plane
+								-- project onto the plane normal
+								-- calculate the distance of the points both projected onto the plane
+								local dist = plane:projectVec(v21 - v11):norm() 	
 								if dist < edgeDistEpsilon then
 									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-									local s11 = 0	--plane:dist(v11) -- assuming v11 is the plane origin
+									local s11 = plane:dist(v11)
 									local s12 = plane:dist(v12)
-									-- based on n1 being the plane normal, s11 and s12 are already sorted
+									-- based on edgeDir being the plane normal, s11 and s12 are already sorted
 									local s21 = plane:dist(v21)
 									local s22 = plane:dist(v22)
 									-- since these aren't, they have to be sorted
@@ -620,18 +643,18 @@ function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 										local t1 = self.tris[i1]
 										local t2 = self.tris[i2]
 										normAvg = (t1.normal + t2.normal):normalize()
+										-- TODO member functions for edge getters
 										local e = {
 											tris = {t2, t1},
 											triVtxIndexes = {j2, j1},
 											intervals = {{s21,s22}, {s11,s12}},
 											dist = dist,
 											plane = plane,
-											-- TODO use the average of the two edges intersection with the plane, not just one edge arbitrarily
 											planePos = planePos,
-											-- TODO abs?  allow flipping of surface orientation?
+											-- TODO test dot abs?  allow flipping of surface orientation?
 											isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
 											normAvg = normAvg,
-											--clipPlane = plane3f():fromDirPt(normAvg, planePos)
+											clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
 										}
 										self.allOverlappingEdges:insert(e)
 										t1.allOverlappingEdges:insert(e)

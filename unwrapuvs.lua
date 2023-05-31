@@ -843,11 +843,7 @@ function drawUnwrapUVEdges(mesh)
 		and not e.isPlanar
 		then
 			local t1, t2 = table.unpack(e.tris)
-			-- TODO member functions for edge getters
-			local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]-1]].pos
-			local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t2.index-1) + e.triVtxIndexes[2]%3]].pos
-			local t2edge = v2 - v1
-			local t2plane = t2.normal:cross(t2edge)
+			local t2plane = t2.normal:cross(e.plane.n)
 			-- get the vectors along each triangles (perpendicular to the normals)
 			-- if t1's normal dot t2's plane vector > 0 then it's an internal angle
 			-- else it's an external angle
