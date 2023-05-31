@@ -115,9 +115,9 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	-- after doing this you have to call findEdges and calcCOMs
 	if cmdline.mergevtxs then
 		timer('merging vertexes', function()
-			-- merge vtxs with vtxs
-			self.mesh:mergeMatchingVertexes()
-			-- merge vtxs with edges
+			-- merge vtxs with vtxs ... ignoring texcoords and normals
+			self.mesh:mergeMatchingVertexes(true, true)
+			-- merge vtxs with edges - i.e. split any edges where a vertex is overlapping it midway
 			self.mesh:mergeVtxsWithEdges()
 		end)
 		-- refresh edges, com0, and com1
@@ -474,7 +474,7 @@ function App:update()
 	elseif self.editMode == 3 then
 		local i, bestDist = self:findClosestTriToMouse()
 		self.hoverTri = i
-		--[[
+		-- [[
 		local bestgroup
 		if i then
 			for j,g in ipairs(mesh.groups) do
@@ -482,7 +482,7 @@ function App:update()
 					bestgroup = g.name
 				end
 			end
-			--print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
+			print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
 
 			local pos, dir = self:mouseRay()
 			self.bestTriPt = pos + dir * bestDist
