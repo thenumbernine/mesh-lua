@@ -835,7 +835,7 @@ function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-function drawUnwrapUVEdges(mesh)
+function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
 	if not mesh.edges2 then
 		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	end

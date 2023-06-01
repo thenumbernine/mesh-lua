@@ -99,14 +99,14 @@ function App:initGL(...)
 	local curname
 	self.curdir,curname = file(fn):getdir()
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
-	self.mesh = OBJLoader():load(self.curfn)
-print('#unique vertexes', self.mesh.vtxs.size)
-print('#unique triangles', self.mesh.triIndexes.size/3)
+	local mesh = OBJLoader():load(self.curfn)
+print('#unique vertexes', mesh.vtxs.size)
+print('#unique triangles', mesh.triIndexes.size/3)
 	-- TODO how to request this?  dirty bits?
-	self.mesh:prepare()
+	mesh:prepare()
 
 	if cmdline.tribasis then
-		self.mesh:generateTriBasis()
+		mesh:generateTriBasis()
 		self.drawTriBasis = true
 	end
 
@@ -116,18 +116,18 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 	if cmdline.mergevtxs then
 		timer('merging vertexes', function()
 			-- merge vtxs with vtxs ... ignoring texcoords and normals
-			self.mesh:mergeMatchingVertexes(true, true)
-			self:removeEmptyTris()
+			mesh:mergeMatchingVertexes(true, true)
+			mesh:removeEmptyTris()
 			-- if two tris touch, or almost touch, then split them along the edge in common with their planes
 			-- maybe I don't have to do this yet ...
-			--self.mesh:splitTrisTouchingTris() 
+			--mesh:splitTrisTouchingTris() 
 			-- merge vtxs with edges - i.e. split any edges where a vertex is overlapping it midway
-			self.mesh:splitVtxsTouchingEdges()
+			mesh:splitVtxsTouchingEdges()
 		end)
 		-- refresh edges, com0, and com1
-		self.mesh:findEdges()
-		self.mesh.com0 = self.mesh:calcCOM0()
-		self.mesh.com1 = self.mesh:calcCOM1()
+		mesh:findEdges()
+		mesh.com0 = mesh:calcCOM0()
+		mesh.com1 = mesh:calcCOM1()
 	end
 
 	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
@@ -135,29 +135,28 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
 			unwrapUVs{
-				mesh = self.mesh,
+				mesh = mesh,
 				angleThresholdInDeg = self.unwrapAngleThresholdInDeg,
 			}
 		end)
 	end
 	if cmdline.tilemesh or cmdline.tilemeshmerge then
-		local orig
-		if cmdline.tilemeshmerge then
-			orig = self.mesh:clone()
-		end
 		-- tile omesh onto mesh in-place
-		tileMesh(self.mesh, OBJLoader():load(cmdline.tilemesh or cmdline.tilemeshmerge), self.unwrapAngleThresholdInDeg)
-		if cmdline.tilemeshmerge then
-			self.mesh:combine(orig)
-		end
+		tileMesh(
+			mesh,
+			cmdline.tilemesh or cmdline.tilemeshmerge,
+			cmdline.tilemeshmerge and mesh:clone() or nil,
+			self.unwrapAngleThresholdInDeg
+		)
 	end
 --]]
 
-	print('triangle bounded volume', self.mesh:calcVolume())
-	print('bbox', self.mesh.bbox)
-	print('bbox size', self.mesh.bbox.max - self.mesh.bbox.min)
-	print('bbox volume', (self.mesh.bbox.max - self.mesh.bbox.min):volume())
-	print('mesh.bbox corner-to-corner distance: '..(self.mesh.bbox.max - self.mesh.bbox.min):norm())
+	print('triangle bounded volume', mesh:calcVolume())
+	print('bbox', mesh.bbox)
+	print('bbox size', mesh.bbox.max - mesh.bbox.min)
+	print('bbox volume', (mesh.bbox.max - mesh.bbox.min):volume())
+	print('mesh.bbox corner-to-corner distance: '..(mesh.bbox.max - mesh.bbox.min):norm())
+	self.mesh = mesh
 
 --[[ default camera to ortho looking down y-
 	self.view.ortho = true
@@ -272,7 +271,7 @@ void main() {
 		},
 	}
 
-	self.mesh:loadGL(self.shader)
+	mesh:loadGL(self.shader)
 end
 
 App.modelViewMatrix = matrix_ffi.zeros{4,4}
@@ -387,7 +386,7 @@ function App:update()
 		drawUnwrapUVGraph(mesh)
 	end
 	if self.drawUnwrapUVEdges then
-		drawUnwrapUVEdges(mesh)
+		drawUnwrapUVEdges(mesh, self.unwrapAngleThresholdInDeg)
 	end
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
@@ -782,10 +781,13 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw uv unwrap graph', self, 'drawUnwrapUVGraph')
 			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUnwrapUVEdges')
 
-			self.tileMeshFilename = self.tileMeshFilename or ''
-			ig.luatableInputText('tile mesh filename', self, 'tileMeshFilename')
+			self.placementFilename = self.placementFilename or ''
+			ig.luatableInputText('placement filename', self, 'placementFilename')
 			if ig.igButton'tile mesh' then
-				tileMesh(mesh, OBJLoader():load(self.tileMeshFilename))
+				tileMesh(
+					mesh,
+					self.placementFilename
+				)
 			end
 
 			ig.igEndMenu()
