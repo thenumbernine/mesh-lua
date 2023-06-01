@@ -22,6 +22,7 @@ local drawUnwrapUVGraph = require 'mesh.unwrapuvs'.drawUnwrapUVGraph
 local drawUnwrapUVEdges = require 'mesh.unwrapuvs'.drawUnwrapUVEdges
 local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
+local drawTileMeshEdges = require 'mesh.tilemesh'.drawTileMeshEdges
 local drawTileMeshPlanes = require 'mesh.tilemesh'.drawTileMeshPlanes
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
@@ -80,6 +81,7 @@ function App:initGL(...)
 	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
 	self.drawTileMeshPlanes = false
+	self.drawTileMeshEdges = false
 
 	self.editMode = 1
 
@@ -393,6 +395,9 @@ function App:update()
 	end
 	if self.drawTileMeshPlanes then
 		drawTileMeshPlanes(mesh, self.unwrapAngleThresholdInDeg)
+	end
+	if self.drawTileMeshEdges then
+		drawTileMeshEdges(mesh, self.unwrapAngleThresholdInDeg)
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -824,6 +829,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
 			ig.luatableCheckbox('draw tile clip planes', self, 'drawTileMeshPlanes')
+			ig.luatableCheckbox('draw tile clip edges', self, 'drawTileMeshEdges')
 
 			if ig.igButton'find holes' then
 				self.debugDrawLoops, self.debugDrawLines = self.mesh:findBadEdges()

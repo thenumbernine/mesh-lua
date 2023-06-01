@@ -520,6 +520,22 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 							else
 						--]==]
 						-- [==[
+						
+						--[[ 
+						new algorithm ...
+						for detecting inside a polygon via bsp
+						es = all boundary edges
+						while #es > 0 do
+							e = pop an edge from es
+							if our point is on the front of e's plane ...
+								remove all edges whose segments are on the back side of e's plane 
+								if there's no edges left then we are inside
+							if our point is on the back of e's plane
+								remove all edges whose segments are in front of e's plane 
+								if there's no edges left, we're outside
+						end
+						--]]
+
 						local clipped = omesh:clone():transform(xform)
 						for _,info in ipairs(triGroupForTri[t].borderEdges) do
 							local e = info.edge
@@ -793,9 +809,9 @@ local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	gl.glDisable(gl.GL_CULL_FACE)
 	gl.glColor4f(1,1,0,.1)
 	gl.glBegin(gl.GL_QUADS)
-	-- TODO draw planes of 'triGroups.borderEdges'
-	for _,e in ipairs(mesh.edges2) do
-		if not e.isPlanar then
+	for _,g in ipairs(mesh.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
@@ -813,8 +829,47 @@ local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	gl.glDisable(gl.GL_BLEND)
 end
 
+-- draw lines of triGroups[]  .borderEdges[]
+-- this duplicates drawUnwrapUVEdges except for the mesh.triGroups
+local function drawTileMeshEdges(mesh, angleThresholdInDeg)
+	if not mesh.triGroups then return end
+	local alpha = .5
+	local gl = require 'gl'
+	gl.glLineWidth(3)
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glBegin(gl.GL_LINES)
+	for _,g in ipairs(mesh.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local t1, t2 = table.unpack(e.tris)
+			--local t2plane = t2.normal:cross(e.plane.n)
+			--if t1.normal:dot(t2plane) > 0 then
+			--	gl.glColor4f(0,1,0, alpha)
+			--else
+				gl.glColor4f(0,0,1, alpha)
+			--end
+
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			v1 = v1 + e.normAvg * 1e-3
+			v2 = v2 + e.normAvg * 1e-3
+			gl.glVertex3fv(v1.s)
+			gl.glVertex3fv(v2.s)
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
+end
+
+
+
 return {
 	tileMesh = tileMesh,
 	drawTileMeshPlaces = drawTileMeshPlaces,
+	drawTileMeshEdges = drawTileMeshEdges,
 	drawTileMeshPlanes = drawTileMeshPlanes,
 }

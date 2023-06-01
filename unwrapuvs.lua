@@ -763,7 +763,7 @@ tsrc.v1*-------*
 --]]
 end
 
-function drawUnwrapUVGraph(mesh)
+local function drawUnwrapUVGraph(mesh)
 	local gl = require 'gl'
 	local eps = 1e-3
 	-- [[ show unwrap info
@@ -835,7 +835,7 @@ function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
+local function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
 	if not mesh.edges2 then
 		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	end

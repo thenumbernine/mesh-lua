@@ -783,6 +783,8 @@ function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	-- it only represents entire tri edges, like .edges (no subintervals) 
 	-- but it contains the normal, planar, etc data of .allOverlappingEdges
 	-- TODO this should be used to replace both
+	-- hmm but .edges is based on all matching vtx pairs shared by edges (so unlimited tris per edge)
+	-- while .edges2 and .allOverlappingEdges is based on pairs of tri edges (so 2 tris at most per edge)
 	self.edges2 = table()
 	for _,t in ipairs(self.tris) do
 		t.edges2 = table()
@@ -938,6 +940,7 @@ function Mesh:findEdges(getIndex)
 				local vb = self.vtxs.v[b-1]
 				local vavg = .5 * (va.pos + vb.pos)
 				local edgeDir = (vb.pos - va.pos):normalize()
+				local plane = plane3f():fromDirPt(edgeDir, vavg)
 				e = {
 					[1] = a,
 					[2] = b,
@@ -946,9 +949,11 @@ function Mesh:findEdges(getIndex)
 					-- because in tilemesh I'm mixing .edges and .edges2
 					-- TODO build findBadEdges using .edges2 only
 					-- but tht gets into 'isPlanar' and the angleThreshold being everywhere ....
-					plane = plane3f():fromDirPt(edgeDir, vavg),
+					plane = plane, 
 					planePos = vavg,
 					clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), vavg),
+					normAvg = vec3f(t.normal),	-- where should normAvg point? planar?  tri normal?
+					interval = {plane:dist(va.pos), plane:dist(vb.pos)},
 				}
 				self.edges[a][b] = e
 			end
