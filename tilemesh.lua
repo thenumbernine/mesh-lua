@@ -156,6 +156,7 @@ print('found '..#triGroups..' groups of triangles')
 				print("clipPlane", e.clipPlane)
 				error'here'
 			end
+			-- TODO rename 'plane' to 'clipPlane'
 			g1.borderEdges:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
 			g2.borderEdges:insert{edge = e, plane = t2side and e.clipPlane or -e.clipPlane}
 		end
@@ -479,50 +480,11 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 					if anyInside 
 					and not allInside 
 					then
-						-- [[
-						--[=[
-						-- if position is outside the tri then constrain to be inside the tri
-						local minSide = range(0,2):sort(function(a,b)
-							return bcc.s[a] < bcc.s[b]
-						end)[1]
-						local n1 = 3*(t.index-1) + (minSide+1)%3
-						local n2 = 3*(t.index-1) + (minSide+2)%3
-						--]=]
-						-- instead of min side, test all sides
-						local anyEdgeWasClipped
-						--[==[
-						for k=0,2 do
-							local n1 = 3*(t.index-1) + (k+1)%3
-							local n2 = 3*(t.index-1) + (k+2)%3
-							-- side == 0 => alonge edge from 1 to 2
-							-- then look for all edges that touch this side
-							local es = table(mesh.edges2):filter(function(e)
-								local t1, t2 = table.unpack(e.tris)
-								-- only for edges with > threshold
-								if not e.isPlanar then
-									for j,tj in ipairs(e.tris) do
-										local o1 = 3*(tj.index-1) + e.triVtxIndexes[j]-1
-										local o2 = 3*(tj.index-1) + e.triVtxIndexes[j]%3 
-										if (o1 == n1 and o2 == n2)
-										or (o1 == n2 and o2 == n1)
-										then
-											return true
-										end
-									end
-								end
-							end)
-							assert(#es == 0 or #es == 1)
-							local e = es[1]
-							--print('e', e)
-							if not e then
-								-- if the closest edge turns out to be an internal edge then clip based solely on posInside
-								-- ...
-							else
-						--]==]
-						-- [==[
 						
 						--[[ 
-						new algorithm ...
+						TODO SEPARATE THIS OUT AS AN ARBITRARY POLYHEDRA CLIPPING FUNCTION
+
+						mesh inside poly algorithm ...
 						for detecting inside a polygon via bsp
 						es = all boundary edges
 						while #es > 0 do
@@ -534,92 +496,99 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 								remove all edges whose segments are in front of e's plane 
 								if there's no edges left, we're outside
 						end
+						
+						but how about for clipping a mesh to arbitrary planes?
+						for this I'll need clip() to return a mesh of what it cut away
+						and then i'll have to do some merges ....
 						--]]
-
-						local clipped = omesh:clone():transform(xform)
-						for _,info in ipairs(triGroupForTri[t].borderEdges) do
-							local e = info.edge
-						--]==]
-							-- [==[
-							-- if it happens to be an external edge, theeennn we can clip along it
-							-- (and any other external edges?)
-							--local t0, t1 = table.unpack(e.tris)
-							local function isUpward(t)
-								return math.abs(t.normal.y) > math.sqrt(.5)
+						
+						local anythingRemoved = false
+						
+						-- separate edgeInfos into a list of those with line segments touching the front of the plane
+						-- and those with line segments touchign the back fo the plane
+						-- a line segment can appear in both lists.
+						local function getEdgesInFront(edgeInfos, plane)
+							return edgeInfos:filter(function(info)
+								local e = info.edge
+								local v1 = e.planePos + e.plane.n * e.interval[1]
+								local v2 = e.planePos + e.plane.n * e.interval[2]
+								return plane:dist(v1) > 1e-4
+									or plane:dist(v2) > 1e-4
+							end)
+						end
+						local function clipEdgesAgainstEdges(edgeInfos, plane)
+							return getEdgesInFront(edgeInfos, plane),
+								getEdgesInFront(edgeInfos, -plane)
+						end
+						
+						-- clip a mesh against a polygon
+						local function clipMeshAgainstEdges(edgeInfos, clipped)
+							local info = edgeInfos:remove()
+							-- clone and clip against the -plane -> backMesh 
+							local backMesh = clipped:clone()
+							backMesh:clip(-info.plane)
+							if #backMesh.tris == 0 then
+								backMesh = nil
 							end
-							if not e.isPlanar
-							--[[ don't clip against edges that fold upwards
-							and isUpward(e.tris[1]) == isUpward(e.tris[2])
-							--]]
-							then
-								local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
-								--[[
-								local plane = plane3f():fromDirPt(
-									(t0.normal + t1.normal):cross(edgeDir):normalize(),
-									e.planePos --tvtxs[j].pos
-								)
-								--]]
-								local clipPlane = e.clipPlane
-								if not clipPlane:test(t.com) then clipPlane = -clipPlane end
-								if clipped:clip(clipPlane) then
-									anyEdgeWasClipped = true
+							-- clone and clip the plane -> frontMesh
+							local frontMesh = clipped:clone()
+							frontMesh:clip(info.plane)
+							if #frontMesh.tris == 0 then
+								frontMesh = nil
+							end
+							-- if that plane was the list on our list ...
+							if #edgeInfos == 0 then
+								-- ... then toss the backMesh because it is outside
+								-- and just return frontMesh (if we have it)
+								backMesh = nil
+							else
+								local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.plane)
+								if #edgesBack > 0 then
+									if backMesh then
+										backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
+									end
+								else
+									-- backMesh is fully outside the poly -- toss it
+									backMesh = nil
+								end
+								if #edgesFront > 0 then
+									if frontMesh then
+										frontMesh = clipMeshAgainstEdges(edgesFront, frontMesh)
+									end
+								else
+									-- frontMesh is now fully inside the poly, so keep it (if we have it)
 								end
 							end
-							--]==]
+							-- keep track of whether we lost any pieces
+							if not frontMesh or not backMesh then
+								anythingRemoved = true
+							end
+							-- return the combination of front and back meshes
+							if frontMesh then
+								if backMesh then
+									frontMesh:combine(backMesh)
+								end
+								return frontMesh
+							elseif backMesh then
+								return backMesh
+							end
 						end
-						if anyEdgeWasClipped then
+						local clipped = clipMeshAgainstEdges(
+							table(triGroupForTri[t].borderEdges),
+							omesh:clone():transform(xform)
+						)
+						-- if clipped is nil then everything was removed
+
+						if not clipped then
+							-- ... then the mesh is all outside
+						elseif anythingRemoved then
+							-- then part of the mesh was inside
 							merged:combine(clipped)
 						else
-							-- if the closest edge turns out to be an internal edge then clip based solely on posInside
-							-- (i.e. no clipping occurred?)
-							-- (otherwise we'll get duplcates along the edge)
+							-- all was inside
 							allInside = posInside
 						end
-						--]]
-
-						--[[ ... clip by our tri 3 sides
-						-- downside: this fails upon tris next to thin tris next to edges
-						for j=1,3 do
-							local edgeDir = tvtxs[j%3+1].pos - tvtxs[j].pos
-							local plane = plane3f():fromDirPt(
-								t.normal:cross(edgeDir):normalize(),
-								tvtxs[j].pos)
-							if clipped:clip(plane) then
-								wasclipped = true
-							end
-						end
-						--]]
-						--[[ clip by any overlappingedges that touch this tri
-						for _,e in ipairs(mesh.edges2) do
-							if e.tris[1] == t or e.tris[2] == t then
-								local t0, t1 = table.unpack(e.tris)
-								if not e.isPlanar then
-									local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
-									local plane = plane3f():fromDirPt(
-										(t0.normal + t1.normal):cross(edgeDir):normalize(),
-										e.planePos --tvtxs[j].pos
-									)
-									if not plane:test(t.com) then plane = -plane end
-									if clipped:clip(plane) then
-										wasclipped = true
-									end
-								end
-							end
-						end
-						--]]
-						--[[
-						if wasclipped then
-							merged:combine(clipped)
-						end
-						--]]
-						--[[
-						merged:combine(omesh:clone():transform(xform))
-						--]]
 					end
-					--]=]
-
-					-- TODO if it's outside, but a bbox corner is inside, then find the closest edge on the tri
-					-- if it's a uvunwrap flood-fill edge then keep, if it's not then skip
 
 
 	--print(uv, inside)
@@ -798,11 +767,6 @@ end
 
 local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	assert(angleThresholdInDeg)
-	if not mesh.edges2 then
-		timer('calcAllOverlappingEdges', function()
-			mesh:calcAllOverlappingEdges(angleThresholdInDeg)
-		end)
-	end
 	local gl = require 'gl'
 	gl.glEnable(gl.GL_BLEND)
 	gl.glDepthMask(gl.GL_FALSE)
@@ -827,6 +791,23 @@ local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	gl.glEnable(gl.GL_CULL_FACE)
 	gl.glDepthMask(gl.GL_TRUE)
 	gl.glDisable(gl.GL_BLEND)
+
+	-- now repeat and draw normals
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for _,g in ipairs(mesh.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			local vavg = .5 * (v1 + v2)
+			gl.glVertex3f((vavg + e.normAvg):unpack())
+			gl.glVertex3f((vavg + e.normAvg + info.plane.n * .5):unpack())
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
 end
 
 -- draw lines of triGroups[]  .borderEdges[]
