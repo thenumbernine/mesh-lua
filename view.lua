@@ -117,8 +117,12 @@ print('#unique triangles', self.mesh.triIndexes.size/3)
 		timer('merging vertexes', function()
 			-- merge vtxs with vtxs ... ignoring texcoords and normals
 			self.mesh:mergeMatchingVertexes(true, true)
+			self:removeEmptyTris()
+			-- if two tris touch, or almost touch, then split them along the edge in common with their planes
+			-- maybe I don't have to do this yet ...
+			--self.mesh:splitTrisTouchingTris() 
 			-- merge vtxs with edges - i.e. split any edges where a vertex is overlapping it midway
-			self.mesh:mergeVtxsWithEdges()
+			self.mesh:splitVtxsTouchingEdges()
 		end)
 		-- refresh edges, com0, and com1
 		self.mesh:findEdges()

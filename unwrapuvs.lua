@@ -19,7 +19,7 @@ local function unwrapUVs(args)
 
 --[[ TODO put this all in its own function or its own app
 	local numSharpEdges = 0
-	for a,other in pairs(mesh.allOverlappingEdges) do
+	for a,other in pairs(mesh.edges2) do
 		for b,edge in pairs(other) do
 			-- #tris == 0 is an edge construction error
 			-- #tris == 1 is a sharp edge ... which means a non-convex
@@ -287,7 +287,7 @@ tsrc.v1*-------*
 			assert(t[i21].v == esrc[1])
 			assert(t[i22].v == esrc[2])
 			--]]
-			-- [[ using .allOverlappingEdges
+			-- [[ using .edges2
 			local i11 = esrc.triVtxIndexes[1]
 			local i12 = i11 % 3 + 1
 			local i21 = esrc.triVtxIndexes[2]
@@ -403,7 +403,7 @@ tsrc.v1*-------*
 	-- roofs
 	local function calcUVBasisAndAddNeighbors(t, tsrc, e, todo)
 		if tsrc then
---print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+--print('unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.edges2:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e}
 		end
 		-- calc the basis by rotating it around the edge
@@ -414,7 +414,7 @@ tsrc.v1*-------*
 			assert(t.uvs)
 			-- insert neighbors into a to-be-calcd list
 --print('tri', t.index)
-			for _,e in ipairs(t.allOverlappingEdges) do
+			for _,e in ipairs(t.edges2) do
 --print('edge length', e.length)
 				-- for all edges in the t, go to the other faces matching.
 				-- well, if there's more than 2 faces shared by an edge, that's a first hint something's wrong.
@@ -443,14 +443,14 @@ tsrc.v1*-------*
 		alreadyFilled:insertUnique(t)
 		if t.uvs then return end
 		if tsrc then
---print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.allOverlappingEdges:find(e)-1)
+--print('flood-fill unwrapping across tris', mesh.tris:find(t)-1, mesh.tris:find(tsrc)-1, 'edge', mesh.edges2:find(e)-1)
 			mesh.unwrapUVEdges:insert{tsrc, t, e, floodFill=true}
 		end
 		assert((tsrc == nil) == (e == nil))
 		if calcUVBasis(t, tsrc, e) then
 			done:insert(t)
 			assert(t.uvs)
-			for _,e in ipairs(t.allOverlappingEdges) do
+			for _,e in ipairs(t.edges2) do
 				do--if #e.tris == 2 then
 					local t2 = getEdgeOppositeTri(e, t)
 					if not alreadyFilled:find(t2) then
@@ -668,7 +668,7 @@ tsrc.v1*-------*
 			-- pick best edge between any triangle in 'done' and any in 'todo'
 			local edgesToCheck = table()
 			for _,t in ipairs(todo) do
-				for _,e in ipairs(t.allOverlappingEdges) do
+				for _,e in ipairs(t.edges2) do
 					do--if #e.tris == 2 then
 						local t2 = getEdgeOppositeTri(e, t)
 						if done:find(t2) then
@@ -836,7 +836,7 @@ end
 
 -- draw the edges that are folded over.
 function drawUnwrapUVEdges(mesh)
-	if not mesh.allOverlappingEdges then
+	if not mesh.edges2 then
 		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	end
 	local alpha = .5
@@ -845,7 +845,7 @@ function drawUnwrapUVEdges(mesh)
 	gl.glEnable(gl.GL_BLEND)
 	gl.glDepthMask(gl.GL_FALSE)
 	gl.glBegin(gl.GL_LINES)
-	for _,e in ipairs(mesh.allOverlappingEdges) do
+	for _,e in ipairs(mesh.edges2) do
 		local t1, t2 = table.unpack(e.tris)
 		-- out of all edges, find edges that *aren't* planar ...
 		if not e.isPlanar then
@@ -864,8 +864,7 @@ function drawUnwrapUVEdges(mesh)
 
 			-- pick one of the two edges.  either will produce the same line ray 
 			-- use intervals for start/finish along edge
-			local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
-			local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			v1 = v1 + (t1.normal + t2.normal) * 1e-3

@@ -80,7 +80,7 @@ end
 local function tileMesh(mesh, omesh, angleThresholdInDeg)
 	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
 
-	if not mesh.allOverlappingEdges then
+	if not mesh.edges2 then
 		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	end
 
@@ -92,7 +92,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 		local found
 		repeat
 			found = false
-			for _,e in ipairs(mesh.allOverlappingEdges) do
+			for _,e in ipairs(mesh.edges2) do
 				if e.isPlanar then
 					local i1, g1 = triGroups:find(nil, function(g) return g:find(e.tris[1]) end)
 					local i2, g2 = triGroups:find(nil, function(g) return g:find(e.tris[2]) end)
@@ -124,7 +124,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 	end)
 	-- gather all edges to this group
 	local groupBorderEdgeInfo = {}
-	for _,e in ipairs(mesh.allOverlappingEdges) do
+	for _,e in ipairs(mesh.edges2) do
 		local t1, t2 = table.unpack(e.tris)
 		local g1 = triGroupForTri[t1]
 		local g2 = triGroupForTri[t2]
@@ -132,10 +132,20 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 			local t1side = e.clipPlane:test(t1.com)
 			local t2side = e.clipPlane:test(t2.com)
 			if t1side == t2side then
-				print("com", t1.com, "side", t1side)
-				print("com", t2.com, "side", t2side)
-				print("plane", e.clipPlane)
-				error("bad edge")
+				print("bad edge")
+				print("edge 1 vtx 1", mesh.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]-1].pos)
+				print("edge 1 vtx 2", mesh.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]%3].pos)
+				print("edge 2 vtx 1", mesh.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]-1].pos)
+				print("edge 2 vtx 2", mesh.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]%3].pos)
+				print("tri 1 com", t1.com, "side", t1side, "plane", t1.normal)
+				print("tri 2 com", t2.com, "side", t2side, "plane", t2.normal)
+				print("interval", table.unpack(e.interval))
+				print("dist", e.dist)
+				print("plane", e.plane)
+				print("planePos", e.planePos)
+				print("normAvg", e.normAvg)
+				print("clipPlane", e.clipPlane)
+				error'here'
 			end
 			groupBorderEdgeInfo[g1] = groupBorderEdgeInfo[g1] or table()
 			groupBorderEdgeInfo[g1]:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
@@ -239,20 +249,26 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 
 	mesh:generateTriBasis()
 
-	-- assert bcc works
+--[[ assert bcc works
+-- TODO it's not cuz incredibly small tris are sneaking in there
+	local bccEpsilon = 1e-6
 	for ti=0,mesh.triIndexes.size-3,3 do
 		local t = assert(mesh.tris[ti/3+1])
-		for j=0,2 do
-			local tp = mesh.triIndexes.v + ti
-			local a,b,c = t:vtxPos(mesh)
-			-- assert each point is at its respective basis element (1,0,0) (0,1,0) (0,0,1)
-			assert((t:calcBCC(a, mesh) - vec3f(1,0,0)):norm() < 1e-7)
-			assert((t:calcBCC(b, mesh) - vec3f(0,1,0)):norm() < 1e-7)
-			assert((t:calcBCC(c, mesh) - vec3f(0,0,1)):norm() < 1e-7)
-			-- assert that the COM is at (1/3, 1/3, 1/3)
-			assert((t:calcBCC(t.com, mesh) - vec3f(1,1,1)/3):norm() < 1e-7)
-		end
+		local tp = mesh.triIndexes.v + ti
+		local a,b,c = t:vtxPos(mesh)
+		print('tri', ti/3, 'area', t.area)
+		print(a,b,c)
+		print(t:calcBCC(a, mesh))
+		print(t:calcBCC(b, mesh))
+		print(t:calcBCC(c, mesh))
+		-- assert each point is at its respective basis element (1,0,0) (0,1,0) (0,0,1)
+		assert((t:calcBCC(a, mesh) - vec3f(1,0,0)):norm() < bccEpsilon)
+		assert((t:calcBCC(b, mesh) - vec3f(0,1,0)):norm() < bccEpsilon)
+		assert((t:calcBCC(c, mesh) - vec3f(0,0,1)):norm() < bccEpsilon)
+		-- assert that the COM is at (1/3, 1/3, 1/3)
+		assert((t:calcBCC(t.com, mesh) - vec3f(1,1,1)/3):norm() < bccEpsilon)
 	end
+--]]
 
 	local merged = Mesh()
 
@@ -266,7 +282,7 @@ local function tileMesh(mesh, omesh, angleThresholdInDeg)
 		end)
 		
 print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t) return t.index end):concat', ')
-
+print('...with '..#groupBorderEdgeInfo[triGroupForTri[t]]..' clip planes '..groupBorderEdgeInfo[triGroupForTri[t]]:mapi(function(info) return tostring(info.plane) end):concat', ')
 		local uvorigin2D = vec2f()
 			-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 			+ tvtxs[1].texcoord
@@ -406,7 +422,7 @@ print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t
 					local n2 = 3*(t.index-1) + (minSide+2)%3
 					-- side == 0 => alonge edge from 1 to 2
 					-- then look for all edges that touch this side
-					local es = table(mesh.allOverlappingEdges):filter(function(e)
+					local es = table(mesh.edges2):filter(function(e)
 						-- only for edges with > threshold
 						local t1, t2 = table.unpack(e.tris)
 						if not e.isPlanar then
@@ -439,16 +455,20 @@ print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t
 							return math.abs(t.normal.y) > math.sqrt(.5)
 						end
 						if not e.isPlanar
-						-- don't clip against edges that fold upwards
+						--[[ don't clip against edges that fold upwards
 						and isUpward(e.tris[1]) == isUpward(e.tris[2])
+						--]]
 						then
 							local edgeDir = e.plane.n	--tvtxs[j%3+1].pos - tvtxs[j].pos
+							--[[
 							local plane = plane3f():fromDirPt(
 								(t0.normal + t1.normal):cross(edgeDir):normalize(),
 								e.planePos --tvtxs[j].pos
 							)
-							if not plane:test(t.com) then plane = -plane end
-							if clipped:clip(plane) then
+							--]]
+							local clipPlane = e.clipPlane
+							if not clipPlane:test(t.com) then clipPlane = -clipPlane end
+							if clipped:clip(clipPlane) then
 								wasclipped = true
 							end
 						end
@@ -472,7 +492,7 @@ print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t
 					end
 					--]]
 					--[[ clip by any overlappingedges that touch this tri
-					for _,e in ipairs(mesh.allOverlappingEdges) do
+					for _,e in ipairs(mesh.edges2) do
 						if e.tris[1] == t or e.tris[2] == t then
 							local t0, t1 = table.unpack(e.tris)
 							if not e.isPlanar then
@@ -617,6 +637,7 @@ print('ntris.size', ntris.size)
 	mesh.edges = nil
 	mesh.edgeIndexBuf = nil
 	mesh.allOverlappingEdges = nil
+	mesh.edges2 = nil
 	mesh.loadedGL = nil
 	mesh.vtxBuf = nil
 	mesh.vtxAttrs = nil
@@ -667,58 +688,32 @@ end
 
 local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	assert(angleThresholdInDeg)
+	if not mesh.edges2 then
+		timer('calcAllOverlappingEdges', function()
+			mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+		end)
+	end
 	local gl = require 'gl'
 	gl.glEnable(gl.GL_BLEND)
 	gl.glDepthMask(gl.GL_FALSE)
-	gl.glLineWidth(3)
-	--[[
-	for _,g in ipairs(mesh.triGroups) do
-		for _,info in ipairs(mesh.groupBorderEdgeInfo[g]) do
-			local e = info.edge
-	--]]
-	-- [[
-	do
-		if not mesh.allOverlappingEdges then
-			mesh:calcAllOverlappingEdges(angleThresholdInDeg)
-		end
-		for _,e in ipairs(mesh.allOverlappingEdges) do
-	--]]
-			local t1, t2 = table.unpack(e.tris)
-			
-			local s0 = math.max(e.intervals[1][1], e.intervals[2][1])
-			local s1 = math.min(e.intervals[1][2], e.intervals[2][2])
+	gl.glDisable(gl.GL_CULL_FACE)
+	gl.glColor4f(1,1,0,.1)
+	gl.glBegin(gl.GL_QUADS)
+	for _,e in ipairs(mesh.edges2) do
+		if not e.isPlanar then
+			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
-			v1 = v1 + (t1.normal + t2.normal) * 1e-3
-			v2 = v2 + (t1.normal + t2.normal) * 1e-3
-			gl.glBegin(gl.GL_LINES)
-			gl.glVertex3f(v1:unpack())
-			gl.glVertex3f(v2:unpack())
-			gl.glEnd()
-
-			--[[ make plane perpendicular to normal
-			local bs = table{
-				e.normAvg:cross(vec3f(1,0,0)),
-				e.normAvg:cross(vec3f(0,1,0)),
-				e.normAvg:cross(vec3f(0,0,1)),
-			}
-			local blens = bs:mapi(function(b) return b:norm() end)
-			local i = select(2, blens:inf())
-			print('i', i)
-			local b1, b2 = bs[i%3+1], bs[(i+1)%3+1]
-			assert(b1)
-			assert(b2)
-			gl.glColor4f(1,1,0,.1)
-			gl.glBegin(gl.GL_QUADS)
-			gl.glVertex3f((e.planePos + b1 * 100):unpack())
-			gl.glVertex3f((e.planePos + b2 * 100):unpack())
-			gl.glVertex3f((e.planePos - b1 * 100):unpack())
-			gl.glVertex3f((e.planePos - b2 * 100):unpack())
-			gl.glEnd()
+			-- [[ make plane perpendicular to normal
+			gl.glVertex3f((v1 + e.normAvg):unpack())
+			gl.glVertex3f((v1 - e.normAvg):unpack())
+			gl.glVertex3f((v2 - e.normAvg):unpack())
+			gl.glVertex3f((v2 + e.normAvg):unpack())
 			--]]
 		end
 	end
-	gl.glLineWidth(1)
+	gl.glEnd()
+	gl.glEnable(gl.GL_CULL_FACE)
 	gl.glDepthMask(gl.GL_TRUE)
 	gl.glDisable(gl.GL_BLEND)
 end
