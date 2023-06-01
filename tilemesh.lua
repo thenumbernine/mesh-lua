@@ -92,7 +92,9 @@ local function tileMesh(
 
 	-- [[ group all tris based on boundaries of angles
 	local triGroups = table(mesh.tris):mapi(function(t)
-		return table{t}
+		return {
+			tris = table{t},
+		}
 	end)
 	do
 		local found
@@ -100,10 +102,10 @@ local function tileMesh(
 			found = false
 			for _,e in ipairs(mesh.edges2) do
 				if e.isPlanar then
-					local i1, g1 = triGroups:find(nil, function(g) return g:find(e.tris[1]) end)
-					local i2, g2 = triGroups:find(nil, function(g) return g:find(e.tris[2]) end)
+					local i1, g1 = triGroups:find(nil, function(g) return g.tris:find(e.tris[1]) end)
+					local i2, g2 = triGroups:find(nil, function(g) return g.tris:find(e.tris[2]) end)
 					if i1 ~= i2 then
-						triGroups[i1]:append(triGroups[i2])
+						triGroups[i1].tris:append(triGroups[i2].tris)
 						triGroups:remove(i2)
 						found = true
 						break
@@ -114,8 +116,8 @@ local function tileMesh(
 	end
 print('found '..#triGroups..' groups of triangles')
 	for _,g in ipairs(triGroups) do
-		io.write('...group of '..#g..' :')
-		for _,t in ipairs(g) do
+		io.write('...group of '..#g.tris..' :')
+		for _,t in ipairs(g.tris) do
 			io.write(' ', t.index)
 		end
 		print()
@@ -124,12 +126,15 @@ print('found '..#triGroups..' groups of triangles')
 	-- make a mapping back from triangles to their groups
 	local triGroupForTri = mesh.tris:mapi(function(t)
 		for _,g in ipairs(triGroups) do
-			if g:find(t) then return g, t end
+			if g.tris:find(t) then return g, t end
 		end
 		error("shouldn't get here")
 	end)
 	-- gather all edges to this group
-	local groupBorderEdgeInfo = {}
+	-- TODO also add 'findHoles' edges to the mesh as planes ... perp to the surface i guess?
+	for _,g in ipairs(triGroups) do
+		g.borderEdges = table()
+	end
 	for _,e in ipairs(mesh.edges2) do
 		local t1, t2 = table.unpack(e.tris)
 		local g1 = triGroupForTri[t1]
@@ -153,14 +158,13 @@ print('found '..#triGroups..' groups of triangles')
 				print("clipPlane", e.clipPlane)
 				error'here'
 			end
-			groupBorderEdgeInfo[g1] = groupBorderEdgeInfo[g1] or table()
-			groupBorderEdgeInfo[g1]:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
-			groupBorderEdgeInfo[g2] = groupBorderEdgeInfo[g2] or table()
-			groupBorderEdgeInfo[g2]:insert{edge = e, plane = t2side and e.clipPlane or -e.clipPlane}
+			g1.borderEdges:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
+			g2.borderEdges:insert{edge = e, plane = t2side and e.clipPlane or -e.clipPlane}
 		end
 	end
-	mesh.groupBorderEdgeInfo = groupBorderEdgeInfo 
 	--]]
+
+	-- TOOD HERE with the group info
 
 	-- why can't dkjson catch exceptions and insert line/col info? like my parser does.  grr..
 	local placeInfo = assert(
@@ -321,8 +325,8 @@ print('found '..#triGroups..' groups of triangles')
 				return mesh.vtxs.v[tp[i]]
 			end)
 			
-print('placing tri '..t.index..' with group '..triGroupForTri[t]:mapi(function(t) return t.index end):concat', ')
-print('...with '..#groupBorderEdgeInfo[triGroupForTri[t]]..' clip planes '..groupBorderEdgeInfo[triGroupForTri[t]]:mapi(function(info) return tostring(info.plane) end):concat', ')
+print('placing tri '..t.index..' with group '..triGroupForTri[t].tris:mapi(function(t) return t.index end):concat', ')
+print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTri[t].borderEdges:mapi(function(info) return tostring(info.plane) end):concat', ')
 			local uvorigin2D = vec2f()
 				-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 				+ tvtxs[1].texcoord
@@ -494,7 +498,7 @@ print('...with '..#groupBorderEdgeInfo[triGroupForTri[t]]..' clip planes '..grou
 						--]==]
 						-- [==[
 						local clipped = omesh:clone():transform(xform)
-						for _,info in ipairs(groupBorderEdgeInfo[triGroupForTri[t]]) do
+						for _,info in ipairs(triGroupForTri[t].borderEdges) do
 							local e = info.edge
 						--]==]
 							-- [==[
@@ -766,6 +770,7 @@ local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
 	gl.glDisable(gl.GL_CULL_FACE)
 	gl.glColor4f(1,1,0,.1)
 	gl.glBegin(gl.GL_QUADS)
+	-- TODO draw planes of 'triGroups.borderEdges'
 	for _,e in ipairs(mesh.edges2) do
 		if not e.isPlanar then
 			local s0, s1 = table.unpack(e.interval)
