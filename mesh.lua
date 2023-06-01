@@ -934,11 +934,21 @@ function Mesh:findEdges(getIndex)
 				-- new edge?  add it to the index buffer
 				self.edgeIndexBuf:push_back(a-1)
 				self.edgeIndexBuf:push_back(b-1)
+				local va = self.vtxs.v[a-1]
+				local vb = self.vtxs.v[b-1]
+				local vavg = .5 * (va.pos + vb.pos)
+				local edgeDir = (vb.pos - va.pos):normalize()
 				e = {
 					[1] = a,
 					[2] = b,
 					tris = table(),
-					length = (self.vtxs.v[a-1].pos - self.vtxs.v[b-1].pos):norm(),
+					length = (va.pos - vb.pos):norm(),
+					-- because in tilemesh I'm mixing .edges and .edges2
+					-- TODO build findBadEdges using .edges2 only
+					-- but tht gets into 'isPlanar' and the angleThreshold being everywhere ....
+					plane = plane3f():fromDirPt(edgeDir, vavg),
+					planePos = vavg,
+					clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), vavg),
 				}
 				self.edges[a][b] = e
 			end
@@ -1333,6 +1343,9 @@ TODO I might need this but for all edge segments, based on 'allOverlappingEdges'
 function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
+	
+	-- TODO can I use edges2?  nah because edges2 is only between two triangles ...
+	-- TODO edges2 use 'getUniqueVtxs', and then cycle over all tris edges?
 	self:findEdges(function(i) return uniquevs[indexToUniqueV[i]] end)
 
 	local border = table()

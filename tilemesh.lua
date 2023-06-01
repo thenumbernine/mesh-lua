@@ -84,8 +84,6 @@ local function tileMesh(
 	finalMergeMesh,
 	angleThresholdInDeg
 )
-	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
-
 	if not mesh.edges2 then
 		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 	end
@@ -163,6 +161,31 @@ print('found '..#triGroups..' groups of triangles')
 		end
 	end
 	--]]
+
+-- [[ TODO do this after changing findBadEdges to use edges2
+	-- while we're here, find all loops that are boundaries to our surface
+	-- these are the red edges
+	local loops, lines = mesh:findBadEdges()
+	for _,loop in ipairs(loops) do
+		for i=1,#loop do
+			local e = assert(loop[i].e)
+			local t = e.tris[1]
+			local i1 = mesh:getIndexForLoopChain(loop[i])
+			local i2 = mesh:getIndexForLoopChain(loop[i%#loop+1])
+			local v1 = mesh.vtxs.v[i1].pos
+			local v2 = mesh.vtxs.v[i2].pos
+			local edgeDir = v2 - v1
+			local edgeDirLen = edgeDir:norm()
+			if edgeDirLen > 1e-7 then
+				edgeDir = edgeDir / edgeDirLen
+				local g = triGroupForTri[t]
+				-- what clip plane ....
+				-- one at a right angle to the plane and edge
+				g.borderEdges:insert{edge = e, plane = e.clipPlane}
+			end
+		end
+	end
+--]]
 
 	-- TOOD HERE with the group info
 
@@ -504,7 +527,7 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 							-- [==[
 							-- if it happens to be an external edge, theeennn we can clip along it
 							-- (and any other external edges?)
-							local t0, t1 = table.unpack(e.tris)
+							--local t0, t1 = table.unpack(e.tris)
 							local function isUpward(t)
 								return math.abs(t.normal.y) > math.sqrt(.5)
 							end
