@@ -7,7 +7,7 @@ local quatf = require 'vec-ffi.quatf'
 
 local function unwrapUVs(mesh)
 	mesh:breakAllVertexes()
-	mesh:calcAllOverlappingEdges()
+	mesh:calcEdges2()
 	-- invalidate
 	mesh.vtxBuf = nil
 	mesh.vtxAttrs = nil
@@ -835,7 +835,7 @@ end
 -- draw the edges that are folded over.
 local function drawUnwrapUVEdges(mesh)
 	if not mesh.edges2 then
-		mesh:calcAllOverlappingEdges()
+		mesh:calcEdges2()
 	end
 	local alpha = .5
 	local gl = require 'gl'

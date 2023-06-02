@@ -663,14 +663,14 @@ so adding them to edges2 is a big TODO
 TODO 
 - get rid of .edges, and use this as the default edge structure instead
 
-angleThresholdInDeg is used in calcAllOverlappingEdges for 'isPlanar' calculations
+angleThresholdInDeg is used in calcEdges2 for 'isPlanar' calculations
 and this can be relatively loose (5 deg or so) for allowing planar uv unwrapping around curves.
 
 normEpsilon is for validating that the norm is nonzero
 edgeDistEpsilon is for finding overlapping edges that don't share vertexes but we still want to uv-unwrap fold over.
 edgeAngleThreshold is used for ensuring those edges are aligned, so this must be tighter than angleThresholdInDeg.
 --]]
-function Mesh:calcAllOverlappingEdges()
+function Mesh:calcEdges2()
 	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
 	
 	local normEpsilon = 1e-7
@@ -899,7 +899,7 @@ uses .edges2 and :findBadEdges (which uses .edges)
 --]]
 function Mesh:getTriPlanarGroups()
 	if not self.edges2 then
-		self:calcAllOverlappingEdges()
+		self:calcEdges2()
 	end
 
 	-- [[ group all tris based on boundaries of angles
