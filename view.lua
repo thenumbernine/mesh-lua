@@ -22,8 +22,6 @@ local drawUnwrapUVGraph = require 'mesh.unwrapuvs'.drawUnwrapUVGraph
 local drawUnwrapUVEdges = require 'mesh.unwrapuvs'.drawUnwrapUVEdges
 local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
-local drawTileMeshEdges = require 'mesh.tilemesh'.drawTileMeshEdges
-local drawTileMeshPlanes = require 'mesh.tilemesh'.drawTileMeshPlanes
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = cmdline.file
@@ -78,8 +76,8 @@ function App:initGL(...)
 	self.drawUnwrapUVGraph = false
 	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
-	self.drawTileMeshPlanes = false
-	self.drawTileMeshEdges = false
+	self.drawTriPlanarGroupPlanes = false
+	self.drawTriPlanarGroupEdges = false
 
 	self.editMode = 1
 
@@ -390,11 +388,11 @@ function App:update()
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
 	end
-	if self.drawTileMeshPlanes then
-		drawTileMeshPlanes(mesh)
+	if self.drawTriPlanarGroupPlanes then
+		mesh:drawTriPlanarGroupPlanes()
 	end
-	if self.drawTileMeshEdges then
-		drawTileMeshEdges(mesh)
+	if self.drawTriPlanarGroupEdges then
+		mesh:drawTriPlanarGroupEdges()
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -819,8 +817,8 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
-			ig.luatableCheckbox('draw tile clip planes', self, 'drawTileMeshPlanes')
-			ig.luatableCheckbox('draw tile clip edges', self, 'drawTileMeshEdges')
+			ig.luatableCheckbox('draw tile clip planes', self, 'drawTriPlanarGroupPlanes')
+			ig.luatableCheckbox('draw tile clip edges', self, 'drawTriPlanarGroupEdges')
 
 			if ig.igButton'find holes' then
 				self.debugDrawLoops, self.debugDrawLines = mesh:findBadEdges()

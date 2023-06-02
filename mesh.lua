@@ -897,7 +897,7 @@ calculates .triGroupForTri to map from each tri to .triGroups
  ... unless I change .triGroupForTri to map from index to group)
 uses .edges2 and :findBadEdges (which uses .edges)
 --]]
-function Mesh:getTriPlanarGroups()
+function Mesh:calcTriPlanarGroups()
 	if not self.edges2 then
 		self:calcEdges2()
 	end
@@ -2136,6 +2136,7 @@ function Mesh:drawTriNormals()
 	gl.glEnd()
 end
 
+-- works with mesh:generateTriBasis
 function Mesh:drawTriBasis()
 	local gl = require 'gl'
 	gl.glLineWidth(3)
@@ -2151,6 +2152,92 @@ function Mesh:drawTriBasis()
 			gl.glColor3f(0,0,1)
 			gl.glVertex3f(t.com:unpack())
 			gl.glVertex3f((t.com + t.basis[3]):unpack())
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
+end
+
+-- works with mesh:calcTriPlanarGroups
+-- draw lines of triGroups[]  .borderEdges[]
+-- this duplicates drawUnwrapUVEdges except for the mesh.triGroups
+function Mesh:drawTriPlanarGroupEdges()
+	if not self.triGroups then
+		self:calcTriPlanarGroups()
+	end
+	local alpha = .5
+	local gl = require 'gl'
+	gl.glLineWidth(3)
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glBegin(gl.GL_LINES)
+	for _,g in ipairs(self.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local t1, t2 = table.unpack(e.tris)
+			--local t2plane = t2.normal:cross(e.plane.n)
+			--if t1.normal:dot(t2plane) > 0 then
+			--	gl.glColor4f(0,1,0, alpha)
+			--else
+				gl.glColor4f(0,0,1, alpha)
+			--end
+
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			v1 = v1 + e.normAvg * 1e-3
+			v2 = v2 + e.normAvg * 1e-3
+			gl.glVertex3fv(v1.s)
+			gl.glVertex3fv(v2.s)
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
+end
+
+function Mesh:drawTriPlanarGroupPlanes()
+	if not self.triGroups then
+		self:calcTriPlanarGroups()
+	end
+	local gl = require 'gl'
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glDisable(gl.GL_CULL_FACE)
+	gl.glColor4f(1,1,0,.1)
+	gl.glBegin(gl.GL_QUADS)
+	for _,g in ipairs(self.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			-- [[ make plane perpendicular to normal
+			gl.glVertex3f((v1 + e.normAvg):unpack())
+			gl.glVertex3f((v1 - e.normAvg):unpack())
+			gl.glVertex3f((v2 - e.normAvg):unpack())
+			gl.glVertex3f((v2 + e.normAvg):unpack())
+			--]]
+		end
+	end
+	gl.glEnd()
+	gl.glEnable(gl.GL_CULL_FACE)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
+
+	-- now repeat and draw normals
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for _,g in ipairs(self.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			local vavg = .5 * (v1 + v2)
+			gl.glVertex3f((vavg + e.normAvg):unpack())
+			gl.glVertex3f((vavg + e.normAvg + info.clipPlane.n * .5):unpack())
 		end
 	end
 	gl.glEnd()
