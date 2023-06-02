@@ -78,118 +78,10 @@ local function matrix3x3To4x4(b)
 	return m
 end
 
--- calculates mesh.triGroups and mesh.triGroupForTri
--- uses mesh.edges2 and mesh:findBadEdges (which uses mesh.edges)
-local function getTileMeshGroups(mesh)
-	if not mesh.edges2 then
-		mesh:calcAllOverlappingEdges()
-	end
-
-	-- [[ group all tris based on boundaries of angles
-	local triGroups = table(mesh.tris):mapi(function(t)
-		return {
-			tris = table{t},
-		}
-	end)
-	do
-		local found
-		repeat
-			found = false
-			for _,e in ipairs(mesh.edges2) do
-				if e.isPlanar then
-					local i1, g1 = triGroups:find(nil, function(g) return g.tris:find(e.tris[1]) end)
-					local i2, g2 = triGroups:find(nil, function(g) return g.tris:find(e.tris[2]) end)
-					if i1 ~= i2 then
-						triGroups[i1].tris:append(triGroups[i2].tris)
-						triGroups:remove(i2)
-						found = true
-						break
-					end
-				end
-			end
-		until not found
-	end
-print('found '..#triGroups..' groups of triangles')
-	for _,g in ipairs(triGroups) do
-		io.write('...group of '..#g.tris..' :')
-		for _,t in ipairs(g.tris) do
-			io.write(' ', t.index)
-		end
-		print()
-	end
-	mesh.triGroups = triGroups
-	-- make a mapping back from triangles to their groups
-	local triGroupForTri = mesh.tris:mapi(function(t)
-		for _,g in ipairs(triGroups) do
-			if g.tris:find(t) then return g, t end
-		end
-		error("shouldn't get here")
-	end)
-	-- gather all edges to this group
-	-- TODO also add 'findHoles' edges to the mesh as planes ... perp to the surface i guess?
-	for _,g in ipairs(triGroups) do
-		g.borderEdges = table()
-	end
-	for _,e in ipairs(mesh.edges2) do
-		local t1, t2 = table.unpack(e.tris)
-		local g1 = triGroupForTri[t1]
-		local g2 = triGroupForTri[t2]
-		if g1 ~= g2 then
-			local t1side = e.clipPlane:test(t1.com)
-			local t2side = e.clipPlane:test(t2.com)
-			if t1side == t2side then
-				print("bad edge")
-				print("edge 1 vtx 1", mesh.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]-1].pos)
-				print("edge 1 vtx 2", mesh.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]%3].pos)
-				print("edge 2 vtx 1", mesh.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]-1].pos)
-				print("edge 2 vtx 2", mesh.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]%3].pos)
-				print("tri 1 com", t1.com, "side", t1side, "plane", t1.normal)
-				print("tri 2 com", t2.com, "side", t2side, "plane", t2.normal)
-				print("interval", table.unpack(e.interval))
-				print("dist", e.dist)
-				print("plane", e.plane)
-				print("planePos", e.planePos)
-				print("normAvg", e.normAvg)
-				print("clipPlane", e.clipPlane)
-				error'here'
-			end
-			-- TODO rename 'plane' to 'clipPlane'
-			g1.borderEdges:insert{edge = e, plane = t1side and e.clipPlane or -e.clipPlane}
-			g2.borderEdges:insert{edge = e, plane = t2side and e.clipPlane or -e.clipPlane}
-		end
-	end
-	--]]
-
--- [[ TODO do this after changing findBadEdges to use edges2
-	-- while we're here, find all loops that are boundaries to our surface
-	-- these are the red edges
-	local loops, lines = mesh:findBadEdges()
-	for _,loop in ipairs(loops) do
-		for i=1,#loop do
-			local e = assert(loop[i].e)
-			local t = e.tris[1]
-			local i1 = mesh:getIndexForLoopChain(loop[i])
-			local i2 = mesh:getIndexForLoopChain(loop[i%#loop+1])
-			local v1 = mesh.vtxs.v[i1].pos
-			local v2 = mesh.vtxs.v[i2].pos
-			local edgeDir = v2 - v1
-			local edgeDirLen = edgeDir:norm()
-			if edgeDirLen > 1e-7 then
-				edgeDir = edgeDir / edgeDirLen
-				local g = triGroupForTri[t]
-				-- what clip plane ....
-				-- one at a right angle to the plane and edge
-				g.borderEdges:insert{edge = e, plane = e.clipPlane}
-			end
-		end
-	end
---]]
-	mesh.triGroupForTri = triGroupForTri 
-end
-
-
 local function tileMesh(mesh, placeFn)
-	getTileMeshGroups(mesh)
+	if not mesh.triGroups then
+		mesh:getTriPlanarGroups()
+	end
 	local triGroupForTri = mesh.triGroupForTri
 
 	-- TOOD here with the group info
@@ -300,7 +192,7 @@ local function tileMesh(mesh, placeFn)
 			end)
 			
 print('placing tri '..t.index..' with group '..triGroupForTri[t].tris:mapi(function(t) return t.index end):concat', ')
-print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTri[t].borderEdges:mapi(function(info) return tostring(info.plane) end):concat', ')
+print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTri[t].borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 			local uvorigin2D = vec2f()
 				-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
 				+ tvtxs[1].texcoord
@@ -477,13 +369,13 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 							local info = edgeInfos:remove()
 							-- clone and clip against the -plane -> backMesh 
 							local backMesh = clipped:clone()
-							backMesh:clip(-info.plane)
+							backMesh:clip(-info.clipPlane)
 							if #backMesh.tris == 0 then
 								backMesh = nil
 							end
 							-- clone and clip the plane -> frontMesh
 							local frontMesh = clipped:clone()
-							frontMesh:clip(info.plane)
+							frontMesh:clip(info.clipPlane)
 							if #frontMesh.tris == 0 then
 								frontMesh = nil
 							end
@@ -493,7 +385,7 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 								-- and just return frontMesh (if we have it)
 								backMesh = nil
 							else
-								local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.plane)
+								local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.clipPlane)
 								if #edgesBack > 0 then
 									if backMesh then
 										backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
@@ -755,7 +647,7 @@ local function drawTileMeshPlanes(mesh)
 			local v2 = e.planePos + e.plane.n * s1
 			local vavg = .5 * (v1 + v2)
 			gl.glVertex3f((vavg + e.normAvg):unpack())
-			gl.glVertex3f((vavg + e.normAvg + info.plane.n * .5):unpack())
+			gl.glVertex3f((vavg + e.normAvg + info.clipPlane.n * .5):unpack())
 		end
 	end
 	gl.glEnd()
