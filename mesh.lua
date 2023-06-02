@@ -686,6 +686,8 @@ function Mesh:calcEdges2()
 	local edgeAngleThreshold = math.rad(1e-1)
 	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
 	
+	assert(#self.tris*3 == self.triIndexes.size)
+	
 	-- new edge structure
 	-- it only represents entire tri edges, like .edges (no subintervals) 
 	-- but it contains the normal, planar, etc data 
@@ -701,110 +703,114 @@ function Mesh:calcEdges2()
 --end
 	local goodTris = 0
 	local badTris = 0
+	local areaThreshold = 1e-5
+	local normalThreshold = 1e-5
 	for i1=#self.tris,2,-1 do
-		local tp1 = self.triIndexes.v + 3 * (i1 - 1)
-		for j1=1,3 do
-			-- t1's j1'th edge
-			local v11 = self.vtxs.v[tp1[j1-1]].pos
-			local v12 = self.vtxs.v[tp1[j1%3]].pos
---print('tri', i1, 'pos', j1, '=', v11)
-			local edgeDir1 = v12 - v11
-			local edgeDir1Norm = edgeDir1:norm()
-			if edgeDir1Norm > normEpsilon then
-				edgeDir1 = edgeDir1 / edgeDir1Norm
-				for i2=i1-1,1,-1 do
-					local t2 = self.tris[i2]
-					local tp2 = self.triIndexes.v + 3 * (i2 - 1)
-					for j2=1,3 do
-						local v21 = self.vtxs.v[tp2[j2-1]].pos
-						local v22 = self.vtxs.v[tp2[j2%3]].pos
-						local edgeDir2 = v22 - v21
-						local edgeDir2Norm = edgeDir2:norm()
-						if edgeDir2Norm  > normEpsilon then
-							edgeDir2 = edgeDir2 / edgeDir2Norm
-							do --if math.abs(edgeDir1:dot(edgeDir2)) > cosEdgeAngleThreshold then
---print('edges2 normals align:', i1-1, j1-1, i2-1, j2-1)
-								-- normals align, calculate distance
-								--local planePos = v11
-							
-								-- pick any point on line v1: v11 or v12
-								-- or an average is best (when testing tri COM on either side tof the dividing plane)
-								-- use the average of the two edges intersection with the plane, not just one edge arbitrarily
-								local planePos = .25 * (v11 + v12 + v21 + v22)
-								-- average the two edge-dirs
-								local edgeDir
-								if edgeDir1:dot(edgeDir2) < 0 then
-									edgeDir = edgeDir1 - edgeDir2
-								else
-									edgeDir = edgeDir1 + edgeDir2
-								end
-								local edgeDirLen = edgeDir:norm()
-								if edgeDirLen > 1e-7 then
-									edgeDir = edgeDir / edgeDirLen
-									-- this is the edge projection plane, used for calculating distances to determine the interval of edge tri edge along this (the averaged edge)
-									local plane = plane3f():fromDirPt(edgeDir, planePos)	
-									-- find ray from the v1 line to any line on v2
-									-- project onto the plane normal
-									-- calculate the distance of the points both projected onto the plane
-									local dist = plane:projectVec(v21 - v11):norm() 	
-									-- also calc dists of each vtx to one another
-									-- only consider if both edge vtxs match 
-									-- no more subintervals
-									local dist_11_21 = (v11 - v21):norm()
-									local dist_12_22 = (v12 - v22):norm()
-									local dist_12_21 = (v12 - v21):norm()
-									local dist_11_22 = (v11 - v22):norm()
-									-- TODO should I store them?
-									if dist < edgeDistEpsilon
-									and (
-										(dist_11_21 < edgeDistEpsilon and dist_12_22 < edgeDistEpsilon)
-										or (dist_12_21 < edgeDistEpsilon and dist_11_22 < edgeDistEpsilon)
-									)
-									then
-										assert(i2 < i1)
-										local t1 = self.tris[i1]
-										local t2 = self.tris[i2]
-										
-										local s1, s2
-										if dist_11_21 < edgeDistEpsilon
-										and dist_12_22 < edgeDistEpsilon
-										then
-											s1 = plane:dist(.5 * (v11 + v21))
-											s2 = plane:dist(.5 * (v12 + v22))
-											-- TODO in this case we have a cw and ccw tri touching
-											-- that's a bad thing, that means inside vs outside orientation is flipping
-											-- ... and sure enough, there's a bad triangle in the mesh i'm given ...
-											-- in fact this situation makes it tough to decide where exactly to put the clip plane ...
-											-- maybe I should avoid it altogether?
-											badTris = badTris + 1
-										elseif dist_12_21 < edgeDistEpsilon
-										and dist_11_22 < edgeDistEpsilon
-										then
-											goodTris = goodTris + 1
-											s1 = plane:dist(.5 * (v12 + v21))
-											s2 = plane:dist(.5 * (v11 + v22))
-										
-											-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
-											normAvg = (t1.normal + t2.normal):normalize()
-											-- TODO member functions for edge getters
-											local e = {
-												tris = {t2, t1},
-												triVtxIndexes = {j2, j1},
-												interval = {s1, s2},
-												dist = dist,
-												plane = plane,
-												planePos = planePos,
-												-- TODO test dot abs?  allow flipping of surface orientation?
-												isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
-												normAvg = normAvg,
-												
-												clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
-											}
-											self.edges2:insert(e)
-											t1.edges2:insert(e)
-											t2.edges2:insert(e)
+		local t1 = self.tris[i1]
+		if t1.area >= areaThreshold and t1.normal:norm() > normalThreshold then
+			local tp1 = self.triIndexes.v + 3 * (i1 - 1)
+			for j1=1,3 do
+				-- t1's j1'th edge
+				local v11 = self.vtxs.v[tp1[j1-1]].pos
+				local v12 = self.vtxs.v[tp1[j1%3]].pos
+	--print('tri', i1, 'pos', j1, '=', v11)
+				local edgeDir1 = v12 - v11
+				local edgeDir1Norm = edgeDir1:norm()
+				if edgeDir1Norm > normEpsilon then
+					edgeDir1 = edgeDir1 / edgeDir1Norm
+					for i2=i1-1,1,-1 do
+						local t2 = self.tris[i2]
+						if t2.area >= areaThreshold and t2.normal:norm() > normalThreshold then
+							local tp2 = self.triIndexes.v + 3 * (i2 - 1)
+							for j2=1,3 do
+								local v21 = self.vtxs.v[tp2[j2-1]].pos
+								local v22 = self.vtxs.v[tp2[j2%3]].pos
+								local edgeDir2 = v22 - v21
+								local edgeDir2Norm = edgeDir2:norm()
+								if edgeDir2Norm  > normEpsilon then
+									edgeDir2 = edgeDir2 / edgeDir2Norm
+									do --if math.abs(edgeDir1:dot(edgeDir2)) > cosEdgeAngleThreshold then
+		--print('edges2 normals align:', i1-1, j1-1, i2-1, j2-1)
+										-- normals align, calculate distance
+										--local planePos = v11
+									
+										-- pick any point on line v1: v11 or v12
+										-- or an average is best (when testing tri COM on either side tof the dividing plane)
+										-- use the average of the two edges intersection with the plane, not just one edge arbitrarily
+										local planePos = .25 * (v11 + v12 + v21 + v22)
+										-- average the two edge-dirs
+										local edgeDir
+										if edgeDir1:dot(edgeDir2) < 0 then
+											edgeDir = edgeDir1 - edgeDir2
 										else
-											error"how did you get here?"
+											edgeDir = edgeDir1 + edgeDir2
+										end
+										local edgeDirLen = edgeDir:norm()
+										if edgeDirLen > 1e-7 then
+											edgeDir = edgeDir / edgeDirLen
+											-- this is the edge projection plane, used for calculating distances to determine the interval of edge tri edge along this (the averaged edge)
+											local plane = plane3f():fromDirPt(edgeDir, planePos)	
+											-- find ray from the v1 line to any line on v2
+											-- project onto the plane normal
+											-- calculate the distance of the points both projected onto the plane
+											local dist = plane:projectVec(v21 - v11):norm() 	
+											-- also calc dists of each vtx to one another
+											-- only consider if both edge vtxs match 
+											-- no more subintervals
+											local dist_11_21 = (v11 - v21):norm()
+											local dist_12_22 = (v12 - v22):norm()
+											local dist_12_21 = (v12 - v21):norm()
+											local dist_11_22 = (v11 - v22):norm()
+											-- TODO should I store them?
+											if dist < edgeDistEpsilon
+											and (
+												(dist_11_21 < edgeDistEpsilon and dist_12_22 < edgeDistEpsilon)
+												or (dist_12_21 < edgeDistEpsilon and dist_11_22 < edgeDistEpsilon)
+											)
+											then
+												assert(i2 < i1)
+												local s1, s2
+												if dist_11_21 < edgeDistEpsilon
+												and dist_12_22 < edgeDistEpsilon
+												then
+													s1 = plane:dist(.5 * (v11 + v21))
+													s2 = plane:dist(.5 * (v12 + v22))
+													-- TODO in this case we have a cw and ccw tri touching
+													-- that's a bad thing, that means inside vs outside orientation is flipping
+													-- ... and sure enough, there's a bad triangle in the mesh i'm given ...
+													-- in fact this situation makes it tough to decide where exactly to put the clip plane ...
+													-- maybe I should avoid it altogether?
+													badTris = badTris + 1
+												elseif dist_12_21 < edgeDistEpsilon
+												and dist_11_22 < edgeDistEpsilon
+												then
+													goodTris = goodTris + 1
+													s1 = plane:dist(.5 * (v12 + v21))
+													s2 = plane:dist(.5 * (v11 + v22))
+												
+													-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
+													normAvg = (t1.normal + t2.normal):normalize()
+													-- TODO member functions for edge getters
+													local e = {
+														tris = {t2, t1},
+														triVtxIndexes = {j2, j1},
+														interval = {s1, s2},
+														dist = dist,
+														plane = plane,
+														planePos = planePos,
+														-- TODO test dot abs?  allow flipping of surface orientation?
+														isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
+														normAvg = normAvg,
+														
+														clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
+													}
+													self.edges2:insert(e)
+													t1.edges2:insert(e)
+													t2.edges2:insert(e)
+												else
+													error"how did you get here?"
+												end
+											end
 										end
 									end
 								end
@@ -967,8 +973,8 @@ print('found '..#triGroups..' groups of triangles')
 				print("edge 1 vtx 2", self.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]%3].pos)
 				print("edge 2 vtx 1", self.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]-1].pos)
 				print("edge 2 vtx 2", self.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]%3].pos)
-				print("tri 1 com", t1.com, "side", t1side, "plane", t1.normal)
-				print("tri 2 com", t2.com, "side", t2side, "plane", t2.normal)
+				print("tri 1 com", t1.com, "side", t1side, "normal", t1.normal, "area", t1.area)
+				print("tri 2 com", t2.com, "side", t2side, "normal", t2.normal, "area", t2.area)
 				print("interval", table.unpack(e.interval))
 				print("dist", e.dist)
 				print("plane", e.plane)
