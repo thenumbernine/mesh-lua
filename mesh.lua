@@ -999,11 +999,12 @@ print('found '..#triGroups..' groups of triangles')
 			local edgeDir = v2 - v1
 			local edgeDirLen = edgeDir:norm()
 			if edgeDirLen > 1e-7 then
+				local tside = e.clipPlane:test(t.com)
 				edgeDir = edgeDir / edgeDirLen
 				local g = triGroupForTri[t]
 				-- what clip plane ....
 				-- one at a right angle to the plane and edge
-				g.borderEdges:insert{edge = e, clipPlane = e.clipPlane}
+				g.borderEdges:insert{edge = e, clipPlane = tside and e.clipPlane or -e.clipPlane}
 			end
 		end
 	end
@@ -1058,13 +1059,13 @@ function Mesh:clipToTriGroup(g)
 		local info = edgeInfos:remove()
 		-- clone and clip against the -plane -> backMesh 
 		local backMesh = clipped:clone()
-		backMesh:clip(-info.clipPlane)
+		local backModified = backMesh:clip(-info.clipPlane)
 		if #backMesh.tris == 0 then
 			backMesh = nil
 		end
 		-- clone and clip the plane -> frontMesh
 		local frontMesh = clipped:clone()
-		frontMesh:clip(info.clipPlane)
+		local frontModified = frontMesh:clip(info.clipPlane)
 		if #frontMesh.tris == 0 then
 			frontMesh = nil
 		end

@@ -510,7 +510,6 @@ function App:update()
 					if g then
 						self.insertMesh = self.insertMesh:clipToTriGroup(g)
 						--self:removeEmptyTris()
-						--self:removeUnusedVtxs()
 					end
 				end
 				if #self.insertMesh.tris == 0 then self.insertMesh = nil end
