@@ -129,12 +129,23 @@ print('#unique triangles', mesh.triIndexes.size/3)
 			--mesh:splitTrisTouchingTris() 
 			-- merge vtxs with edges - i.e. split any edges where a vertex is overlapping it midway
 			mesh:splitVtxsTouchingEdges()
+			-- need these two calls or the edge-find doesn't find proper boundaries to target_complex
+			mesh:mergeMatchingVertexes(true, true)
+			mesh:removeEmptyTris()
+			
+			-- merge before delaunay ...
+			-- or will that screw up edges that might be used elsewhere?
+			-- TODO try to get by without doing this
+			--mesh:mergeMatchingVertexes(true, true)
+			--mesh:delaunayTriangulate()
 		end)
 		-- refresh edges, com0, and com1
 		mesh:findEdges()
 		mesh.com0 = mesh:calcCOM0()
 		mesh.com1 = mesh:calcCOM1()
 	end
+
+print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():reverse():concat'\narea '..'\n')
 
 	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
 	if cmdline.unwrapuv then
@@ -403,6 +414,16 @@ function App:update()
 			end
 			gl.glEnd()
 		end
+		gl.glLineWidth(1)
+	end
+	if self.debugDrawBadEdges then
+		gl.glColor3f(1,0,1)
+		gl.glLineWidth(3)
+		gl.glBegin(gl.GL_LINES)
+		for _,i in ipairs(self.debugDrawBadEdges) do
+			gl.glVertex3f(mesh.vtxs.v[i].pos:unpack())
+		end
+		gl.glEnd()
 		gl.glLineWidth(1)
 	end
 	if self.useDrawBBox then
@@ -880,6 +901,24 @@ function App:updateGUI()
 			end
 			if ig.igButton'clear hole annotations' then
 				self.debugDrawLoops, self.debugDrawLines = nil
+			end
+			if ig.igButton'find bad com edges' then
+				if not mesh.edges2 then
+					mesh:calcEdges2()
+				end
+				for _,e in ipairs(mesh.edges2) do
+					local t1, t2 = table.unpack(e.tris)
+					local t1side = e.clipPlane:test(t1.com)
+					local t2side = e.clipPlane:test(t2.com)
+					if t1side == t2side then
+						self.debugDrawBadEdges = self.debugDrawBadEdges or table()
+						self.debugDrawBadEdges:insert(3*(t1.index-1)+e.triVtxIndexes[1]-1)
+						self.debugDrawBadEdges:insert(3*(t1.index-1)+e.triVtxIndexes[1]%3)
+					end
+				end
+			end
+			if ig.igButton'clear bad com edges' then
+				self.debugDrawBadEdges =  nil
 			end
 
 			ig.igEndMenu()

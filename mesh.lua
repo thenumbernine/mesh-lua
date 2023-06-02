@@ -704,10 +704,14 @@ function Mesh:calcEdges2()
 	local goodTris = 0
 	local badTris = 0
 	local areaThreshold = 1e-5
-	local normalThreshold = 1e-5
+	-- if I lower this to 1e-7 then it runs into cases of clipPlanes that don't separate their two triangle COMs ...
+	local normalThreshold = 1e-7
 	for i1=#self.tris,2,-1 do
 		local t1 = self.tris[i1]
-		if t1.area >= areaThreshold and t1.normal:norm() > normalThreshold then
+		if 
+		--t1.area >= areaThreshold and 
+		t1.normal:norm() > normalThreshold 
+		then
 			local tp1 = self.triIndexes.v + 3 * (i1 - 1)
 			for j1=1,3 do
 				-- t1's j1'th edge
@@ -720,7 +724,10 @@ function Mesh:calcEdges2()
 					edgeDir1 = edgeDir1 / edgeDir1Norm
 					for i2=i1-1,1,-1 do
 						local t2 = self.tris[i2]
-						if t2.area >= areaThreshold and t2.normal:norm() > normalThreshold then
+						if 
+						--t2.area >= areaThreshold and 
+						t2.normal:norm() > normalThreshold 
+						then
 							local tp2 = self.triIndexes.v + 3 * (i2 - 1)
 							for j2=1,3 do
 								local v21 = self.vtxs.v[tp2[j2-1]].pos
@@ -901,6 +908,85 @@ function Mesh:findEdges(getIndex)
 			addEdge(b+1, c+1, t)
 		end
 	end)
+end
+
+function Mesh:delaunayTriangulate()
+	-- go through all triangles sharing edges ...
+	-- flip any that don't fulfill the delaunay condition
+	if not self.edges2 then
+		self:calcEdges2()
+	end
+	local flipped
+	repeat
+		flipped = false
+		for _,e in ipairs(self.edges2) do
+			local t1, t2 = table.unpack(e.tris)
+			local vi1, vi2 = table.unpack(e.triIndexes)
+			local tp1 = self.triIndexes.v + 3*(t1.index-1)
+			local tp2 = self.triIndexes.v + 3*(t2.index-1)
+			-- v10 and v21 match, v11 and v20 match, v12 and v22 are opposites
+			local i10 = tp1[vi1-1]
+			local i11 = tp1[vi1%3]
+			local i12 = tp1[(vi1+1)%3]
+			local i20 = tp2[vi2-1]
+			local i21 = tp2[vi2%3]
+			local i22 = tp2[(vi2+1)%3]
+			local v10 = self.vtxs.v[i10]
+			local v11 = self.vtxs.v[i11]
+			local v12 = self.vtxs.v[i12]
+			local v20 = self.vtxs.v[i20]
+			local v21 = self.vtxs.v[i21]
+			local v22 = self.vtxs.v[i22]
+			-- pick 1 of the 2 triangles as the 2D basis
+			local a, c
+			if i10 ~= i21 then
+				assert((v10 - v21):norm() < 1e-5)
+				c = .5 * (v10 + v21) - t1.uvorigin3D
+			else
+				c = v10
+			end
+			if i11 ~= i20 then
+				assert((v11 - v20):norm() < 1e-5)
+				a = .5 * (v11 + v20) - t1.uvorigin3D
+			else
+				a = v11
+			end
+			-- https://en.wikipedia.org/wiki/Delaunay_triangulation
+			local b = v12 - t1.uvorigin3D
+			local d = v22 - t1.uvorigin3D
+			a = vec2f(a:dot(t1.basis[1]), a:dot(t1.basis[2]))
+			b = vec2f(b:dot(t1.basis[1]), b:dot(t1.basis[2]))
+			c = vec2f(c:dot(t1.basis[1]), c:dot(t1.basis[2]))
+			d = vec2f(d:dot(t1.basis[1]), d:dot(t1.basis[2]))
+			a = a - d
+			b = b - d
+			c = c - d
+			local cond = matrix_ffi{
+				{a.x, a.y, a:normSq()},
+				{b.x, b.y, b:normSq()},
+				{c.x, c.y, c:normSq()},
+			}:det()
+			if cond <= 0 then
+				flipped = true
+				-- flip ...
+				tp1[vi1-1] = i12
+				tp1[vi1%3] = i22
+				tp1[(vi1+1)%3] = i11	-- or i20
+				tp2[vi2-1] = i22
+				tp2[vi2%3] = i12
+				tp2[(vi2+1)%3] = i10	-- or i21
+				if i11 ~= i20 then
+					self.vtxs.v[i11].pos = .5 * (self.vtxs.v[i11].pos + self.vtxs.v[i20].pos)
+				end
+				if i10 ~= i21 then
+					self.vtxs.v[i10].pos = .5 * (self.vtxs.v[i10].pos + self.vtxs.v[i21].pos)
+				end
+				-- now recalculate the edge variables
+				-- and recalculate the triangle variables
+				error"TODO"
+			end
+		end
+	until not flipped
 end
 
 --[[
