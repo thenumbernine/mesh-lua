@@ -296,23 +296,21 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 					-- then you have a brick wall with a brick missing from the middle of it.
 					local jitteredPos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
 					
-					local xform = translateMat4x4(placePos) * modelToSurfXForm
+					local xform = translateMat4x4(jitteredPos) * modelToSurfXForm
 
-					--[[ just place all
-					allInside = true
-					--]]
 					-- [[
 					-- test if it's if in tri (barycentric coord test) then continue
 					-- use the unjittered positions for the test so we don't get holes in the lattice
 					-- later we will bcc test the closest point on the placed mesh bbox to the tri
-					local bcc = t:calcBCC(placePos, mesh)
+					local bcc = t:calcBCC(jitteredPos, mesh)
 					local posInside = bcc.x >= 0 and bcc.y >= 0 and bcc.z >= 0
 					--]]
-					-- [[ if any corners in placement-space are within the tri ... continue
+					--[[ TODO prelim bbox test ...
+					-- if any corners in placement-space are within the tri ... continue
 					local allInside = true
 					local anyInside = false
 					for _,ctc in ipairs(cornersTC) do
-						local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + placePos
+						local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + jitteredPos
 						local cornerInside = t:insideBCC(cornerPos, mesh)
 						allInside = allInside and cornerInside
 						anyInside = anyInside or cornerInside
@@ -322,117 +320,19 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 					--if anyInside 
 					--and not allInside 
 					--then
-					do
-						
-						--[[ 
-						TODO SEPARATE THIS OUT AS AN ARBITRARY POLYHEDRA CLIPPING FUNCTION
-
-						mesh inside poly algorithm ...
-						for detecting inside a polygon via bsp
-						es = all boundary edges
-						while #es > 0 do
-							e = pop an edge from es
-							if our point is on the front of e's plane ...
-								remove all edges whose segments are on the back side of e's plane 
-								if there's no edges left then we are inside
-							if our point is on the back of e's plane
-								remove all edges whose segments are in front of e's plane 
-								if there's no edges left, we're outside
-						end
-						
-						but how about for clipping a mesh to arbitrary planes?
-						for this I'll need clip() to return a mesh of what it cut away
-						and then i'll have to do some merges ....
-						--]]
-						
-						local anythingRemoved = false
-						
-						-- separate edgeInfos into a list of those with line segments touching the front of the plane
-						-- and those with line segments touchign the back fo the plane
-						-- a line segment can appear in both lists.
-						local function getEdgesInFront(edgeInfos, plane)
-							return edgeInfos:filter(function(info)
-								local e = info.edge
-								local v1 = e.planePos + e.plane.n * e.interval[1]
-								local v2 = e.planePos + e.plane.n * e.interval[2]
-								return plane:dist(v1) > 1e-4
-									or plane:dist(v2) > 1e-4
-							end)
-						end
-						local function clipEdgesAgainstEdges(edgeInfos, plane)
-							return getEdgesInFront(edgeInfos, plane),
-								getEdgesInFront(edgeInfos, -plane)
-						end
-						
-						-- clip a mesh against a polygon
-						local function clipMeshAgainstEdges(edgeInfos, clipped)
-							local info = edgeInfos:remove()
-							-- clone and clip against the -plane -> backMesh 
-							local backMesh = clipped:clone()
-							backMesh:clip(-info.clipPlane)
-							if #backMesh.tris == 0 then
-								backMesh = nil
-							end
-							-- clone and clip the plane -> frontMesh
-							local frontMesh = clipped:clone()
-							frontMesh:clip(info.clipPlane)
-							if #frontMesh.tris == 0 then
-								frontMesh = nil
-							end
-							-- if that plane was the list on our list ...
-							if #edgeInfos == 0 then
-								-- ... then toss the backMesh because it is outside
-								-- and just return frontMesh (if we have it)
-								backMesh = nil
-							else
-								local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.clipPlane)
-								if #edgesBack > 0 then
-									if backMesh then
-										backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
-									end
-								else
-									-- backMesh is fully outside the poly -- toss it
-									backMesh = nil
-								end
-								if #edgesFront > 0 then
-									if frontMesh then
-										frontMesh = clipMeshAgainstEdges(edgesFront, frontMesh)
-									end
-								else
-									-- frontMesh is now fully inside the poly, so keep it (if we have it)
-								end
-							end
-							-- keep track of whether we lost any pieces
-							if not frontMesh or not backMesh then
-								anythingRemoved = true
-							end
-							-- return the combination of front and back meshes
-							if frontMesh then
-								if backMesh then
-									frontMesh:combine(backMesh)
-								end
-								return frontMesh
-							elseif backMesh then
-								return backMesh
-							end
-						end
-						local clipped = clipMeshAgainstEdges(
-							table(triGroupForTri[t].borderEdges),
-							omesh:clone():transform(xform)
-						)
-						-- if clipped is nil then everything was removed
-
-						if not clipped then
-							-- ... then the mesh is all outside
-						elseif anythingRemoved then
-							-- then part of the mesh was inside
-							merged:combine(clipped)
-						else
-							-- all was inside
-							allInside = true --posInside
-						end
+					local clipped, anythingRemoved = omesh:clone():transform(xform)
+						:clipToTriGroup(triGroupForTri[t])
+					local allInside = false
+					if not clipped then
+						-- ... then the mesh is all outside
+					elseif anythingRemoved then
+						-- then part of the mesh was inside
+						merged:combine(clipped)
+					else
+						-- all was inside
+						allInside = true --posInside
 					end
-
+				
 
 	--print(uv, inside)
 					if allInside then
@@ -559,10 +459,7 @@ print('ntris.size', ntris.size)
 	mesh.edges = nil
 	mesh.edgeIndexBuf = nil
 	mesh.edges2 = nil
-	mesh.loadedGL = nil
-	mesh.vtxBuf = nil
-	mesh.vtxAttrs = nil
-	mesh.vao = nil
+	mesh:unloadGL()
 
 	mesh:calcBBox()
 	mesh:findEdges()

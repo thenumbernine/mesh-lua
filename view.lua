@@ -36,6 +36,7 @@ local editModeNames = table{
 	'rotate',
 	'vertex',
 	'tri',
+	'insertMesh',
 }
 local editModeForName = editModeNames:mapi(function(v,k) return k,v end)
 
@@ -346,7 +347,7 @@ function App:update()
 	if self.drawTriBasis then
 		mesh:drawTriBasis()
 	end
-	if self.useDrawPolys then
+	do
 		self.shader:use()
 		self.shader:setUniforms{
 			useFlipTexture = self.useFlipTexture,
@@ -355,30 +356,14 @@ function App:update()
 			modelViewMatrix = self.modelViewMatrix.ptr,
 			projectionMatrix = self.projectionMatrix.ptr,
 		}
-		mesh:draw{
-			-- TODO option for calculated normals?
-			-- TODO shader options?
-			shader = self.shader,
-			beginGroup = function(g)
-				if g.tex_Kd then g.tex_Kd:bind() end
-				self.shader:setUniforms{
-					useTextures = self.useTextures and g.tex_Kd and 1 or 0,
-					--Ka = g.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
-					Ka = {0,0,0,0},
-					Kd = g.Kd and g.Kd.s or {1,1,1,1},
-					Ks = g.Ks and g.Ks.s or {1,1,1,1},
-					Ns = g.Ns or 10,
-					-- com3 is best for closed meshes
-					objCOM = mesh.com2.s,
-					groupCOM = g.com2.s,
-					groupExplodeDist = self.groupExplodeDist,
-					triExplodeDist = self.triExplodeDist,
-				}
-			end,
-		}
+		if self.useDrawPolys then
+			self:drawMesh(mesh)
+		end
+		if self.insertMesh then
+			self:drawMesh(self.insertMesh)
+		end
 		self.shader:useNone()
 	end
-	
 	if self.useBlend then
 		gl.glDisable(gl.GL_BLEND)
 	end
@@ -482,28 +467,85 @@ function App:update()
 			self.dragVtx = self.hoverVtx
 		end
 	elseif self.editMode == editModeForName.tri then
-		local i, bestDist = self:findClosestTriToMouse()
-		self.hoverTri = i
-		-- [[
+		self.hoverTri, self.bestTriPt = self:findClosestTriToMouse()
+		if not self.hoverTri then self.bestTriPt = nil end
+		--[[
 		local bestgroup
-		if i then
+		if self.hoverTri then
 			for j,g in ipairs(mesh.groups) do
-				if i >= 3*g.triFirstIndex and i < 3*(g.triFirstIndex + g.triCount) then
+				if self.hoverTri >= 3*g.triFirstIndex and self.hoverTri < 3*(g.triFirstIndex + g.triCount) then
 					bestgroup = g.name
 				end
 			end
-			print('clicked on material', bestgroup, 'tri', i, 'dist', bestDist)
-
-			local pos, dir = self:mouseRay()
-			self.bestTriPt = pos + dir * bestDist
+			--print('clicked on material', bestgroup, 'tri', self.hoverTri)
 		end
 		--]]
 		if self.mouse.leftPress then
 			self.dragTri = self.hoverTri
 		end
+	
+	elseif self.editMode == editModeForName.insertMesh then
+		local lastPt = self.insertMeshPt
+		self.insertMeshTri, self.insertMeshPt = self:findClosestTriToMouse()
+		if not self.insertMeshTri then 
+			self.insertMeshPt = nil
+			self.insertMeshBase = nil
+			self.insertMesh = nil
+		else
+			if not self.insertMeshBase then
+				if self.triPlanarGroupPlacementFilename ~= '' then
+					self.insertMeshBase = OBJLoader():load(self.triPlanarGroupPlacementFilename)
+					self.insertMeshBase:findEdges()
+					self.insertMeshBase:calcCOMs()
+				end
+			else
+				if self.insertMesh then
+					self.insertMesh:unloadGL()
+				end
+				self.insertMesh = self.insertMeshBase:clone()
+				self.insertMesh:translate(self.insertMeshPt:unpack())
+
+				if mesh.triGroups then
+					local g = mesh.triGroupForTri[mesh.tris[self.insertMeshTri/3+1]]
+					if g then
+						self.insertMesh = self.insertMesh:clipToTriGroup(g)
+						--self:removeEmptyTris()
+						--self:removeUnusedVtxs()
+					end
+				end
+				if #self.insertMesh.tris == 0 then self.insertMesh = nil end
+				if self.insertMesh then 
+					self.insertMesh:loadGL(self.shader)
+				end
+			end
+		end
 	end
 
 	require 'gl.report''here'
+end
+
+function App:drawMesh(mesh)
+	mesh:draw{
+		-- TODO option for calculated normals?
+		-- TODO shader options?
+		shader = self.shader,
+		beginGroup = function(g)
+			if g.tex_Kd then g.tex_Kd:bind() end
+			self.shader:setUniforms{
+				useTextures = self.useTextures and g.tex_Kd and 1 or 0,
+				--Ka = g.Ka or {0,0,0,0},	-- why are most mesh files 1,1,1,1 ambient?  because blender exports ambient as 1,1,1,1 ... but that would wash out all lighting ... smh
+				Ka = {0,0,0,0},
+				Kd = g.Kd and g.Kd.s or {1,1,1,1},
+				Ks = g.Ks and g.Ks.s or {1,1,1,1},
+				Ns = g.Ns or 10,
+				-- com3 is best for closed meshes
+				objCOM = mesh.com2.s,
+				groupCOM = g.com2.s,
+				groupExplodeDist = self.groupExplodeDist,
+				triExplodeDist = self.triExplodeDist,
+			}
+		end,
+	}
 end
 
 function App:mouseRay()
@@ -539,11 +581,14 @@ end
 function App:findClosestTriToMouse()
 	local cosEpsAngle = math.cos(math.rad(10 / self.height * self.view.fovY))
 	local pos, dir = self:mouseRay()
-	return self.mesh:findClosestTriToMouseRay(
+	local triIndex, bestDist = self.mesh:findClosestTriToMouseRay(
 		pos,
 		dir,
 		-self.view.angle:zAxis(),
 		cosEpsAngle)
+	if triIndex then
+		return triIndex, pos + dir * bestDist
+	end
 end
 
 function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
@@ -829,8 +874,6 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tile clip planes', self, 'drawTriPlanarGroupPlanes')
 			ig.luatableCheckbox('draw tile clip edges', self, 'drawTriPlanarGroupEdges')
 			
-			self.triPlanarGroupPlacementFilename = self.triPlanarGroupPlacementFilename or ''
-			ig.luatableInputText('tri group placement filename', self, 'triPlanarGroupPlacementFilename')
 
 			ig.igSeparator()
 			if ig.igButton'find holes' then
@@ -846,6 +889,11 @@ function App:updateGUI()
 			ig.luatableRadioButton('rotate mode', self, 'editMode', editModeForName.rotate)
 			ig.luatableRadioButton('edit vertex mode', self, 'editMode', editModeForName.vertex)
 			ig.luatableRadioButton('edit tri mode', self, 'editMode', editModeForName.tri)
+			
+			ig.igSeparator()
+			ig.luatableRadioButton('insert mesh mode', self, 'editMode', editModeForName.insertMesh)
+			self.triPlanarGroupPlacementFilename = self.triPlanarGroupPlacementFilename or ''
+			ig.luatableInputText('tri group placement filename', self, 'triPlanarGroupPlacementFilename')
 
 			ig.igEndMenu()
 		end

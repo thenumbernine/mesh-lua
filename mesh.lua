@@ -221,14 +221,17 @@ function Mesh:combine(...)
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
-	self.loadedGL = nil
-	self.vtxBuf = nil
-
+	self:unloadGL()
 	return self
 end
 
 function Mesh:clone()
-	return Mesh():combine(self)
+	local result = Mesh():combine(self)
+	if self.com0 then result.com0 = vec3f(self.com0) end
+	if self.com1 then result.com1 = vec3f(self.com1) end
+	if self.com2 then result.com2 = vec3f(self.com2) end
+	if self.com3 then result.com3 = vec3f(self.com3) end
+	return result
 end
 
 -- TODO operators?  * number, * vec3f, etc?
@@ -252,6 +255,11 @@ function Mesh:translate(...)
 		end
 	end
 	self:refreshVtxs()
+	local d = vec3f(...)
+	if self.com0 then self.com0 = self.com0 + d end
+	if self.com1 then self.com1 = self.com1 + d end
+	if self.com2 then self.com2 = self.com2 + d end
+	if self.com3 then self.com3 = self.com3 + d end
 	return self
 end
 
@@ -408,10 +416,7 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	assert(#self.tris*3 == self.triIndexes.size)
 
 	-- invalidate
-	self.loadedGL = false
-	self.vtxBuf = nil
-	self.vtxAttrs = nil
-	self.vao = nil
+	self:unloadGL()
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
@@ -507,8 +512,7 @@ function Mesh:splitVtxsTouchingEdges()
 	print('splitVtxsTouchingEdges END')
 	self:rebuildTris()
 	self:mergeMatchingVertexes()	-- better to merge vtxs than remove empty tris cuz it will keep seams in models
-	self.loadedGL = nil
-	self.vtxBuf = nil
+	self:unloadGL()
 	return modified
 end
 
@@ -548,6 +552,9 @@ function Mesh:rebuildTris(from,to)
 	end
 	for i,t in ipairs(self.tris) do
 		assert(Triangle:isa(t))
+	end
+	for i=to+1,#self.tris do
+		self.tris[i] = nil
 	end
 	for i=from,to do
 		if not self.tris[i] then
@@ -1004,7 +1011,105 @@ print('found '..#triGroups..' groups of triangles')
 	self.triGroupForTri = triGroupForTri 
 end
 
+-- clip the current mesh to the specified trigroup
+function Mesh:clipToTriGroup(g)
+	--[[ 
+	ARBITRARY POLYHEDRA/POLYTOPE CLIPPING FUNCTION
 
+	mesh inside poly algorithm ...
+	for detecting inside a polygon via bsp
+	es = all boundary edges
+	while #es > 0 do
+		e = pop an edge from es
+		if our point is on the front of e's plane ...
+			remove all edges whose segments are on the back side of e's plane 
+			if there's no edges left then we are inside
+		if our point is on the back of e's plane
+			remove all edges whose segments are in front of e's plane 
+			if there's no edges left, we're outside
+	end
+	
+	but how about for clipping a mesh to arbitrary planes?
+	for this I'll need clip() to return a mesh of what it cut away
+	and then i'll have to do some merges ....
+	--]]
+	
+	local anythingRemoved = false
+	
+	-- separate edgeInfos into a list of those with line segments touching the front of the plane
+	-- and those with line segments touchign the back fo the plane
+	-- a line segment can appear in both lists.
+	local function getEdgesInFront(edgeInfos, plane)
+		return edgeInfos:filter(function(info)
+			local e = info.edge
+			local v1 = e.planePos + e.plane.n * e.interval[1]
+			local v2 = e.planePos + e.plane.n * e.interval[2]
+			return plane:dist(v1) > 1e-4
+				or plane:dist(v2) > 1e-4
+		end)
+	end
+	local function clipEdgesAgainstEdges(edgeInfos, plane)
+		return getEdgesInFront(edgeInfos, plane),
+			getEdgesInFront(edgeInfos, -plane)
+	end
+	
+	-- clip a mesh against a polygon
+	local function clipMeshAgainstEdges(edgeInfos, clipped)
+		local info = edgeInfos:remove()
+		-- clone and clip against the -plane -> backMesh 
+		local backMesh = clipped:clone()
+		backMesh:clip(-info.clipPlane)
+		if #backMesh.tris == 0 then
+			backMesh = nil
+		end
+		-- clone and clip the plane -> frontMesh
+		local frontMesh = clipped:clone()
+		frontMesh:clip(info.clipPlane)
+		if #frontMesh.tris == 0 then
+			frontMesh = nil
+		end
+		-- if that plane was the list on our list ...
+		if #edgeInfos == 0 then
+			-- ... then toss the backMesh because it is outside
+			-- and just return frontMesh (if we have it)
+			backMesh = nil
+		else
+			local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.clipPlane)
+			if #edgesBack > 0 then
+				if backMesh then
+					backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
+				end
+			else
+				-- backMesh is fully outside the poly -- toss it
+				backMesh = nil
+			end
+			if #edgesFront > 0 then
+				if frontMesh then
+					frontMesh = clipMeshAgainstEdges(edgesFront, frontMesh)
+				end
+			else
+				-- frontMesh is now fully inside the poly, so keep it (if we have it)
+			end
+		end
+		-- keep track of whether we lost any pieces
+		if not frontMesh or not backMesh then
+			anythingRemoved = true
+		end
+		-- return the combination of front and back meshes
+		if frontMesh then
+			if backMesh then
+				frontMesh:combine(backMesh)
+			end
+			return frontMesh
+		elseif backMesh then
+			return backMesh
+		end
+	end
+	local clipped = clipMeshAgainstEdges(table(g.borderEdges), self)
+	-- if clipped is nil then everything was removed
+
+	return clipped, anythingRemoved
+end
 
 
 
@@ -1337,10 +1442,7 @@ function Mesh:breakAllVertexes()
 
 	-- tell the next draw to regen the buffer
 	-- can I resize a gl arraybuffer?
-	self.loadedGL = false
-	self.vtxBuf = nil
-	self.vtxAttrs = nil
-	self.vao = nil
+	self:unloadGL()
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
@@ -1759,8 +1861,7 @@ if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
 end
 
-	self.loadedGL = nil
-	self.vtxBuf = nil
+	self:unloadGL()
 	return modified
 end
 
@@ -1860,7 +1961,7 @@ print('adding to loop-index', o, 'vtx index', self:getIndexForLoopChain(loop[o])
 		assert(#loop >= 3)
 	end
 
-	self.vtxBuf = nil
+	self:unloadGL()
 	self:rebuildTris()
 print('Mesh:fillHoles end')
 end
@@ -1957,7 +2058,7 @@ function Mesh:loadGL(shader)
 			data = self.vtxs.v,
 			usage = gl.GL_STATIC_DRAW,
 		}
-		assert(glreport'here')
+glreport'here'
 
 		self.vtxAttrs = table{
 			{name='pos', size=3},
@@ -1975,15 +2076,27 @@ function Mesh:loadGL(shader)
 			}, info.name
 		end)
 		shader:use()
-		assert(glreport'here')
+glreport'here'
 		self.vao = GLVertexArray{
 			program = shader,
 			attrs = self.vtxAttrs,
 		}
 		shader:setAttrs(self.vtxAttrs)
 		shader:useNone()
-		assert(glreport'here')
+glreport'here'
 	end
+end
+
+function Mesh:unloadGL()
+	self.loadedGL = nil
+
+	-- when loading/unloading/calling glGenBuffers too many times (even with subsequent glDeleteBuffers) I'm getting sporatic GL_INVALID_OPERATIONS upon glGenBuffers ... even if it's just the 10th or so call.  wtf.
+	if self.vao then self.vao:release() end
+	if self.vtxBuf then self.vtxBuf:release() end
+	
+	self.vao = nil
+	self.vtxBuf = nil
+	self.vtxAttrs = nil
 end
 
 function Mesh:draw(args)

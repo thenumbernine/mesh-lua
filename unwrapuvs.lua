@@ -8,10 +8,7 @@ local quatf = require 'vec-ffi.quatf'
 local function unwrapUVs(mesh)
 	mesh:breakAllVertexes()
 	mesh:calcEdges2()
-	-- invalidate
-	mesh.vtxBuf = nil
-	mesh.vtxAttrs = nil
-	mesh.vao = nil
+	mesh:unloadGL()
 
 --[[ TODO put this all in its own function or its own app
 	local numSharpEdges = 0
