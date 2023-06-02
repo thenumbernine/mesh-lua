@@ -32,6 +32,13 @@ local App = class(require 'imguiapp.withorbit'())
 
 App.title = 'WavefrontOBJ preview'
 
+local editModeNames = table{
+	'rotate',
+	'vertex',
+	'tri',
+}
+local editModeForName = editModeNames:mapi(function(v,k) return k,v end)
+
 local dirnames = table{
 	'x+',
 	'x-',
@@ -79,7 +86,7 @@ function App:initGL(...)
 	self.drawTriPlanarGroupPlanes = false
 	self.drawTriPlanarGroupEdges = false
 
-	self.editMode = 1
+	self.editMode = editModeForName.rotate
 
 	self.useLighting = false
 	self.lightDir = vec3f(1,1,1)
@@ -465,16 +472,16 @@ function App:update()
 
 	App.super.update(self)
 
-	if self.editMode == 1 then
+	if self.editMode == editModeForName.rotate then
 		self.hoverVtx = nil
 		self.hoverTri = nil
 		self.bestTriPt = nil
-	elseif self.editMode == 2 then
+	elseif self.editMode == editModeForName.vertex then
 		self.hoverVtx = self:findClosestVtxToMouse()
 		if self.mouse.leftPress then
 			self.dragVtx = self.hoverVtx
 		end
-	elseif self.editMode == 3 then
+	elseif self.editMode == editModeForName.tri then
 		local i, bestDist = self:findClosestTriToMouse()
 		self.hoverTri = i
 		-- [[
@@ -565,14 +572,14 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 			mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof'vec3f_t', vtx.pos.s)
 		end
 	end
-	if self.editMode == 1 then
+	if self.editMode == editModeForName.rotate then
 		-- orbit behavior
 		App.super.mouseDownEvent(self, dx, dy, shiftDown, guiDown, altDown)
-	elseif self.editMode == 2 then
+	elseif self.editMode == editModeForName.vertex then
 		if self.dragVtx then
 			moveVtx(self.dragVtx)
 		end
-	elseif self.editMode == 3 then
+	elseif self.editMode == editModeForName.tri then
 		if self.dragTri then
 			for j=0,2 do
 				moveVtx(mesh.triIndexes.v[self.dragTri + j])
@@ -778,10 +785,10 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw uv unwrap graph', self, 'drawUnwrapUVGraph')
 			ig.luatableCheckbox('draw uv unwrap edges', self, 'drawUnwrapUVEdges')
 
-			self.placementFilename = self.placementFilename or ''
-			ig.luatableInputText('placement filename', self, 'placementFilename')
+			self.tileMeshJSONFilename = self.tileMeshJSONFilename or ''
+			ig.luatableInputText('placement JSON filename', self, 'tileMeshJSONFilename')
 			if ig.igButton'tile mesh' then
-				tileMesh(mesh, self.placementFilename)
+				tileMesh(mesh, self.tileMeshJSONFilename)
 			end
 
 			ig.igEndMenu()
@@ -817,9 +824,15 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
+			
+			ig.igSeparator()
 			ig.luatableCheckbox('draw tile clip planes', self, 'drawTriPlanarGroupPlanes')
 			ig.luatableCheckbox('draw tile clip edges', self, 'drawTriPlanarGroupEdges')
+			
+			self.triPlanarGroupPlacementFilename = self.triPlanarGroupPlacementFilename or ''
+			ig.luatableInputText('tri group placement filename', self, 'triPlanarGroupPlacementFilename')
 
+			ig.igSeparator()
 			if ig.igButton'find holes' then
 				self.debugDrawLoops, self.debugDrawLines = mesh:findBadEdges()
 			end
@@ -830,9 +843,9 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'Edit' then
-			ig.luatableRadioButton('rotate mode', self, 'editMode', 1)
-			ig.luatableRadioButton('edit vertex mode', self, 'editMode', 2)
-			ig.luatableRadioButton('edit tri mode', self, 'editMode', 3)
+			ig.luatableRadioButton('rotate mode', self, 'editMode', editModeForName.rotate)
+			ig.luatableRadioButton('edit vertex mode', self, 'editMode', editModeForName.vertex)
+			ig.luatableRadioButton('edit tri mode', self, 'editMode', editModeForName.tri)
 
 			ig.igEndMenu()
 		end
