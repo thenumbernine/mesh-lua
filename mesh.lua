@@ -1062,6 +1062,7 @@ function Mesh:clipToTriGroup(g)
 	
 	-- clip a mesh against a polygon
 	local function clipMeshAgainstEdges(edgeInfos, clipped)
+		assert(#edgeInfos > 0)
 		local info = edgeInfos:remove()
 		-- clone and clip against the -plane -> backMesh 
 		local backMesh = clipped:clone()
@@ -1079,6 +1080,9 @@ function Mesh:clipToTriGroup(g)
 		if #edgeInfos == 0 then
 			-- ... then toss the backMesh because it is outside
 			-- and just return frontMesh (if we have it)
+			if backMesh then
+				anythingRemoved = true
+			end
 			backMesh = nil
 		else
 			local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.clipPlane)
@@ -1088,6 +1092,9 @@ function Mesh:clipToTriGroup(g)
 				end
 			else
 				-- backMesh is fully outside the poly -- toss it
+				if backMesh then
+					anythingRemoved = true
+				end
 				backMesh = nil
 			end
 			if #edgesFront > 0 then
@@ -1097,10 +1104,6 @@ function Mesh:clipToTriGroup(g)
 			else
 				-- frontMesh is now fully inside the poly, so keep it (if we have it)
 			end
-		end
-		-- keep track of whether we lost any pieces
-		if not frontMesh or not backMesh then
-			anythingRemoved = true
 		end
 		-- return the combination of front and back meshes
 		if frontMesh then
@@ -1112,7 +1115,12 @@ function Mesh:clipToTriGroup(g)
 			return backMesh
 		end
 	end
-	local clipped = clipMeshAgainstEdges(table(g.borderEdges), self)
+	local clipped
+	if #g.borderEdges > 0 then
+		clipped = clipMeshAgainstEdges(table(g.borderEdges), self)
+	else
+		clipped = self:clone()
+	end
 	-- if clipped is nil then everything was removed
 
 	return clipped, anythingRemoved

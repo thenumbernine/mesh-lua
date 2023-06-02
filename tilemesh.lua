@@ -268,7 +268,6 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 					for pv=placementBBox.min.y,placementBBox.max.y+.01 do
 -- if groups are contiguous unwrapped texcoords then there should be one (pu,pv) per group right?					
-print('placing', pu, pv)
 						local key = pu..','..pv
 						if not placementsSoFar[key] then
 							placementsSoFar[key] = true
@@ -278,7 +277,7 @@ print('placing', pu, pv)
 							-- so I have to test without jitter, then later introduce jitter.
 							local uv = placementCoordXForm * matrix_ffi{pu, pv}
 							uv = vec2f(uv:unpack())
-	--print(uv)
+--print(uv)
 							local duv = uv - uvorigin2D
 							
 							local jitterPlacement = matrix_ffi{
