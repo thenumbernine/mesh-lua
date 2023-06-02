@@ -26,6 +26,11 @@ typedef struct MeshVertex_t {
 
 local Mesh = class()
 
+-- the threshold for determining if two neighboring tris are in the same plane or not.
+-- using a value as high as 5 degrees lets uv-unwrapping wrap around curves
+-- this threshold is used in so many places in unwrapuv and tilemesh that I thought I'd just make it a static class variable
+Mesh.angleThresholdInDeg = 5
+
 local function triArea(a,b,c)
 	-- TODO check nans here?
 	local n = (b - a):cross(c - a)
@@ -306,7 +311,7 @@ function Mesh:prepare()
 
 	-- store all edges of all triangles
 	-- ... why?  who uses this?
-	-- unwrapUVs used to but now it uses the 'allOverlappingEdges' structure
+	-- unwrapUVs used to but now it uses the 'edges2' structure
 	-- it's used for visualization
 	self:findEdges()
 
@@ -410,7 +415,6 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
-	self.allOverlappingEdges = nil
 	self.edges2 = nil
 end
 
@@ -650,141 +654,37 @@ end
 
 
 --[[
-fill the allOverlappingEdges table
+fills the edges2 table
+this holds a list of edges which are pairs of tris with shared vertexes.
+each .edges2[] entry has exctly 2 tris in it.  tris can have up to 3 edges2[] entreis.
+tris with edges that are borders of open meshes will no be in edges2. but tehy wil be in .edges[]
+so adding them to edges2 is a big TODO
 
 TODO 
-- don't do subinterval tests.  instead merge vertex with edges before hand so old mesh overlapping edge subintervals are 1:1 with new mesh edges
 - get rid of .edges, and use this as the default edge structure instead
 
-angleThresholdInDeg is used for 'isPlanar' calculations
+angleThresholdInDeg is used in calcAllOverlappingEdges for 'isPlanar' calculations
 and this can be relatively loose (5 deg or so) for allowing planar uv unwrapping around curves.
 
 normEpsilon is for validating that the norm is nonzero
 edgeDistEpsilon is for finding overlapping edges that don't share vertexes but we still want to uv-unwrap fold over.
 edgeAngleThreshold is used for ensuring those edges are aligned, so this must be tighter than angleThresholdInDeg.
 --]]
-function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
-	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
-	--[[
-	these are whatever mesh edges are partially overlapping one another.
-	they are a result of a shitty artist.
-	because of which, there is no guarantee with this table that each tri has 3 edges, and each edge has only 2 tris.
-	instead it's a shitfest shitstorm.
-	--]]
-	self.allOverlappingEdges = table()
-	for _,t in ipairs(self.tris) do
-		t.allOverlappingEdges = table()
-	end
---for _,t in ipairs(self.tris) do
---	print('n = '..t.normal)
---end
+function Mesh:calcAllOverlappingEdges()
+	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
+	
 	local normEpsilon = 1e-7
 	--local edgeDistEpsilon = 1e-7 -- ... is too strict for roof
 	local edgeDistEpsilon = 1e-3
 	local edgeAngleThreshold = math.rad(1e-1)
 	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
-	for i1=#self.tris,2,-1 do
-		local tp1 = self.triIndexes.v + 3 * (i1 - 1)
-		for j1=1,3 do
-			-- t1's j1'th edge
-			local v11 = self.vtxs.v[tp1[j1-1]].pos
-			local v12 = self.vtxs.v[tp1[j1%3]].pos
---print('tri', i1, 'pos', j1, '=', v11)
-			local edgeDir1 = v12 - v11
-			local edgeDir1Norm = edgeDir1:norm()
-			if edgeDir1Norm > normEpsilon then
-				edgeDir1 = edgeDir1 / edgeDir1Norm
-				for i2=i1-1,1,-1 do
-					local t2 = self.tris[i2]
-					local tp2 = self.triIndexes.v + 3 * (i2 - 1)
-					for j2=1,3 do
-						local v21 = self.vtxs.v[tp2[j2-1]].pos
-						local v22 = self.vtxs.v[tp2[j2%3]].pos
-						local edgeDir2 = v22 - v21
-						local edgeDir2Norm = edgeDir2:norm()
-						if edgeDir2Norm  > normEpsilon then
-							edgeDir2 = edgeDir2 / edgeDir2Norm
-							if math.abs(edgeDir1:dot(edgeDir2)) > cosEdgeAngleThreshold then
---print('allOverlappingEdges normals align:', i1-1, j1-1, i2-1, j2-1)
-								-- normals align, calculate distance
-								--local planePos = v11
-							
-								-- pick any point on line v1: v11 or v12
-								-- or an average is best (when testing tri COM on either side tof the dividing plane)
-								-- use the average of the two edges intersection with the plane, not just one edge arbitrarily
-								local planePos = .5 * (v21 + v11)
-								-- average the two edge-dirs
-								local edgeDir
-								if edgeDir1:dot(edgeDir2) < 0 then
-									edgeDir = (edgeDir1 - edgeDir2):normalize()
-								else
-									edgeDir = (edgeDir1 + edgeDir2):normalize()
-								end
-								-- this is the edge projection plane, used for calculating distances to determine the interval of edge tri edge along this (the averaged edge)
-								local plane = plane3f():fromDirPt(edgeDir, planePos)	
-								-- find ray from the v1 line to any line on v2
-								-- project onto the plane normal
-								-- calculate the distance of the points both projected onto the plane
-								local dist = plane:projectVec(v21 - v11):norm() 	
-								if dist < edgeDistEpsilon then
-									-- now find where along plane normal the intervals {v11,v12} and {v21,v22}
-									local s11 = plane:dist(v11)
-									local s12 = plane:dist(v12)
-									-- based on edgeDir being the plane normal, s11 and s12 are already sorted
-									local s21 = plane:dist(v21)
-									local s22 = plane:dist(v22)
-									-- since these aren't, they have to be sorted
-									if s21 > s22 then s21, s22 = s22, s21 end
-									if s11 < s22 and s12 > s21 then
-										-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
-										assert(i2 < i1)
-										local t1 = self.tris[i1]
-										local t2 = self.tris[i2]
-										normAvg = (t1.normal + t2.normal):normalize()
-										-- TODO member functions for edge getters
-										local e = {
-											tris = {t2, t1},
-											triVtxIndexes = {j2, j1},
-											intervals = {{s21,s22}, {s11,s12}},
-											dist = dist,
-											plane = plane,
-											planePos = planePos,
-											-- TODO test dot abs?  allow flipping of surface orientation?
-											isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
-											normAvg = normAvg,
-											clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
-										}
-										self.allOverlappingEdges:insert(e)
-										t1.allOverlappingEdges:insert(e)
-										t2.allOverlappingEdges:insert(e)
-									end
-								end
-							end
-						end
-					end
-				end
-			end
-		end
-	end
---[[
-	for _,e in ipairs(self.allOverlappingEdges) do
-		print(
-			'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
-			'and', self.tris:find(e.tris[2])-1, e.triVtxIndexes[2]-1,
-			'align with dist', e.dist,
-			'with projected intervals', table.concat(e.intervals[1], ', '),
-			'and', table.concat(e.intervals[2], ', '))
-	end
-	print('found', #self.allOverlappingEdges, 'overlaps')
---]]
-
-
+	
 	-- new edge structure
 	-- it only represents entire tri edges, like .edges (no subintervals) 
-	-- but it contains the normal, planar, etc data of .allOverlappingEdges
+	-- but it contains the normal, planar, etc data 
 	-- TODO this should be used to replace both
 	-- hmm but .edges is based on all matching vtx pairs shared by edges (so unlimited tris per edge)
-	-- while .edges2 and .allOverlappingEdges is based on pairs of tri edges (so 2 tris at most per edge)
+	-- while .edges2 is based on pairs of tri edges (so 2 tris at most per edge)
 	self.edges2 = table()
 	for _,t in ipairs(self.tris) do
 		t.edges2 = table()
@@ -909,6 +809,18 @@ function Mesh:calcAllOverlappingEdges(angleThresholdInDeg)
 		end
 	end
 	print("found "..goodTris.." good pairs and "..badTris.." bad pairs")
+
+--[[
+	for _,e in ipairs(self.edges2) do
+		print(
+			'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
+			'and', self.tris:find(e.tris[2])-1, e.triVtxIndexes[2]-1,
+			'align with dist', e.dist,
+			'with projected intervals', table.concat(e.intervals[1], ', '),
+			'and', table.concat(e.intervals[2], ', '))
+	end
+	print('found', #self.edges2, 'overlaps')
+--]]
 end
 
 function Mesh:findEdges(getIndex)
@@ -1314,7 +1226,6 @@ function Mesh:breakAllVertexes()
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
-	self.allOverlappingEdges = nil
 	self.edges2 = nil
 
 	self:calcBBox()
@@ -1338,12 +1249,12 @@ end
 
 --[[
 find all edges that don't have exactly 2 triangle neighbors.
-hmm ... I would like to use this but with the 'allOverlappingEdges' structure ...
+hmm ... I would like to use this but with the 'edges2' structure ...
 
 hmm hmm maybe I need a mesh with all vertexes merged into their neighboring edges/triangles
 and mapping that information back to the original mesh
 
-TODO I might need this but for all edge segments, based on 'allOverlappingEdges' and each subinterval of each triangle edge.
+TODO I might need this but for all edge segments, based on 'edges2' and each subinterval of each triangle edge.
 --]]
 function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos

@@ -78,14 +78,11 @@ local function matrix3x3To4x4(b)
 	return m
 end
 
-local function tileMesh(
-	mesh,
-	placeFn,
-	finalMergeMesh,
-	angleThresholdInDeg
-)
+-- calculates mesh.triGroups and mesh.triGroupForTri
+-- uses mesh.edges2 and mesh:findBadEdges (which uses mesh.edges)
+local function getTileMeshGroups(mesh)
 	if not mesh.edges2 then
-		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+		mesh:calcAllOverlappingEdges()
 	end
 
 	-- [[ group all tris based on boundaries of angles
@@ -187,8 +184,15 @@ print('found '..#triGroups..' groups of triangles')
 		end
 	end
 --]]
+	mesh.triGroupForTri = triGroupForTri 
+end
 
-	-- TOOD HERE with the group info
+
+local function tileMesh(mesh, placeFn)
+	getTileMeshGroups(mesh)
+	local triGroupForTri = mesh.triGroupForTri
+
+	-- TOOD here with the group info
 
 	-- why can't dkjson catch exceptions and insert line/col info? like my parser does.  grr..
 	local placeInfo = assert(
@@ -205,7 +209,7 @@ print('found '..#triGroups..' groups of triangles')
 	local scale = vec3f(1,1,1)
 	-- assert mesh ==  OBJLoader():load(assert(placeInfo.geometryFilename))
 
-	-- TODO HERE
+	-- TODO here maybe
 	-- optimize omesh
 	-- merge vtxs
 	-- remove internal tris
@@ -231,65 +235,6 @@ print('found '..#triGroups..' groups of triangles')
 		vec3f(1,0,0),	-- model's z- fwd maps to x+ which is mapped to the tri ∂/∂u
 	}
 
-
-	-- list of column-vectors
-	-- transform from uv-space to placement-space
---[[
-	local scale = vec3f(.5, .5, .5)
-	local placementCoordXForm = matrix_ffi{
-		{1, 0},
-		{0, 1},
-	}
---]]
---[[
-	local scale = vec3f(.1, .05, .1) * .7
-	--local scale = vec3f(1,1,1)
-	local placementCoordXForm = matrix_ffi{
-		{.2, .1},
-		{0, .1},
-	}
-	local jitter = {0,0}
-	local spatialConvention = {vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
---]]
-
---[[ identity
-	local spatialConvention = table{vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1)}
---]]
--- [=[
---[[ convert y-up models to z-up tangent-space triangle basis (x = ∂/∂u, y = ∂/∂v, z = normal)
-
-	local scale = vec3f(1,1,1)
-	-- bbox of brick:
-	-- min: -0.054999999701977, -5.0268096352113e-09, -0.11500000208616
-	-- max: 0.054999999701977, 0.07600000500679, 0.11500000208616
-	-- size: 0.10999999940395, 0.076000012457371, 0.23000000417233
-	-- size: 0.11, 0.076, 0.23
-	-- size: [thickness, height, length]
-	-- ... with an extra .01 gap ...
-	local offsetU = .24
-	local offsetV = .12
-
-	-- how much to randomize placement
-	local jitter = matrix_ffi{.05, .05}
-
-	local instfn = 'brick.obj'
-
---]]
---[[ same but for roof_tile
-	local offsetU = .43
-	local offsetV = .33
-	local stack = false
-	local jitter = matrix_ffi{0, 0}
-	local instfn = 'brick.obj'
---]]
-
-	-- TODO jitterOrientation
-
-	-- true = centered-rectangular lattice
-	-- false = rectangular lattice
-	--local stack = false
-
---]=]
 
 	mesh:generateTriBasis()
 
@@ -319,13 +264,18 @@ print('found '..#triGroups..' groups of triangles')
 	-- for each tri
 	for _,surfInst in ipairs(placeInfo.surfaceInstances) do
 		local offsetU, offsetV = table.unpack(surfInst.offsetUV)
+		-- true = centered-rectangular lattice
+		-- false = rectangular lattice
 		local stack = surfInst.stacked
 		-- how much to randomize placement
+		-- TODO jitterOrientation
 		local jitter = matrix_ffi(surfInst.jitterUV)
 		-- TODO pick at random per location ... based on 'bias' sums
 		local geomInst = surfInst.geometryArray[1]
 		local omesh = assert(omeshForFn[geomInst.filename])
 
+		-- list of column-vectors
+		-- transform from uv-space to placement-space
 		-- columns are [v-ofs | u-ofs] in the placement lattice
 		-- hmm the config file says 'u offset' is the short offset and 'v offset' is long for bricks
 		-- but right now i have 'u offset' go left and 'v offset' go down
@@ -477,9 +427,10 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 					end
 					--]]
 					-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
-					if anyInside 
-					and not allInside 
-					then
+					--if anyInside 
+					--and not allInside 
+					--then
+					do
 						
 						--[[ 
 						TODO SEPARATE THIS OUT AS AN ARBITRARY POLYHEDRA CLIPPING FUNCTION
@@ -586,7 +537,7 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 							merged:combine(clipped)
 						else
 							-- all was inside
-							allInside = posInside
+							allInside = true --posInside
 						end
 					end
 
@@ -626,7 +577,6 @@ print('...with '..#triGroupForTri[t].borderEdges..' clip planes '..triGroupForTr
 						mesh.tilePlaces:insert{
 							filename = geomInst.filename,
 							xform = xform,
-							--uv = vec2f(uv),	-- not necessary
 						}
 					end
 				end
@@ -693,6 +643,7 @@ print('ntris.size', ntris.size)
 			instances = mesh.tilePlaces:mapi(function(p)
 				return {
 					filename = assert(p.filename),
+					-- row-major ... transpose?
 					transform = range(16):mapi(function(i)
 						return p.xform.ptr[i-1]
 					end),
@@ -715,7 +666,6 @@ print('ntris.size', ntris.size)
 	-- invalidate
 	mesh.edges = nil
 	mesh.edgeIndexBuf = nil
-	mesh.allOverlappingEdges = nil
 	mesh.edges2 = nil
 	mesh.loadedGL = nil
 	mesh.vtxBuf = nil
@@ -745,7 +695,10 @@ local function drawTileMeshPlaces(mesh)
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
 	for _,p in ipairs(mesh.tilePlaces) do
-		gl.glVertex3f(p.pos:unpack())
+		gl.glVertex3f(
+			p.xform.ptr[3],
+			p.xform.ptr[7],
+			p.xform.ptr[11])
 	end
 	gl.glPointSize(1)
 	gl.glLineWidth(3)
@@ -765,8 +718,7 @@ local function drawTileMeshPlaces(mesh)
 	gl.glLineWidth(1)
 end
 
-local function drawTileMeshPlanes(mesh, angleThresholdInDeg)
-	assert(angleThresholdInDeg)
+local function drawTileMeshPlanes(mesh)
 	local gl = require 'gl'
 	gl.glEnable(gl.GL_BLEND)
 	gl.glDepthMask(gl.GL_FALSE)
@@ -812,7 +764,7 @@ end
 
 -- draw lines of triGroups[]  .borderEdges[]
 -- this duplicates drawUnwrapUVEdges except for the mesh.triGroups
-local function drawTileMeshEdges(mesh, angleThresholdInDeg)
+local function drawTileMeshEdges(mesh)
 	if not mesh.triGroups then return end
 	local alpha = .5
 	local gl = require 'gl'

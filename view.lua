@@ -59,8 +59,6 @@ end
 function App:initGL(...)
 	App.super.initGL(self, ...)
 
-	self.unwrapAngleThresholdInDeg = 5
-
 	self.view.znear = .1
 	self.view.zfar = 40000
 
@@ -136,20 +134,19 @@ print('#unique triangles', mesh.triIndexes.size/3)
 	if cmdline.unwrapuv then
 -- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
 		timer('unwrapping uvs', function()
-			unwrapUVs{
-				mesh = mesh,
-				angleThresholdInDeg = self.unwrapAngleThresholdInDeg,
-			}
+			unwrapUVs(mesh)
 		end)
 	end
 	if cmdline.tilemesh or cmdline.tilemeshmerge then
 		-- tile omesh onto mesh in-place
-		tileMesh(
-			mesh,
-			cmdline.tilemesh or cmdline.tilemeshmerge,
-			cmdline.tilemeshmerge and mesh:clone() or nil,
-			self.unwrapAngleThresholdInDeg
-		)
+		local srcmesh
+		if cmdline.tilemeshmerge then
+			srcmesh = mesh:clone()
+		end
+		tileMesh(mesh, cmdline.tilemesh or cmdline.tilemeshmerge)
+		if cmdline.tilemeshmerge then
+			mesh:combine(srcmesh)
+		end
 	end
 --]]
 
@@ -388,16 +385,16 @@ function App:update()
 		drawUnwrapUVGraph(mesh)
 	end
 	if self.drawUnwrapUVEdges then
-		drawUnwrapUVEdges(mesh, self.unwrapAngleThresholdInDeg)
+		drawUnwrapUVEdges(mesh)
 	end
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
 	end
 	if self.drawTileMeshPlanes then
-		drawTileMeshPlanes(mesh, self.unwrapAngleThresholdInDeg)
+		drawTileMeshPlanes(mesh)
 	end
 	if self.drawTileMeshEdges then
-		drawTileMeshEdges(mesh, self.unwrapAngleThresholdInDeg)
+		drawTileMeshEdges(mesh)
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -769,14 +766,11 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'UV' then
-			ig.luatableInputFloat('unwrap angle threshold', self, 'unwrapAngleThresholdInDeg')
+			ig.luatableInputFloat('unwrap angle threshold', mesh, 'angleThresholdInDeg')
 
 			if ig.igButton'unwrap uvs' then
 				timer('unwrapping uvs', function()
-					unwrapUVs{
-						mesh = self.mesh,
-						angleThresholdInDeg = self.unwrapAngleThresholdInDeg,
-					}
+					unwrapUVs(mesh)
 				end)
 				if mesh.loadedGL then
 					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
@@ -789,10 +783,7 @@ function App:updateGUI()
 			self.placementFilename = self.placementFilename or ''
 			ig.luatableInputText('placement filename', self, 'placementFilename')
 			if ig.igButton'tile mesh' then
-				tileMesh(
-					mesh,
-					self.placementFilename
-				)
+				tileMesh(mesh, self.placementFilename)
 			end
 
 			ig.igEndMenu()
@@ -832,7 +823,7 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tile clip edges', self, 'drawTileMeshEdges')
 
 			if ig.igButton'find holes' then
-				self.debugDrawLoops, self.debugDrawLines = self.mesh:findBadEdges()
+				self.debugDrawLoops, self.debugDrawLines = mesh:findBadEdges()
 			end
 			if ig.igButton'clear hole annotations' then
 				self.debugDrawLoops, self.debugDrawLines = nil

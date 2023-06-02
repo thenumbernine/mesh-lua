@@ -5,13 +5,9 @@ local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local quatf = require 'vec-ffi.quatf'
 
-local function unwrapUVs(args)
-	local mesh = assert(args.mesh)
-	local angleThresholdInDeg = args.angleThresholdInDeg or 5
-	local cosAngleThreshold = math.cos(math.rad(angleThresholdInDeg))
-
+local function unwrapUVs(mesh)
 	mesh:breakAllVertexes()
-	mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+	mesh:calcAllOverlappingEdges()
 	-- invalidate
 	mesh.vtxBuf = nil
 	mesh.vtxAttrs = nil
@@ -437,6 +433,8 @@ tsrc.v1*-------*
 			end
 		end
 	end
+	
+	local cosAngleThreshold = math.cos(math.rad(mesh.angleThresholdInDeg))
 
 	-- walls
 	local function floodFillMatchingNormalNeighbors(t, tsrc, e, alreadyFilled)
@@ -835,9 +833,9 @@ local function drawUnwrapUVGraph(mesh)
 end
 
 -- draw the edges that are folded over.
-local function drawUnwrapUVEdges(mesh, angleThresholdInDeg)
+local function drawUnwrapUVEdges(mesh)
 	if not mesh.edges2 then
-		mesh:calcAllOverlappingEdges(angleThresholdInDeg)
+		mesh:calcAllOverlappingEdges()
 	end
 	local alpha = .5
 	local gl = require 'gl'
