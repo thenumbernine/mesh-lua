@@ -502,7 +502,7 @@ function App:update()
 	elseif self.editMode == editModeForName.tri then
 		self.hoverTri, self.bestTriPt = self:findClosestTriToMouse()
 		if not self.hoverTri then self.bestTriPt = nil end
-		--[[
+		-- [[
 		local bestgroup
 		if self.hoverTri then
 			for j,g in ipairs(mesh.groups) do
@@ -510,7 +510,7 @@ function App:update()
 					bestgroup = g.name
 				end
 			end
-			--print('clicked on material', bestgroup, 'tri', self.hoverTri)
+			print('clicked on material', bestgroup, 'tri', self.hoverTri/3)
 		end
 		--]]
 		if self.mouse.leftPress then

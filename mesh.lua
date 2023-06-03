@@ -535,13 +535,13 @@ function Mesh:triVtxPos(i)
 end
 
 function Mesh:removeEmptyTris()
-	print('before removeEmptyTris', #self.tris)
-	for i,t in ipairs(self.tris) do
-		if t.area < 1e-7 then
+	assert(#self.tris * 3 == self.triIndexes.size)
+	for i=#self.tris,1,-1 do
+		if self.tris[i].area < 1e-7 then
 			self:removeTri(3*(i-1))
 		end
 	end
-	print('after removeEmptyTris', #self.tris)
+	assert(#self.tris * 3 == self.triIndexes.size)
 end
 
 -- rebuild .tris from .triIndexes
@@ -1254,22 +1254,22 @@ end
 function Mesh:replaceVertex(from,to)
 --print('replacing vertex ' ..from..' with '..to)
 	assert(from > to)
-	assert(from >= 0 and from <= self.vtxs.size)
-	assert(to >= 0 and to <= self.vtxs.size)
+	assert(from >= 0 and from < self.vtxs.size)
+	assert(to >= 0 and to < self.vtxs.size)
 	-- replace in .tris
 	for j=self.triIndexes.size-3,0,-3 do
-		local t = self.triIndexes.v + j
+		local tp = self.triIndexes.v + j
 		for i=0,2 do
-			if t[i] == from then t[i] = to end
+			if tp[i] == from then tp[i] = to end
 		end
 	end
 end
 
 function Mesh:removeDegenerateTriangles()
 	for i=self.triIndexes.size-3,0,-3 do
-		local t = self.triIndexes.v + i
+		local tp = self.triIndexes.v + i
 		for j=2,1,-1 do
-			if t[j] == t[j-1] then
+			if tp[j] == tp[j-1] then
 --print('removing degenerate tri '..i..' with duplicate vertices')
 				self:removeTri(i)
 				break
@@ -1307,14 +1307,14 @@ function Mesh:removeVertex(vi)
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
 	-- if you just straight up remove a vertex then the tris and faces might go out of sync
 	for j=self.triIndexes.size-3,0,-3 do
-		local t = self.triIndexes.v + j
+		local tp = self.triIndexes.v + j
 		for i=0,2 do
-			if t[i] == vi then
+			if tp[i] == vi then
 				--error("found a to-be-removed vertex index in a tri.  you should merge it first, or delete tris containing it first.")
 				self:removeTri(j)
 				break
-			elseif t[i] > vi then
-				t[i] = t[i] - 1
+			elseif tp[i] > vi then
+				tp[i] = tp[i] - 1
 			end
 		end
 	end
