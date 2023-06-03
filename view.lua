@@ -149,7 +149,8 @@ print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():rever
 
 	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
 	if cmdline.unwrapuv then
--- [[ calculate unique volumes / calculate any distinct pieces on them not part of the volume
+		-- calculate unique volumes / calculate any distinct pieces on them not part of the volume
+		-- unwrapUVs requires an angle threshold of 5 deg or so ... the default in Mesh right now
 		timer('unwrapping uvs', function()
 			unwrapUVs(mesh)
 		end)

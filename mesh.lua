@@ -221,6 +221,7 @@ function Mesh:combine(...)
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
+	self.edges2 = nil
 	self:unloadGL()
 	return self
 end
@@ -1785,6 +1786,8 @@ function Mesh:removeInternalTris()
 
 	self.edges = nil
 	self.edgeIndexBuf = nil
+	self.edges2 = nil
+	self:unloadGL()
 end
 
 -- regenerate the vertex normals based on the face normals, weighted average by angle (tesselation-independent and curvature-driven)

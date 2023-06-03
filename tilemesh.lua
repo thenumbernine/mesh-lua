@@ -202,12 +202,6 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
 --print('uv origin', ti, uvorigin2D, uvorigin3D)
 			
-				-- the transform from tile-mesh to surface scale/spatialConvention
-				--  store for later
-				local modelToSurfXForm = matrix3x3To4x4(t.basis)
-					* matrix3x3To4x4(spatialConvention)
-					* scaleMat4x4(scale)
-
 				local omeshBBox = omesh.bbox
 
 				-- [[ also store the bbox of the omesh under this transform?
@@ -217,8 +211,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					-- get omesh bbox corner
 					local c = omeshBBox:corner(corner)
 					-- convert to texcoord space
-					local ctc = 
-						matrix3x3To4x4(spatialConvention)
+					local ctc = matrix3x3To4x4(spatialConvention)
 						* scaleMat4x4(scale)
 						* matrix_ffi{c.s[0], c.s[1], c.s[2], 1}
 					-- convert to texcoord space
@@ -265,119 +258,100 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				placementBBox.min = placementBBox.min:map(math.floor) - 2
 				placementBBox.max = placementBBox.max:map(math.ceil) + 2
 --print('placementBBox', from, 'to' , placementBBox)
+				local placementSize = placementBBox:size() + 1
 				for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 					for pv=placementBBox.min.y,placementBBox.max.y+.01 do
 -- if groups are contiguous unwrapped texcoords then there should be one (pu,pv) per group right?					
+
+						-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
+						-- but adding jitter before the test will cause some points to go outside and fail the test.  this is bad too.
+						-- so I have to test without jitter, then later introduce jitter.
+						local jitterUV = placementCoordXForm * matrix_ffi{
+							pu + (math.random() * 2 - 1) * jitter[1],
+							pv + (math.random() * 2 - 1) * jitter[2],
+						}
+
+						--[[
+						texcoord = uvbasis^-1 * (placePos - uvorigin3D) + uvorigin2D
+						uvbasis * (texcoord - uvorigin2D) = placePos - uvorigin3D
+						placePos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
+
+						with placement-lattice transforms
+						placementCoords = placementXForm * texcoord
+						placementXFormInv * placementCoords = texcoord
+						--]]
+						-- this is the lattice (unjittered) pos
+						-- needs testing of position versus triangle b.c.c. to not cause gaps in the lattice
+						-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
+						-- then you have a brick wall with a brick missing from the middle of it.
+						local jitteredPos = uvorigin3D
+							+ t.basis[1] * (jitterUV[1] - uvorigin2D.x)
+							+ t.basis[2] * (jitterUV[2] - uvorigin2D.y)
+
+						-- test if it's if in tri (barycentric coord test) then continue
+						-- use the unjittered positions for the test so we don't get holes in the lattice
+						-- later we will bcc test the closest point on the placed mesh bbox to the tri
+						local bcc = t:calcBCC(jitteredPos, mesh)
+						local minbcc = math.min(bcc:unpack())
+							
 						local key = pu..','..pv
-						if not placementsSoFar[key] then
-							placementsSoFar[key] = true
-
-							-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
-							-- but adding jitter before the test will cause some points to go outside and fail the test.  this is bad too.
-							-- so I have to test without jitter, then later introduce jitter.
-							local uv = placementCoordXForm * matrix_ffi{pu, pv}
-							uv = vec2f(uv:unpack())
---print(uv)
-							local duv = uv - uvorigin2D
-							
-							local jitterPlacement = matrix_ffi{
-								(math.random() * 2 - 1) * jitter[1],
-								(math.random() * 2 - 1) * jitter[2],
+						local placement = placementsSoFar[key]
+						if not placement then 
+							placementsSoFar[key] = {
+								minbcc = minbcc,
+								jitteredPos = jitteredPos,
+								t = t,
 							}
-							local jitterUV = placementCoordXForm * jitterPlacement
-
-							--[[
-							texcoord = uvbasis^-1 * (placePos - uvorigin3D) + uvorigin2D
-							uvbasis * (texcoord - uvorigin2D) = placePos - uvorigin3D
-							placePos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
-
-							with placement-lattice transforms
-							placementCoords = placementXForm * texcoord
-							placementXFormInv * placementCoords = texcoord
-							--]]
-							-- this is the lattice (unjittered) pos
-							-- needs testing of position versus triangle b.c.c. to not cause gaps in the lattice
-							local placePos = t.basis[1] * duv.x + t.basis[2] * duv.y + uvorigin3D
-							-- add jitter later.  otherwise a lattice point could jitter outside of the triangle and fail the bcc test
-							-- then you have a brick wall with a brick missing from the middle of it.
-							local jitteredPos = placePos + t.basis[1] * jitterUV[1] + t.basis[2] * jitterUV[2]
-							
-							local xform = translateMat4x4(jitteredPos) * modelToSurfXForm
-
-							-- [[
-							-- test if it's if in tri (barycentric coord test) then continue
-							-- use the unjittered positions for the test so we don't get holes in the lattice
-							-- later we will bcc test the closest point on the placed mesh bbox to the tri
-							local bcc = t:calcBCC(jitteredPos, mesh)
-							local posInside = bcc.x >= 0 and bcc.y >= 0 and bcc.z >= 0
-							--]]
-							--[[ TODO prelim bbox test ...
-							-- if any corners in placement-space are within the tri ... continue
-							local allInside = true
-							local anyInside = false
-							for _,ctc in ipairs(cornersTC) do
-								local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + jitteredPos
-								local cornerInside = t:insideBCC(cornerPos, mesh)
-								allInside = allInside and cornerInside
-								anyInside = anyInside or cornerInside
-							end
-							--]]
-							-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
-							--if anyInside 
-							--and not allInside 
-							--then
-							local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
-							local allInside = false
-							if not clipped then
-								-- ... then the mesh is all outside
-							elseif anythingRemoved then
-								-- then part of the mesh was inside
-								merged:combine(clipped)
-							else
-								-- all was inside
-								allInside = true --posInside
-							end
-						
-
-	--print(uv, inside)
-							if allInside then
-							--testing:
-							--if anyInside and not allInside then
-								--[[
-								then place an instance of omesh
-								get the transform rotation and scale to the location on the poly
-								if unwrapuv() was just run then .tri[] .uvbasis3D and 2D will still exist
-
-								total transform of scale->rotate->place
-								TODO store basis as a matrix_ffi ?
-								TODO store a tris[] c buffer containing ... TBN frame, COM, area
-								and for Lua stuff add a *new* table
-								
-								dstvtxpos = vertex location on tiled geometry
-								srcvtxpos = vertex location in the source tile mesh
-								dstvtxpos = placePos + uvbasis * spatialConvention * scale * srcvtxpos
-								
-								solve for srcvtxpos:
-								srcvtxpos = scale^-1 * spatialConvention^-1 * uvbasis^-1 * (dstvtxpos - placePos)
-								substitute srcvtxpos == bboxcorner:
-								bboxcorner = scale^-1 * spatialConvention^-1 * uvbasis^-1 * (dstvtxpos - placePos)
-							
-								substitute placePos:
-								placePos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D
-								dstvtxpos = uvbasis * (texcoord - uvorigin2D) + uvorigin3D + uvbasis * spatialConvention * scale * srcvtxpos
-								dstvtxpos - uvorigin3D = uvbasis * (texcoord - uvorigin2D + spatialConvention * scale * srcvtxpos)
-							
-								substitute srcvtxpos == bboxcorner:
-								dstvtxpos - uvorigin3D = uvbasis * (texcoord - uvorigin2D + spatialConvention * scale * bboxcorner)
-								texcoord = uvbasis^-1 * (dstvtxpos - uvorigin3D) + uvorigin2D - spatialConvention * scale * bboxcorner
-								--]]
-								mesh.tilePlaces:insert{
-									filename = geomInst.filename,
-									xform = xform,
-								}
-							end
+						elseif minbcc > placement.minbcc then	-- use the max of the minbcc
+							placement.minbcc = minbcc
+							placement.jitteredPos = jitteredPos
+							placement.t = t
 						end
 					end
+				end
+			end
+
+			for key,pl in pairs(placementsSoFar) do
+				--local pu, pv = string.split(key,','):mapi(function(x) return tonumber(x) end):unpack()
+				local jitteredPos = pl.jitteredPos
+				local t = pl.t
+				
+				local xform = translateMat4x4(jitteredPos) * matrix3x3To4x4(t.basis)
+					* matrix3x3To4x4(spatialConvention)
+					* scaleMat4x4(scale)
+
+				--[[ TODO prelim bbox test ...
+				-- if any corners in placement-space are within the tri ... continue
+				local allInside = true
+				local anyInside = false
+				for _,ctc in ipairs(cornersTC) do
+					local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + jitteredPos
+					local cornerInside = t:insideBCC(cornerPos, mesh)
+					allInside = allInside and cornerInside
+					anyInside = anyInside or cornerInside
+				end
+				--]]
+				-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
+				--if anyInside 
+				--and not allInside 
+				--then
+				local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
+				local allInside = false
+				if not clipped then
+					-- ... then the mesh is all outside
+				elseif anythingRemoved then
+					-- then part of the mesh was inside
+					merged:combine(clipped)
+				else
+					-- all was inside
+					allInside = true
+				end
+			
+				if allInside then
+					mesh.tilePlaces:insert{
+						filename = geomInst.filename,
+						xform = xform,
+					}
 				end
 			end
 		end
