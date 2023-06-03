@@ -427,81 +427,82 @@ end
 -- if a vertex is near an edge (and no vertex) then split the edge and make another vertex next to it
 -- TODO this is tempting me to store data like the OBJ file format, as unique positions and unique traits, but not as unique vertexes grouping all those traits...
 function Mesh:splitVtxsTouchingEdges()
-	print('splitVtxsTouchingEdges BEGIN')
-	local edgeLenEpsilon = 1e-7		-- how long an edge has to be for considering it a legit edge - and considering it for splitting
-	local edgeDistEpsilon = 1e-3	-- how close a vertex has to be to the edge
-	local intervalEpsilon = 1e-3	-- how cloes to the interval endpoints a vertex has to be to consider splitting
+	timer('splitVtxsTouchingEdges', function()
+		local edgeLenEpsilon = 1e-7		-- how long an edge has to be for considering it a legit edge - and considering it for splitting
+		local edgeDistEpsilon = 1e-3	-- how close a vertex has to be to the edge
+		local intervalEpsilon = 1e-3	-- how cloes to the interval endpoints a vertex has to be to consider splitting
 ::tryagain::
-	for _,g in ipairs(self.groups) do
-		for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
---local debug = ({[6]=1,[8]=1,[9]=1,[17]=1})[ti]	-- these re the bad edges on target_basic bricks that need to be correctly split
---local dprint = debug and print or function() end
-			local tp = self.triIndexes.v + 3*ti
---dprint('TRI', ti, 'with indexes', tp[0], tp[1], tp[2])
-			for j=0,2 do
-				local iv0 = tp[j]
-				local iv1 = tp[(j+1)%3]
-				local iv2 = tp[(j+2)%3]
---dprint('EDGE', iv0, iv1)
-				local v0 = ffi.new('MeshVertex_t', self.vtxs.v[iv0])
-				local v1 = ffi.new('MeshVertex_t', self.vtxs.v[iv1])
-				local edgeDir = v1.pos - v0.pos
-				local edgePlanePos = .5 * (v1.pos + v0.pos)
-				local edgeDirLen = edgeDir:norm()
---dprint('...with len', edgeDirLen)
-				if edgeDirLen > edgeLenEpsilon then
-					edgeDir = edgeDir / edgeDirLen
-					local edgePlane = plane3f():fromDirPt(edgeDir, edgePlanePos)
-					local s0 = edgePlane:dist(v0.pos)	-- dist along the edge of v0
-					local s1 = edgePlane:dist(v1.pos)	-- dist along the edge of v1
---dprint('... and edge interval '..s0..' to '..s1)
-					assert(s1 >= s0) -- because edgeDir points from v0 to v1
-					for i=0,self.vtxs.size-1 do
-						local vi = ffi.new('MeshVertex_t', self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
-						if iv0 ~= i and iv1 ~= i and iv2 ~= i then
-							local edgeDist = edgePlane:projectVec(vi.pos - edgePlanePos):norm()	-- how far from the edge is vi
-							--print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
-							-- if this vtx is close to the dge
---dprint('testing against vertex', i, 'with edge dist', edgeDist)
-							if edgeDist < edgeDistEpsilon then
-								local s = edgePlane:dist(vi.pos)	-- dist along the edge of vi
---dprint('vertex '..i..' has dist '..edgeDist..' and edge param '..s)
-								-- and it is far from either endpoint of the edge
-								if math.abs(s - s0) > intervalEpsilon
-								and math.abs(s - s1) > intervalEpsilon
-								and s0 < s and s < s1
-								then
-									-- then we have to split this triangle at this point in the interval
---print("SPLITTING EDGE", v0.pos, v1.pos, 'at', vi.pos)
-									local f = (s - s0) / (s1 - s0)
-									local iv01 = self.vtxs.size
-									local nvtx = self.vtxs:emplace_back()
-									nvtx.pos = math.mix(v0.pos, v1.pos, f)
-									nvtx.texcoord = math.mix(v0.texcoord, v1.texcoord, f)
-									nvtx.normal = math.mix(v0.normal, v1.normal, f)
+		for _,g in ipairs(self.groups) do
+			for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
+	--local debug = ({[6]=1,[8]=1,[9]=1,[17]=1})[ti]	-- these re the bad edges on target_basic bricks that need to be correctly split
+	--local dprint = debug and print or function() end
+				local tp = self.triIndexes.v + 3*ti
+	--dprint('TRI', ti, 'with indexes', tp[0], tp[1], tp[2])
+				for j=0,2 do
+					local iv0 = tp[j]
+					local iv1 = tp[(j+1)%3]
+					local iv2 = tp[(j+2)%3]
+	--dprint('EDGE', iv0, iv1)
+					local v0 = ffi.new('MeshVertex_t', self.vtxs.v[iv0])
+					local v1 = ffi.new('MeshVertex_t', self.vtxs.v[iv1])
+					local edgeDir = v1.pos - v0.pos
+					local edgePlanePos = .5 * (v1.pos + v0.pos)
+					local edgeDirLen = edgeDir:norm()
+	--dprint('...with len', edgeDirLen)
+					if edgeDirLen > edgeLenEpsilon then
+						edgeDir = edgeDir / edgeDirLen
+						local edgePlane = plane3f():fromDirPt(edgeDir, edgePlanePos)
+						local s0 = edgePlane:dist(v0.pos)	-- dist along the edge of v0
+						local s1 = edgePlane:dist(v1.pos)	-- dist along the edge of v1
+	--dprint('... and edge interval '..s0..' to '..s1)
+						assert(s1 >= s0) -- because edgeDir points from v0 to v1
+						for i=0,self.vtxs.size-1 do
+							local vi = ffi.new('MeshVertex_t', self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
+							if iv0 ~= i and iv1 ~= i and iv2 ~= i then
+								local edgeDist = edgePlane:projectVec(vi.pos - edgePlanePos):norm()	-- how far from the edge is vi
+								--print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
+								-- if this vtx is close to the dge
+	--dprint('testing against vertex', i, 'with edge dist', edgeDist)
+								if edgeDist < edgeDistEpsilon then
+									local s = edgePlane:dist(vi.pos)	-- dist along the edge of vi
+	--dprint('vertex '..i..' has dist '..edgeDist..' and edge param '..s)
+									-- and it is far from either endpoint of the edge
+									if math.abs(s - s0) > intervalEpsilon
+									and math.abs(s - s1) > intervalEpsilon
+									and s0 < s and s < s1
+									then
+										-- then we have to split this triangle at this point in the interval
+	--print("SPLITTING EDGE", v0.pos, v1.pos, 'at', vi.pos)
+										local f = (s - s0) / (s1 - s0)
+										local iv01 = self.vtxs.size
+										local nvtx = self.vtxs:emplace_back()
+										nvtx.pos = math.mix(v0.pos, v1.pos, f)
+										nvtx.texcoord = math.mix(v0.texcoord, v1.texcoord, f)
+										nvtx.normal = math.mix(v0.normal, v1.normal, f)
 
-									-- [[ insertTri
-									local nti = ti + 1
-									tp[j] = iv0
-									tp[(j+1)%3] = iv01
-									tp[(j+2)%3] = iv2
-									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv2)
-									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv1)
-									self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
---dprint("mod'd", self.triIndexes.v[3*ti+0], self.triIndexes.v[3*ti+1], self.triIndexes.v[3*ti+2])
---dprint('made', self.triIndexes.v[3*ti+3], self.triIndexes.v[3*ti+4], self.triIndexes.v[3*ti+5])
-									self.tris:insert(ti+1, Triangle{
-										index = nti+1,	-- 1-based
-									})
-									for _,g2 in ipairs(self.groups) do
-										if nti <= g2.triFirstIndex then
-											g2.triFirstIndex = g2.triFirstIndex + 1
+										-- [[ insertTri
+										local nti = ti + 1
+										tp[j] = iv0
+										tp[(j+1)%3] = iv01
+										tp[(j+2)%3] = iv2
+										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv2)
+										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv1)
+										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
+	--dprint("mod'd", self.triIndexes.v[3*ti+0], self.triIndexes.v[3*ti+1], self.triIndexes.v[3*ti+2])
+	--dprint('made', self.triIndexes.v[3*ti+3], self.triIndexes.v[3*ti+4], self.triIndexes.v[3*ti+5])
+										self.tris:insert(ti+1, Triangle{
+											index = nti+1,	-- 1-based
+										})
+										for _,g2 in ipairs(self.groups) do
+											if nti <= g2.triFirstIndex then
+												g2.triFirstIndex = g2.triFirstIndex + 1
+											end
 										end
+										g.triCount = g.triCount + 1
+										-- I can only split a triangl eonce, then  have to operate on the rest of the split tris
+										goto tryagain
+										--]]
 									end
-									g.triCount = g.triCount + 1
-									-- I can only split a triangl eonce, then  have to operate on the rest of the split tris
-									goto tryagain
-									--]]
 								end
 							end
 						end
@@ -509,12 +510,10 @@ function Mesh:splitVtxsTouchingEdges()
 				end
 			end
 		end
-	end
-	print('splitVtxsTouchingEdges END')
+	end)
 	self:rebuildTris()
 	self:mergeMatchingVertexes()	-- better to merge vtxs than remove empty tris cuz it will keep seams in models
 	self:unloadGL()
-	return modified
 end
 
 -- 0-based, index-array so 3x from unique tri
@@ -1081,26 +1080,29 @@ print('found '..#triGroups..' groups of triangles')
 	-- while we're here, find all loops that are boundaries to our surface
 	-- these are the red edges
 	local loops, lines = self:findBadEdges()
-	for _,loop in ipairs(loops) do
-		for i=1,#loop do
-			local e = assert(loop[i].e)
-			local t = e.tris[1]
-			local i1 = self:getIndexForLoopChain(loop[i])
-			local i2 = self:getIndexForLoopChain(loop[i%#loop+1])
-			local v1 = self.vtxs.v[i1].pos
-			local v2 = self.vtxs.v[i2].pos
-			local edgeDir = v2 - v1
-			local edgeDirLen = edgeDir:norm()
-			if edgeDirLen > 1e-7 then
-				local tside = e.clipPlane:test(t.com)
-				edgeDir = edgeDir / edgeDirLen
-				local g = triGroupForTri[t]
-				-- what clip plane ....
-				-- one at a right angle to the plane and edge
-				g.borderEdges:insert{edge = e, clipPlane = tside and e.clipPlane or -e.clipPlane}
+	for _,loopsOrLines in ipairs{loops, lines} do
+		for _,lol in ipairs(loopsOrLines) do
+			for i=1,(loopsOrLines==loops and #lol or #lol-1) do
+				local e = assert(lol[i].e)
+				local t = e.tris[1]
+				local i1 = self:getIndexForLoopChain(lol[i])
+				local i2 = self:getIndexForLoopChain(lol[i%#lol+1])
+				local v1 = self.vtxs.v[i1].pos
+				local v2 = self.vtxs.v[i2].pos
+				local edgeDir = v2 - v1
+				local edgeDirLen = edgeDir:norm()
+				if edgeDirLen > 1e-7 then
+					local tside = e.clipPlane:test(t.com)
+					edgeDir = edgeDir / edgeDirLen
+					local g = triGroupForTri[t]
+					-- what clip plane ....
+					-- one at a right angle to the plane and edge
+					g.borderEdges:insert{edge = e, clipPlane = tside and e.clipPlane or -e.clipPlane}
+				end
 			end
 		end
 	end
+	-- lines aren't supposed to exist -- that's a sign of a really really bad mesh.
 --]]
 	self.triGroupForTri = triGroupForTri
 end
