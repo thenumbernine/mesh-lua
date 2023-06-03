@@ -430,7 +430,7 @@ tsrc.v1*-------*
 			end
 		end
 	end
-	
+
 	local cosAngleThreshold = math.cos(math.rad(mesh.angleThresholdInDeg))
 
 	-- walls
@@ -857,7 +857,7 @@ local function drawUnwrapUVEdges(mesh)
 		--else
 		--	gl.glColor4f(1,1,1, alpha)
 
-			-- pick one of the two edges.  either will produce the same line ray 
+			-- pick one of the two edges.  either will produce the same line ray
 			-- use intervals for start/finish along edge
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
@@ -867,7 +867,7 @@ local function drawUnwrapUVEdges(mesh)
 			gl.glVertex3fv(v1.s)
 			gl.glVertex3fv(v2.s)
 
-	--[[ 
+	--[[
 			local centerPt = e.planePos + e.plane.n * ((s1 - s0) * .5)
 			local normAvg = (t1.normal + t2.normal):normalize()
 			gl.glColor3f(1,1,0)

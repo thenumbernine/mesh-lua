@@ -191,7 +191,7 @@ local function tileMesh(mesh, placeFn)
 				local tvtxs = range(0,2):mapi(function(i)
 					return mesh.vtxs.v[tp[i]]
 				end)
-				
+
 print('placing tri '..t.index..' with group '..tg.tris:mapi(function(t) return t.index end):concat', ')
 print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 				local uvorigin2D = vec2f()
@@ -201,12 +201,12 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					+ vec2f(.01, .01)
 				local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
 --print('uv origin', ti, uvorigin2D, uvorigin3D)
-			
+
 				local omeshBBox = omesh.bbox
 
 				-- [[ also store the bbox of the omesh under this transform?
 				-- this might help some edges, but it causes overlaps on planar edges
-				-- TODO these aren't in texcoord space, they're in the global mesh space ... 
+				-- TODO these aren't in texcoord space, they're in the global mesh space ...
 				local cornersTC = range(0,7):mapi(function(corner)
 					-- get omesh bbox corner
 					local c = omeshBBox:corner(corner)
@@ -242,7 +242,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						dvpos:dot(t.basis[2])
 					) + uvorigin2D
 					local placementCoord = placementCoordXFormInv * matrix_ffi{tc.x, tc.y}
-				
+
 					--[[ stretch in placement space to the placement coord
 					placementBBox:stretch(vec2f(placementCoord:unpack()))
 					--]]
@@ -261,7 +261,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				local placementSize = placementBBox:size() + 1
 				for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 					for pv=placementBBox.min.y,placementBBox.max.y+.01 do
--- if groups are contiguous unwrapped texcoords then there should be one (pu,pv) per group right?					
+-- if groups are contiguous unwrapped texcoords then there should be one (pu,pv) per group right?
 
 						-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
 						-- but adding jitter before the test will cause some points to go outside and fail the test.  this is bad too.
@@ -293,10 +293,10 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						-- later we will bcc test the closest point on the placed mesh bbox to the tri
 						local bcc = t:calcBCC(jitteredPos, mesh)
 						local minbcc = math.min(bcc:unpack())
-							
+
 						local key = pu..','..pv
 						local placement = placementsSoFar[key]
-						if not placement then 
+						if not placement then
 							placementsSoFar[key] = {
 								minbcc = minbcc,
 								jitteredPos = jitteredPos,
@@ -315,7 +315,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				--local pu, pv = string.split(key,','):mapi(function(x) return tonumber(x) end):unpack()
 				local jitteredPos = pl.jitteredPos
 				local t = pl.t
-				
+
 				local xform = translateMat4x4(jitteredPos) * matrix3x3To4x4(t.basis)
 					* matrix3x3To4x4(spatialConvention)
 					* scaleMat4x4(scale)
@@ -332,8 +332,8 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				end
 				--]]
 				-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
-				--if anyInside 
-				--and not allInside 
+				--if anyInside
+				--and not allInside
 				--then
 				local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
 				local allInside = false
@@ -346,7 +346,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					-- all was inside
 					allInside = true
 				end
-			
+
 				if allInside then
 					mesh.tilePlaces:insert{
 						filename = geomInst.filename,

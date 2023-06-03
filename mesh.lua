@@ -435,7 +435,7 @@ function Mesh:splitVtxsTouchingEdges()
 	for _,g in ipairs(self.groups) do
 		for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
 --local debug = ({[6]=1,[8]=1,[9]=1,[17]=1})[ti]	-- these re the bad edges on target_basic bricks that need to be correctly split
---local dprint = debug and print or function() end			
+--local dprint = debug and print or function() end
 			local tp = self.triIndexes.v + 3*ti
 --dprint('TRI', ti, 'with indexes', tp[0], tp[1], tp[2])
 			for j=0,2 do
@@ -450,7 +450,7 @@ function Mesh:splitVtxsTouchingEdges()
 				local edgeDirLen = edgeDir:norm()
 --dprint('...with len', edgeDirLen)
 				if edgeDirLen > edgeLenEpsilon then
-					edgeDir = edgeDir / edgeDirLen 
+					edgeDir = edgeDir / edgeDirLen
 					local edgePlane = plane3f():fromDirPt(edgeDir, edgePlanePos)
 					local s0 = edgePlane:dist(v0.pos)	-- dist along the edge of v0
 					local s1 = edgePlane:dist(v1.pos)	-- dist along the edge of v1
@@ -668,7 +668,7 @@ each .edges2[] entry has exctly 2 tris in it.  tris can have up to 3 edges2[] en
 tris with edges that are borders of open meshes will no be in edges2. but tehy wil be in .edges[]
 so adding them to edges2 is a big TODO
 
-TODO 
+TODO
 - get rid of .edges, and use this as the default edge structure instead
 
 angleThresholdInDeg is used in calcEdges2 for 'isPlanar' calculations
@@ -680,18 +680,18 @@ edgeAngleThreshold is used for ensuring those edges are aligned, so this must be
 --]]
 function Mesh:calcEdges2()
 	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
-	
+
 	local normEpsilon = 1e-7
 	--local edgeDistEpsilon = 1e-7 -- ... is too strict for roof
 	local edgeDistEpsilon = 1e-3
 	local edgeAngleThreshold = math.rad(1e-1)
 	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
-	
+
 	assert(#self.tris*3 == self.triIndexes.size)
-	
+
 	-- new edge structure
-	-- it only represents entire tri edges, like .edges (no subintervals) 
-	-- but it contains the normal, planar, etc data 
+	-- it only represents entire tri edges, like .edges (no subintervals)
+	-- but it contains the normal, planar, etc data
 	-- TODO this should be used to replace both
 	-- hmm but .edges is based on all matching vtx pairs shared by edges (so unlimited tris per edge)
 	-- while .edges2 is based on pairs of tri edges (so 2 tris at most per edge)
@@ -709,9 +709,9 @@ function Mesh:calcEdges2()
 	local normalThreshold = 1e-7
 	for i1=#self.tris,2,-1 do
 		local t1 = self.tris[i1]
-		if 
-		--t1.area >= areaThreshold and 
-		t1.normal:norm() > normalThreshold 
+		if
+		--t1.area >= areaThreshold and
+		t1.normal:norm() > normalThreshold
 		then
 			local tp1 = self.triIndexes.v + 3 * (i1 - 1)
 			for j1=1,3 do
@@ -725,9 +725,9 @@ function Mesh:calcEdges2()
 					edgeDir1 = edgeDir1 / edgeDir1Norm
 					for i2=i1-1,1,-1 do
 						local t2 = self.tris[i2]
-						if 
-						--t2.area >= areaThreshold and 
-						t2.normal:norm() > normalThreshold 
+						if
+						--t2.area >= areaThreshold and
+						t2.normal:norm() > normalThreshold
 						then
 							local tp2 = self.triIndexes.v + 3 * (i2 - 1)
 							for j2=1,3 do
@@ -741,7 +741,7 @@ function Mesh:calcEdges2()
 		--print('edges2 normals align:', i1-1, j1-1, i2-1, j2-1)
 										-- normals align, calculate distance
 										--local planePos = v11
-									
+
 										-- pick any point on line v1: v11 or v12
 										-- or an average is best (when testing tri COM on either side tof the dividing plane)
 										-- use the average of the two edges intersection with the plane, not just one edge arbitrarily
@@ -757,13 +757,13 @@ function Mesh:calcEdges2()
 										if edgeDirLen > 1e-7 then
 											edgeDir = edgeDir / edgeDirLen
 											-- this is the edge projection plane, used for calculating distances to determine the interval of edge tri edge along this (the averaged edge)
-											local plane = plane3f():fromDirPt(edgeDir, planePos)	
+											local plane = plane3f():fromDirPt(edgeDir, planePos)
 											-- find ray from the v1 line to any line on v2
 											-- project onto the plane normal
 											-- calculate the distance of the points both projected onto the plane
-											local dist = plane:projectVec(v21 - v11):norm() 	
+											local dist = plane:projectVec(v21 - v11):norm()
 											-- also calc dists of each vtx to one another
-											-- only consider if both edge vtxs match 
+											-- only consider if both edge vtxs match
 											-- no more subintervals
 											local dist_11_21 = (v11 - v21):norm()
 											local dist_12_22 = (v12 - v22):norm()
@@ -795,7 +795,7 @@ function Mesh:calcEdges2()
 													goodTris = goodTris + 1
 													s1 = plane:dist(.5 * (v12 + v21))
 													s2 = plane:dist(.5 * (v11 + v22))
-												
+
 													-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
 													normAvg = (t1.normal + t2.normal):normalize()
 													-- TODO member functions for edge getters
@@ -809,7 +809,7 @@ function Mesh:calcEdges2()
 														-- TODO test dot abs?  allow flipping of surface orientation?
 														isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
 														normAvg = normAvg,
-														
+
 														clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
 													}
 													self.edges2:insert(e)
@@ -882,7 +882,7 @@ function Mesh:findEdges(getIndex)
 					-- because in tilemesh I'm mixing .edges and .edges2
 					-- TODO build findBadEdges using .edges2 only
 					-- but tht gets into 'isPlanar' and the angleThreshold being everywhere ....
-					plane = plane, 
+					plane = plane,
 					planePos = vavg,
 					clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), vavg),
 					normAvg = vec3f(t.normal),	-- where should normAvg point? planar?  tri normal?
@@ -991,7 +991,7 @@ function Mesh:delaunayTriangulate()
 end
 
 --[[
-calculates .triGroups based on neighboring tris' edges' .isPlanar 
+calculates .triGroups based on neighboring tris' edges' .isPlanar
 calculates .triGroupForTri to map from each tri to .triGroups
 (this means if you regenerate all triangles it'll lose assocation ...
  ... unless I change .triGroupForTri to map from index to group)
@@ -1102,12 +1102,12 @@ print('found '..#triGroups..' groups of triangles')
 		end
 	end
 --]]
-	self.triGroupForTri = triGroupForTri 
+	self.triGroupForTri = triGroupForTri
 end
 
 -- clip the current mesh to the specified trigroup
 function Mesh:clipToTriGroup(g)
-	--[[ 
+	--[[
 	ARBITRARY POLYHEDRA/POLYTOPE CLIPPING FUNCTION
 
 	mesh inside poly algorithm ...
@@ -1116,20 +1116,20 @@ function Mesh:clipToTriGroup(g)
 	while #es > 0 do
 		e = pop an edge from es
 		if our point is on the front of e's plane ...
-			remove all edges whose segments are on the back side of e's plane 
+			remove all edges whose segments are on the back side of e's plane
 			if there's no edges left then we are inside
 		if our point is on the back of e's plane
-			remove all edges whose segments are in front of e's plane 
+			remove all edges whose segments are in front of e's plane
 			if there's no edges left, we're outside
 	end
-	
+
 	but how about for clipping a mesh to arbitrary planes?
 	for this I'll need clip() to return a mesh of what it cut away
 	and then i'll have to do some merges ....
 	--]]
-	
+
 	local anythingRemoved = false
-	
+
 	-- separate edgeInfos into a list of those with line segments touching the front of the plane
 	-- and those with line segments touchign the back fo the plane
 	-- a line segment can appear in both lists.
@@ -1146,12 +1146,12 @@ function Mesh:clipToTriGroup(g)
 		return getEdgesInFront(edgeInfos, plane),
 			getEdgesInFront(edgeInfos, -plane)
 	end
-	
+
 	-- clip a mesh against a polygon
 	local function clipMeshAgainstEdges(edgeInfos, clipped)
 		assert(#edgeInfos > 0)
 		local info = edgeInfos:remove()
-		-- clone and clip against the -plane -> backMesh 
+		-- clone and clip against the -plane -> backMesh
 		local backMesh = clipped:clone()
 		local backModified = backMesh:clip(-info.clipPlane)
 		if #backMesh.tris == 0 then
@@ -1581,7 +1581,7 @@ TODO I might need this but for all edge segments, based on 'edges2' and each sub
 function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
-	
+
 	-- TODO can I use edges2?  nah because edges2 is only between two triangles ...
 	-- TODO edges2 use 'getUniqueVtxs', and then cycle over all tris edges?
 	self:findEdges(function(i) return uniquevs[indexToUniqueV[i]] end)
@@ -1600,7 +1600,7 @@ function Mesh:findBadEdges()
 print('edges total', totalEdges, 'border', #border)
 assert(#self.tris*3 == self.triIndexes.size)
 for i,t in ipairs(self.tris) do assert(t.index == i) end
-	
+
 	-- now put in loops
 	local all = table(border)
 	local loops = table()
@@ -2024,7 +2024,7 @@ print('plane basis ex ey n', ex, ey, planenormal)
 		-- and then I need to sort along one basis vector
 		-- track edges
 		-- and fill in rhombuses as I go
-print'calc uv'		
+print'calc uv'
 		for _,l in ipairs(loop) do
 			local d = self:getPosForLoopChain(l) - planeorigin
 			l.uv = vec2f(d:dot(ex), d:dot(ey))
@@ -2034,7 +2034,7 @@ print'calc uv'
 		-- TODO pick origin of fan as a corner and reduce # of tris (or gen a lot of 0-area tris to be reduced later)
 		-- TODO this only works for convex polygons ...what about concave shapes? gets more complicated.
 		-- TODO TODO for that, sweep across the poly, keep track of edges, do just like with software rendering
-print'adding indices'		
+print'adding indices'
 		for j=2,#loop-1 do
 			self.triIndexes:push_back(self:getIndexForLoopChain(loop[1]))
 			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j]))
@@ -2197,7 +2197,7 @@ function Mesh:unloadGL()
 	-- when loading/unloading/calling glGenBuffers too many times (even with subsequent glDeleteBuffers) I'm getting sporatic GL_INVALID_OPERATIONS upon glGenBuffers ... even if it's just the 10th or so call.  wtf.
 	if self.vao then self.vao:release() end
 	if self.vtxBuf then self.vtxBuf:release() end
-	
+
 	self.vao = nil
 	self.vtxBuf = nil
 	self.vtxAttrs = nil

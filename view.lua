@@ -126,13 +126,13 @@ print('#unique triangles', mesh.triIndexes.size/3)
 			mesh:removeEmptyTris()
 			-- if two tris touch, or almost touch, then split them along the edge in common with their planes
 			-- maybe I don't have to do this yet ...
-			--mesh:splitTrisTouchingTris() 
+			--mesh:splitTrisTouchingTris()
 			-- merge vtxs with edges - i.e. split any edges where a vertex is overlapping it midway
 			mesh:splitVtxsTouchingEdges()
 			-- need these two calls or the edge-find doesn't find proper boundaries to target_complex
 			mesh:mergeMatchingVertexes(true, true)
 			mesh:removeEmptyTris()
-			
+
 			-- merge before delaunay ...
 			-- or will that screw up edges that might be used elsewhere?
 			-- TODO try to get by without doing this
@@ -405,12 +405,23 @@ function App:update()
 		mesh:drawVertexes(self.triExplodeDist, self.groupExplodeDist)
 	end
 	if self.debugDrawLoops then
-	--debugDrawLines	
-		gl.glColor3f(1,0,0)
+		gl.glColor3f(0,1,1)
 		gl.glLineWidth(3)
 		for _,loop in ipairs(self.debugDrawLoops) do
 			gl.glBegin(gl.GL_LINE_LOOP)
 			for _,l in ipairs(loop) do
+				gl.glVertex3f(mesh:getPosForLoopChain(l):unpack())
+			end
+			gl.glEnd()
+		end
+		gl.glLineWidth(1)
+	end
+	if self.debugDrawLines then
+		gl.glColor3f(1,0,0)
+		gl.glLineWidth(3)
+		for _,line in ipairs(self.debugDrawLines) do
+			gl.glBegin(gl.GL_LINE_STRIP)
+			for _,l in ipairs(line) do
 				gl.glVertex3f(mesh:getPosForLoopChain(l):unpack())
 			end
 			gl.glEnd()
@@ -505,11 +516,11 @@ function App:update()
 		if self.mouse.leftPress then
 			self.dragTri = self.hoverTri
 		end
-	
+
 	elseif self.editMode == editModeForName.insertMesh then
 		local lastPt = self.insertMeshPt
 		self.insertMeshTri, self.insertMeshPt = self:findClosestTriToMouse()
-		if not self.insertMeshTri then 
+		if not self.insertMeshTri then
 			self.insertMeshPt = nil
 			self.insertMeshBase = nil
 			self.insertMesh = nil
@@ -535,7 +546,7 @@ function App:update()
 					end
 				end
 				if #self.insertMesh.tris == 0 then self.insertMesh = nil end
-				if self.insertMesh then 
+				if self.insertMesh then
 					self.insertMesh:loadGL(self.shader)
 				end
 			end
@@ -748,7 +759,7 @@ function App:updateGUI()
 				end
 			end
 			ig.igPopID()
-			
+
 			ig.igText('reset view')
 			ig.igPushID_Str('reset view')
 			for i,name in ipairs(dirnames) do
@@ -890,11 +901,11 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tri normals', self, 'drawTriNormals')
 			ig.luatableCheckbox('draw tri basis', self, 'drawTriBasis')
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
-			
+
 			ig.igSeparator()
 			ig.luatableCheckbox('draw tile clip planes', self, 'drawTriPlanarGroupPlanes')
 			ig.luatableCheckbox('draw tile clip edges', self, 'drawTriPlanarGroupEdges')
-			
+
 
 			ig.igSeparator()
 			if ig.igButton'find holes' then
@@ -928,7 +939,7 @@ function App:updateGUI()
 			ig.luatableRadioButton('rotate mode', self, 'editMode', editModeForName.rotate)
 			ig.luatableRadioButton('edit vertex mode', self, 'editMode', editModeForName.vertex)
 			ig.luatableRadioButton('edit tri mode', self, 'editMode', editModeForName.tri)
-			
+
 			ig.igSeparator()
 			ig.luatableRadioButton('insert mesh mode', self, 'editMode', editModeForName.insertMesh)
 			self.triPlanarGroupPlacementFilename = self.triPlanarGroupPlacementFilename or ''
