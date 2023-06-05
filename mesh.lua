@@ -1108,6 +1108,8 @@ end
 	for _,g in ipairs(triGroups) do
 		g.borderEdges = table()
 	end
+	
+--[=[ old way - use overlapping edges, and then bad edges
 	for _,e in ipairs(self.edges2) do
 		local t1, t2 = table.unpack(e.tris)
 		local g1 = triGroupForTri[t1]
@@ -1166,6 +1168,61 @@ end
 	end
 	-- lines aren't supposed to exist -- that's a sign of a really really bad mesh.
 --]]
+--]=]
+-- [=[ new way - use all edges and exclude overlapping edges
+	assert(#self.tris*3 == self.triIndexes.size)
+	for ti=0,#self.tris-1 do
+		local t = self.tris[ti+1]
+		local tp = self.triIndexes.v + 3*ti
+		local g = assert(triGroupForTri[t])
+		for j=0,2 do
+			-- find any overlapping edges at this vtx of this tri
+			local foundAnyEdge
+			local foundClipEdge
+			for _,e in ipairs(self.edges2) do
+				for k=1,2 do
+					if e.tris[k] == t and e.triVtxIndexes[k] == j+1 then
+						foundAnyEdge = true
+						local ot = e.tris[3-k]
+						local g2 = assert(triGroupForTri[ot])
+						if g ~= g2 then
+							local tside = e.clipPlane:test(t.com)
+							g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
+							foundClipEdge = true
+							break
+						end
+					end
+				end
+				-- allow multiple clipPlane entries for the same edge?
+				--if foundClipEdge then break end
+			end
+			-- if we didn't find any adjacent triangles to this tri on this edge - whatsoever
+			-- - then we consider this a clip plane also
+			-- (this is what the findBadEdges was looking for, but it only works if our mesh is simply closed connected)
+			if not foundAnyEdge then
+				local v1 = self.vtxs.v[tp[j]].pos
+				local v2 = self.vtxs.v[tp[(j+1)%3]].pos
+				local edgeDir = v2 - v1
+				local edgeDirLen = edgeDir:norm()
+				if edgeDirLen > 1e-7 then
+					edgeDir = edgeDir / edgeDirLen
+					local planePos = v1
+					local plane = plane3f():fromDirPt(edgeDir, planePos)
+					local e = {
+						tris = {t},
+						plane = plane,
+						planePos = planePos,
+						clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), .5 * (v1 + v2)),
+						normAvg = vec3f(t.normal),
+						interval = {plane:dist(v1), plane:dist(v2)},
+					}
+					local tside = e.clipPlane:test(t.com)
+					g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
+				end
+			end
+		end
+	end
+--]=]
 	self.triGroupForTri = triGroupForTri
 end
 

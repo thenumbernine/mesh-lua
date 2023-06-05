@@ -162,10 +162,8 @@ for i=#tboxes,1,-1 do
 end
 
 tboxes:sort(function(a,b)
-	if a[1].z < b[1].z then return true end
-	if a[1].z > b[1].z then return false end
-	if a[1].y < b[1].y then return true end
-	if a[1].y > b[1].y then return false end
+	if a[1].z ~= b[1].z then return a[1].z < b[1].z end
+	if a[1].y ~= b[1].y then return a[1].y < b[1].y end
 	return a[1].x > b[1].x
 end)
 local numBinnedTris = 0
