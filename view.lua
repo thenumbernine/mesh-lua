@@ -106,8 +106,7 @@ function App:initGL(...)
 	self.curdir,curname = file(fn):getdir()
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	local mesh = OBJLoader():load(self.curfn)
-print('#unique vertexes', mesh.vtxs.size)
-print('#unique triangles', mesh.triIndexes.size/3)
+
 	-- TODO how to request this?  dirty bits?
 	mesh:prepare()
 
@@ -124,6 +123,17 @@ print('#unique triangles', mesh.triIndexes.size/3)
 			-- merge vtxs with vtxs ... ignoring texcoords and normals
 			mesh:mergeMatchingVertexes(true, true)
 			mesh:removeEmptyTris()
+			
+print('#unique vertexes', mesh.vtxs.size)
+for i=0,mesh.vtxs.size-1 do
+	print(('%f\t%f\t%f'):format(mesh.vtxs.v[i].pos:unpack()))
+end
+print('#unique triangles', mesh.triIndexes.size/3)
+for i=0,mesh.triIndexes.size-3,3 do
+	local tp = mesh.triIndexes.v + i
+	print(tp[0], tp[1], tp[2])
+end
+
 			-- if two tris touch, or almost touch, then split them along the edge in common with their planes
 			-- maybe I don't have to do this yet ...
 			--mesh:splitTrisTouchingTris()
@@ -145,7 +155,7 @@ print('#unique triangles', mesh.triIndexes.size/3)
 		mesh.com1 = mesh:calcCOM1()
 	end
 
-print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():reverse():concat'\narea '..'\n')
+--print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():reverse():concat'\narea '..'\n')
 
 	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
 	if cmdline.unwrapuv then

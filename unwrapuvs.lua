@@ -282,10 +282,11 @@ tsrc.v1*-------*
 			--]]
 			-- [[ using .edges2
 			local i11 = esrc.triVtxIndexes[1]
-			local i12 = i11 % 3 + 1
-			local i21 = esrc.triVtxIndexes[2]
-			local i22 = i21 % 3 + 1
-			assert(i11 and i12 and i21 and i22)
+			assert(i11)
+			--local i12 = i11 % 3 + 1
+			--local i21 = esrc.triVtxIndexes[2]
+			--local i22 = i21 % 3 + 1
+			--assert(i12 and i21 and i22)
 			--]]
 --print('edge local vtx indexes: tsrc', i11, i12, 't', i21, i22)
 			-- tables are identical
@@ -614,17 +615,13 @@ tsrc.v1*-------*
 			-- but for xz-plane rounded walls we don't want ymin to be a priority ... instead we want the xz to be a priority ...
 			-- so only sort like this if the normal is pointing in a cartesian direction?
 			-- nah that seems too complicated -- instead try to just filter out these rounded walls from the 'todo' seed in the first place.
-			if minay < minby then return true end
-			if minay > minby then return false end
+			if minay ~= minby then return minay < minby end
 			-- [[
 			-- sort by x and z next
 			-- this is what makes the u-texcoord align with the furthest sides of the  90' aligned walls
 			-- sort by x
-			if minax < minbx then return true end
-			if minax > minbx then return false end
+			if minax ~= minbx then return minax < minbx end
 			-- sort by z
-			if minaz < minbz then return true end
-			if minaz > minbz then return false end
 			--]]
 			return minaz < minbz
 			-- sort by area
@@ -759,6 +756,7 @@ tsrc.v1*-------*
 end
 
 local function drawUnwrapUVGraph(mesh)
+	error'fixme'
 	local gl = require 'gl'
 	local eps = 1e-3
 	-- [[ show unwrap info
@@ -858,7 +856,7 @@ local function drawUnwrapUVEdges(mesh)
 		--	gl.glColor4f(1,1,1, alpha)
 
 			-- pick one of the two edges.  either will produce the same line ray
-			-- use intervals for start/finish along edge
+			-- use interval for start/finish along edge
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1

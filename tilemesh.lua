@@ -98,7 +98,6 @@ local function tileMesh(mesh, placeFn)
 		"failed to decode json file "..tostring(placeFn)
 	)
 
-	local scale = vec3f(1,1,1)
 	-- assert mesh ==  OBJLoader():load(assert(placeInfo.geometryFilename))
 
 	-- TODO here maybe
@@ -111,8 +110,9 @@ local function tileMesh(mesh, placeFn)
 		for _,geom in ipairs(inst.geometryArray) do
 			if not omeshForFn[geom.filename] then
 				local omesh = OBJLoader():load(assert(geom.filename))
+				-- tends to mess up the model, so don't do this:
+				--omesh:mergeMatchingVertexes(true, true)
 				omesh:calcBBox()
-				omesh:mergeMatchingVertexes()
 				omeshForFn[geom.filename] = omesh
 			end
 		end
@@ -154,6 +154,7 @@ local function tileMesh(mesh, placeFn)
 	local merged = Mesh()
 
 	-- for each tri
+	mesh.tilePlaces = table()
 	for _,surfInst in ipairs(placeInfo.surfaceInstances) do
 		local offsetU, offsetV = table.unpack(surfInst.offsetUV)
 		-- true = centered-rectangular lattice
@@ -181,9 +182,8 @@ local function tileMesh(mesh, placeFn)
 --print('placementXFormInv', placementCoordXFormInv)
 --assert((placementCoordXForm * placementCoordXFormInv - matrix_ffi{{1,0},{0,1}}):normSq() < 1e-7)
 
-		mesh.tilePlaces = table()
-		for _,tg in ipairs(mesh.triGroups) do
-			local placementsSoFar = {}
+		for groupIndex,tg in ipairs(mesh.triGroups) do
+			local placementsForThisGroup = {}
 			for _,t in ipairs(tg.tris) do
 				local ti = 3*(t.index-1)
 
@@ -192,7 +192,7 @@ local function tileMesh(mesh, placeFn)
 					return mesh.vtxs.v[tp[i]]
 				end)
 
-print('placing tri '..t.index..' with group '..tg.tris:mapi(function(t) return t.index end):concat', ')
+print('placing tri '..t.index..' with group of tris '..tg.tris:mapi(function(t) return t.index end):concat', ')
 print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 				local uvorigin2D = vec2f()
 					-- uvorigin2D/uvorigin3D can be any texcoord/pos as long as they're from the same vtx
@@ -212,7 +212,6 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					local c = omeshBBox:corner(corner)
 					-- convert to texcoord space
 					local ctc = matrix3x3To4x4(spatialConvention)
-						* scaleMat4x4(scale)
 						* matrix_ffi{c.s[0], c.s[1], c.s[2], 1}
 					-- convert to texcoord space
 					return matrix_ffi{ctc[1], ctc[2]}
@@ -295,9 +294,9 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						local minbcc = math.min(bcc:unpack())
 
 						local key = pu..','..pv
-						local placement = placementsSoFar[key]
+						local placement = placementsForThisGroup[key]
 						if not placement then
-							placementsSoFar[key] = {
+							placementsForThisGroup[key] = {
 								minbcc = minbcc,
 								jitteredPos = jitteredPos,
 								t = t,
@@ -311,14 +310,14 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				end
 			end
 
-			for key,pl in pairs(placementsSoFar) do
+			local beforeTilePlaceCount = #mesh.tilePlaces
+			for key,pl in pairs(placementsForThisGroup) do
 				--local pu, pv = string.split(key,','):mapi(function(x) return tonumber(x) end):unpack()
 				local jitteredPos = pl.jitteredPos
 				local t = pl.t
 
 				local xform = translateMat4x4(jitteredPos) * matrix3x3To4x4(t.basis)
 					* matrix3x3To4x4(spatialConvention)
-					* scaleMat4x4(scale)
 
 				--[[ TODO prelim bbox test ...
 				-- if any corners in placement-space are within the tri ... continue
@@ -336,7 +335,6 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				--and not allInside
 				--then
 				local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
-				local allInside = false
 				if not clipped then
 					-- ... then the mesh is all outside
 				elseif anythingRemoved then
@@ -344,19 +342,17 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					merged:combine(clipped)
 				else
 					-- all was inside
-					allInside = true
-				end
-
-				if allInside then
 					mesh.tilePlaces:insert{
 						filename = geomInst.filename,
 						xform = xform,
 					}
 				end
 			end
+			print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount)..' tiles')
 		end
-print('#tilePlaces', #mesh.tilePlaces)
 	end
+
+print('#tilePlaces', #mesh.tilePlaces)
 
 	timer('merging placed meshes', function()
 		-- place instances

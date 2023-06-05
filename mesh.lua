@@ -174,6 +174,32 @@ function Mesh:init(o)
 	self.groups = table()
 end
 
+--[[
+assert that the groups span the mesh indexes and do not overlap one another
+and that the triangles are 1:1 with the indexes
+--]]
+function Mesh:assertGroups()
+	-- assert tris x 3 == indexes
+	assert(#self.tris*3 == self.triIndexes.size)
+	-- assert sum of all group tri counts == total tri counts
+	assert(self.groups:mapi(function(g) return g.triCount end):sum() == #self.tris)
+	-- assert all group tri ranges are within total tri range
+	for _,g in ipairs(self.groups) do
+		assert(g.triFirstIndex >= 0)
+		assert(g.triCount >= 0)
+		assert(g.triFirstIndex + g.triCount <= #self.tris)
+	end
+	-- assert no gruops overlap
+	for i=1,#self.groups-1 do
+		local gi = self.groups[i]
+		for j=i+1,#self.groups do
+			local gj = self.groups[j]
+			assert(gi.triFirstIndex + gi.triCount <= gj.triFirstIndex
+				or gj.triFirstIndex + gj.triCount <= gi.triFirstIndex)
+		end
+	end
+end
+
 -- combines 'self' with other meshes.
 -- operates in-place.
 -- returns self
@@ -349,7 +375,8 @@ returns:
 
 it should always be the case that uniquevs[indexToUniqueV[i]] <= i
 --]=]
-function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
+-- _binning uses binning, which is fast, but means if two vtxs are really close but in the wrong bins then they wont' merge, which might be bad ...
+function Mesh:getUniqueVtxs_binning(posPrec, texCoordPrec, normalPrec, usedIndexes)
 	local function vec3ToStrPrec(v, prec)
 		return tostring(v:map(function(x)
 			return math.round(x / prec) * prec
@@ -389,6 +416,41 @@ function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
 	end
 	return uniquevs, indexToUniqueV
 end
+-- non-binning is slower but checks all previous vertexes for distance
+function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
+	-- map from the vtxs to unique indexes
+	local uniquevs = table()
+
+	-- used by tris.
+	-- map from all vtxs.v[], into unique indexes
+	-- rounds values to precision 'prec'
+	-- keys are 0-based, values are 1-based
+	local indexToUniqueV = {}
+
+	for i=0,self.vtxs.size-1 do
+		if not usedIndexes or usedIndexes[i] then
+			local vi = self.vtxs.v[i]
+			local foundj
+			for j=0,i-1 do
+				local vj = self.vtxs.v[j]
+				if (not posPrec or (vi.pos - vj.pos):norm() <= posPrec)
+				and (not texCoordPrec or (vi.texcoord - vj.texcoord):norm() < texCoordPrec)
+				and (not normalPrec or (vi.normal - vj.normal):norm() < normalPrec)
+				then
+					foundj = j
+					break
+				end
+			end
+			if foundj then
+				indexToUniqueV[i] = indexToUniqueV[foundj]
+			else
+				uniquevs:insert(i)
+				indexToUniqueV[i] = #uniquevs
+			end
+		end
+	end
+	return uniquevs, indexToUniqueV
+end
 
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	assert(#self.tris*3 == self.triIndexes.size)
@@ -396,11 +458,11 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
-	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
-	local vtxMergeThreshold = bboxCornerDist * 1e-6
+--	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+--	local vtxMergeThreshold = bboxCornerDist * 1e-6
 --print('vtxMergeThreshold', vtxMergeThreshold)
 --print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
-
+	local vtxMergeThreshold = 1e-5
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
 		vtxMergeThreshold,
 		not skipTexCoords and 1e-7,
@@ -535,6 +597,7 @@ function Mesh:triVtxPos(i)
 end
 
 function Mesh:removeEmptyTris()
+print('removeEmptyTris from '..#self.tris)
 	assert(#self.tris * 3 == self.triIndexes.size)
 	for i=#self.tris,1,-1 do
 		if self.tris[i].area < 1e-7 then
@@ -542,6 +605,7 @@ function Mesh:removeEmptyTris()
 		end
 	end
 	assert(#self.tris * 3 == self.triIndexes.size)
+print('removeEmptyTris to '..#self.tris)
 end
 
 -- rebuild .tris from .triIndexes
@@ -651,12 +715,12 @@ function Mesh:generateTriBasis()
 --print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
 		end
 	end
-	--[[
-	print('tri basis:')
-	for i,t in ipairs(self.tris) do
-		print(t.basis:unpack())
-	end
-	--]]
+--[[
+print('tri basis:')
+for i,t in ipairs(self.tris) do
+	print(t.basis:unpack())
+end
+--]]
 end
 
 
@@ -678,13 +742,13 @@ edgeDistEpsilon is for finding overlapping edges that don't share vertexes but w
 edgeAngleThreshold is used for ensuring those edges are aligned, so this must be tighter than angleThresholdInDeg.
 --]]
 function Mesh:calcEdges2()
-	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
+	local cosPlanarAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
 
 	local normEpsilon = 1e-7
 	--local edgeDistEpsilon = 1e-7 -- ... is too strict for roof
 	local edgeDistEpsilon = 1e-3
-	local edgeAngleThreshold = math.rad(1e-1)
-	local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
+	--local edgeAngleThreshold = math.rad(1e-1)
+	--local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
 
 	assert(#self.tris*3 == self.triIndexes.size)
 
@@ -703,15 +767,11 @@ function Mesh:calcEdges2()
 --end
 	local goodTris = 0
 	local badTris = 0
-	local areaThreshold = 1e-5
 	-- if I lower this to 1e-7 then it runs into cases of clipPlanes that don't separate their two triangle COMs ...
 	local normalThreshold = 1e-7
 	for i1=#self.tris,2,-1 do
 		local t1 = self.tris[i1]
-		if
-		--t1.area >= areaThreshold and
-		t1.normal:norm() > normalThreshold
-		then
+		if t1.normal:norm() > normalThreshold then
 			local tp1 = self.triIndexes.v + 3 * (i1 - 1)
 			for j1=1,3 do
 				-- t1's j1'th edge
@@ -724,10 +784,7 @@ function Mesh:calcEdges2()
 					edgeDir1 = edgeDir1 / edgeDir1Norm
 					for i2=i1-1,1,-1 do
 						local t2 = self.tris[i2]
-						if
-						--t2.area >= areaThreshold and
-						t2.normal:norm() > normalThreshold
-						then
+						if t2.normal:norm() > normalThreshold then
 							local tp2 = self.triIndexes.v + 3 * (i2 - 1)
 							for j2=1,3 do
 								local v21 = self.vtxs.v[tp2[j2-1]].pos
@@ -806,7 +863,7 @@ function Mesh:calcEdges2()
 														plane = plane,
 														planePos = planePos,
 														-- TODO test dot abs?  allow flipping of surface orientation?
-														isPlanar = t1.normal:dot(t2.normal) > cosAngleThreshold,
+														isPlanar = t1.normal:dot(t2.normal) > cosPlanarAngleThreshold,
 														normAvg = normAvg,
 
 														clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
@@ -828,18 +885,18 @@ function Mesh:calcEdges2()
 			end
 		end
 	end
-	print("found "..goodTris.." good pairs and "..badTris.." bad pairs")
+print("found "..goodTris.." good pairs and "..badTris.." bad pairs")
 
 --[[
-	for _,e in ipairs(self.edges2) do
-		print(
-			'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
-			'and', self.tris:find(e.tris[2])-1, e.triVtxIndexes[2]-1,
-			'align with dist', e.dist,
-			'with projected intervals', table.concat(e.intervals[1], ', '),
-			'and', table.concat(e.intervals[2], ', '))
-	end
-	print('found', #self.edges2, 'overlaps')
+for _,e in ipairs(self.edges2) do
+	print(
+		'edges', self.tris:find(e.tris[1])-1, e.triVtxIndexes[1]-1,
+		'and', self.tris:find(e.tris[2])-1, e.triVtxIndexes[2]-1,
+		'align with dist', e.dist,
+		'with projected intervals', table.concat(e.intervals[1], ', '),
+		'and', table.concat(e.intervals[2], ', '))
+end
+print('found', #self.edges2, 'overlaps')
 --]]
 end
 
@@ -1008,6 +1065,7 @@ function Mesh:calcTriPlanarGroups()
 		}
 	end)
 	do
+		local numMerges = 0
 		local found
 		repeat
 			found = false
@@ -1019,20 +1077,24 @@ function Mesh:calcTriPlanarGroups()
 						triGroups[i1].tris:append(triGroups[i2].tris)
 						triGroups:remove(i2)
 						found = true
+						numMerges = numMerges + 1
 						break
 					end
 				end
 			end
 		until not found
+print('performed', numMerges, 'merges')
 	end
+-- [[
 print('found '..#triGroups..' groups of triangles')
-	for _,g in ipairs(triGroups) do
-		io.write('...group of '..#g.tris..' :')
-		for _,t in ipairs(g.tris) do
-			io.write(' ', t.index)
-		end
-		print()
+for _,g in ipairs(triGroups) do
+	io.write('...group of '..#g.tris..' :')
+	for _,t in ipairs(g.tris) do
+		io.write(' ', t.index)
 	end
+	print()
+end
+--]]
 	self.triGroups = triGroups
 	-- make a mapping back from triangles to their groups
 	local triGroupForTri = self.tris:mapi(function(t)
@@ -1337,6 +1399,7 @@ function Mesh:mergeVertex(from,to)
 	self:removeVertex(from)
 end
 
+-- hmm, nobody is calling this anymore....
 function Mesh:removeUnusedVtxs()
 	local usedVs = {}
 	timer('finding used vertexes', function()
@@ -1345,13 +1408,13 @@ function Mesh:removeUnusedVtxs()
 		end
 	end)
 	timer('removing unused vertexes', function()
-		print('before removing, #vs', self.vtxs.size)
+print('before removing, #vs', self.vtxs.size)
 		for i=self.vtxs.size-1,0,-1 do
 			if not usedVs[i] then
 				self:removeVertex(i)
 			end
 		end
-		print('after removing, #vs', self.vtxs.size)
+print('after removing, #vs', self.vtxs.size)
 	end)
 end
 
@@ -1519,7 +1582,7 @@ end
 
 -- split all indexes so index<->vertex is 1:1
 function Mesh:breakAllVertexes()
-	print('before breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
+print('before breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
 	local nvtxs = vector('MeshVertex_t', self.triIndexes.size)
 	local ntris = vector('uint32_t', self.triIndexes.size)
 	for i=0,self.triIndexes.size-1 do
@@ -1528,7 +1591,7 @@ function Mesh:breakAllVertexes()
 	end
 	self.vtxs = nvtxs
 	self.triIndexes = ntris
-	print('after breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
+print('after breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
 
 	-- TODO update the mesh ranges as well
 	-- assert they do not overlap before
@@ -1582,7 +1645,7 @@ TODO I might need this but for all edge segments, based on 'edges2' and each sub
 --]]
 function Mesh:findBadEdges()
 	-- find edges based on vtx comparing pos
-	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-6)
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-5)
 
 	-- TODO can I use edges2?  nah because edges2 is only between two triangles ...
 	-- TODO edges2 use 'getUniqueVtxs', and then cycle over all tris edges?
@@ -1729,7 +1792,7 @@ end
 		end
 		if totalArea < 1e-7 then
 			print('loop #'..i..' has area '..totalArea..' ... removing')
-			loops:remove(i)
+--			loops:remove(i)
 		else
 			print('loop #'..i..' has area '..totalArea..' ... keeping')
 		end
@@ -1764,9 +1827,10 @@ function Mesh:removeInternalTris()
 
 	-- second ... merge vertexes
 	-- in fact I should look at the merge map of vertexes w/o texcoord or normal condition
-	if not self.bbox then self:calcBBox() end
-	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
-	local vtxMergeThreshold = bboxCornerDist * 1e-6
+	--if not self.bbox then self:calcBBox() end
+	--local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+	--local vtxMergeThreshold = bboxCornerDist * 1e-6
+	local vtxMergeThreshold = 1e-5
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(vtxMergeThreshold)
 
 	-- now find edges based on nearest vtx only
