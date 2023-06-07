@@ -13,6 +13,7 @@ local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
 local box2f = require 'vec-ffi.box2f'
 local plane3f = require 'vec-ffi.plane3f'
+local box3f = require 'vec-ffi.box3f'
 local quatf = require 'vec-ffi.quatf'
 local json = require 'dkjson'
 local vector = require 'ffi.cpp.vector'
@@ -68,6 +69,7 @@ local function scaleMat4x4(s)
 end
 
 local function matrix3x3To4x4(b)
+	-- matrix_ffi stores col-major
 	local m = matrix_ffi{4,4}:zeros()
 	for i=0,2 do
 		for j=0,2 do
@@ -108,14 +110,25 @@ local function tileMesh(mesh, placeFn)
 	-- remove internal tris
 	-- etc
 	local omeshForFn = {}
-	for _,inst in ipairs(placeInfo.surfaceInstances) do
-		for _,geom in ipairs(inst.geometryArray) do
-			if not omeshForFn[geom.filename] then
-				local omesh = OBJLoader():load(assert(geom.filename))
-				-- tends to mess up the model, so don't do this:
-				--omesh:mergeMatchingVertexes(true, true)
-				omesh:calcBBox()
-				omeshForFn[geom.filename] = omesh
+	local function loadWithBBox(fn)
+		if not omeshForFn[fn] then
+			local omesh = OBJLoader():load(assert(fn))
+			-- tends to mess up the model, so don't do this:
+			--omesh:mergeMatchingVertexes(true, true)
+			-- we want at least the origin within the bbox.  otherwise we have problems of gaps in the roof.
+			omesh:recenter(omesh:calcCOM2())
+			omesh:calcBBox()
+			omeshForFn[fn] = omesh
+		end
+	end
+	for _,insts in ipairs{placeInfo.surfaceInstances, placeInfo.cornerInstances, placeInfo.edgeInstances} do
+		for _,inst in ipairs(insts) do
+			if inst.geometryFilename then	-- corner and edge
+				loadWithBBox(inst.geometryFilename)
+			elseif inst.geometryArray then	-- surf
+				for _,geom in ipairs(inst.geometryArray) do
+					loadWithBBox(geom.filename)
+				end
 			end
 		end
 	end
@@ -165,6 +178,12 @@ local function tileMesh(mesh, placeFn)
 		-- how much to randomize placement
 		-- TODO jitterOrientation
 		local jitter = matrix_ffi(surfInst.jitterUV)
+
+		local allPossibleSurfBBox = box3f.empty()
+		for _,geomInst in ipairs(surfInst.geometryArray) do
+			allPossibleSurfBBox:stretch(omeshForFn[geomInst.filename].bbox)
+		end
+		
 		-- TODO pick at random based on 'bias' sums
 		local geomInst = table.pickRandom(surfInst.geometryArray)
 		local omesh = assert(omeshForFn[geomInst.filename])
@@ -204,14 +223,12 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
 --print('uv origin', ti, uvorigin2D, uvorigin3D)
 
-				local omeshBBox = omesh.bbox
-
 				-- [[ also store the bbox of the omesh under this transform?
 				-- this might help some edges, but it causes overlaps on planar edges
 				-- TODO these aren't in texcoord space, they're in the global mesh space ...
 				local cornersTC = range(0,7):mapi(function(corner)
 					-- get omesh bbox corner
-					local c = omeshBBox:corner(corner)
+					local c = allPossibleSurfBBox:corner(corner)
 					-- convert to texcoord space
 					local ctc = matrix3x3To4x4(spatialConvention)
 						* matrix_ffi{c.s[0], c.s[1], c.s[2], 1}
@@ -318,7 +335,8 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				local jitteredPos = pl.jitteredPos
 				local t = pl.t
 
-				local xform = translateMat4x4(jitteredPos) * matrix3x3To4x4(t.basis)
+				local xform = translateMat4x4(jitteredPos)
+					* matrix3x3To4x4(t.basis)
 					* matrix3x3To4x4(spatialConvention)
 
 				--[[ TODO prelim bbox test ...
@@ -353,8 +371,49 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 			print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount)..' tiles')
 		end
 	end
+print('#tilePlaces from surfaces', #mesh.tilePlaces)
 
-print('#tilePlaces', #mesh.tilePlaces)
+	local numSurfTilePlaces = #mesh.tilePlaces
+print('#tilePlaces from edges', #mesh.tilePlaces - numSurfTilePlaces)
+	for _,g in ipairs(mesh.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local insts
+			-- TODO pick every step
+			-- but then how do we know how much to step if we haven't picked until after we step?
+			-- is that what offsetDistance is supposed to be?
+			-- yes?
+			if e.isExtEdge == nil then	-- edge
+				insts = placeInfo.edgeInstances
+			else	-- corner
+				insts = placeInfo.cornerInstances
+				-- e.isExtEdge == false <=> concave
+				-- e.isExtEdge == true <=> convex
+			end
+			for _,inst in ipairs(insts) do
+				local smin, smax = table.unpack(e.interval)
+				local numInsts = (smax - smin) / inst.offsetDistance
+print('edge has '..numInsts..' placements')
+				for i=0,numInsts do	-- plus one more for good measure,  i probalby have to clip this.
+					local s = smin + i * inst.offsetDistance
+					local omesh = omeshForFn[inst.geometryFilename]
+					-- e.normAvg is the up axis, going to be y
+					-- e.plane.n is the long axis, going to be z 
+					local ey = e.normAvg
+					local ez = e.plane.n
+					local ex = ey:cross(ez)
+					local pos = e.planePos + s * e.plane.n
+print('placing at interval param', s, 'pos', pos)
+					mesh.tilePlaces:insert{
+						filename = inst.geometryFilename,
+						xform = translateMat4x4(pos)
+							* matrix3x3To4x4{ex, ey, ez}
+					}
+				end
+			end
+		end
+	end
+print('#tilePlaces total', #mesh.tilePlaces)
 
 	timer('merging placed meshes', function()
 		-- place instances
@@ -414,7 +473,7 @@ print('ntris.size', ntris.size)
 			instances = mesh.tilePlaces:mapi(function(p)
 				return {
 					filename = assert(p.filename),
-					-- row-major ... transpose?
+					-- matrix_ffi is stored column-major
 					transform = range(16):mapi(function(i)
 						return p.xform.ptr[i-1]
 					end),
@@ -463,24 +522,31 @@ local function drawTileMeshPlaces(mesh)
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
 	for _,p in ipairs(mesh.tilePlaces) do
+		-- matrix_ffi stores col-major
 		gl.glVertex3f(
-			p.xform.ptr[3],
-			p.xform.ptr[7],
-			p.xform.ptr[11])
+			p.xform.ptr[12],
+			p.xform.ptr[13],
+			p.xform.ptr[14])
 	end
+	gl.glEnd()
 	gl.glPointSize(1)
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
 	for _,p in ipairs(mesh.tilePlaces) do
+		-- matrix_ffi stores col-major
+		local ex = vec3f():map(function(x,i) return p.xform.ptr[i] end)
+		local ey = vec3f():map(function(x,i) return p.xform.ptr[4+i] end)
+		local ez = vec3f():map(function(x,i) return p.xform.ptr[8+i] end)
+		local pos = vec3f():map(function(x,i) return p.xform.ptr[12+i] end)
 		gl.glColor3f(1,0,0)
-		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.basis[1]):unpack())
+		gl.glVertex3f(pos:unpack())
+		gl.glVertex3f((pos + .1 * ex):unpack())
 		gl.glColor3f(0,1,0)
-		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.basis[2]):unpack())
+		gl.glVertex3f(pos:unpack())
+		gl.glVertex3f((pos + .1 * ey):unpack())
 		gl.glColor3f(0,0,1)
-		gl.glVertex3f(p.pos:unpack())
-		gl.glVertex3f((p.pos + p.basis[3]):unpack())
+		gl.glVertex3f(pos:unpack())
+		gl.glVertex3f((pos + .1 * ez):unpack())
 	end
 	gl.glEnd()
 	gl.glLineWidth(1)

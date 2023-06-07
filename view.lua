@@ -115,6 +115,9 @@ function App:initGL(...)
 		self.drawTriBasis = true
 	end
 
+print('#unique vertexes', mesh.vtxs.size)
+print('#unique triangles', mesh.triIndexes.size/3)
+
 	-- TODO make this an option with specified threshold.
 	-- calcBBox has to be done first
 	-- after doing this you have to call findEdges and calcCOMs
@@ -125,14 +128,18 @@ function App:initGL(...)
 			mesh:removeEmptyTris()
 			
 print('#unique vertexes', mesh.vtxs.size)
+--[[
 for i=0,mesh.vtxs.size-1 do
 	print(('%f\t%f\t%f'):format(mesh.vtxs.v[i].pos:unpack()))
 end
+--]]
 print('#unique triangles', mesh.triIndexes.size/3)
+--[[
 for i=0,mesh.triIndexes.size-3,3 do
 	local tp = mesh.triIndexes.v + i
 	print(tp[0], tp[1], tp[2])
 end
+--]]
 
 			-- if two tris touch, or almost touch, then split them along the edge in common with their planes
 			-- maybe I don't have to do this yet ...
@@ -808,15 +815,19 @@ function App:updateGUI()
 
 			if ig.igButton'recenter com0' then
 				mesh:recenter(mesh.com0)
+				mesh:calcCOMs()
 			end
 			if ig.igButton'recenter com1' then
 				mesh:recenter(mesh.com1)
+				mesh:calcCOMs()
 			end
 			if ig.igButton'recenter com2' then
 				mesh:recenter(mesh.com2)
+				mesh:calcCOMs()
 			end
 			if ig.igButton'recenter com3' then
 				mesh:recenter(mesh.com3)
+				mesh:calcCOMs()
 			end
 
 			self.scale = self.scale or table{1,1,1}

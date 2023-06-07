@@ -322,8 +322,8 @@ function Mesh:recenter(newOrigin)
 	if self.vtxBuf then
 		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
 	end
-	-- recalculate coms
-	self:calcCOMs()
+	-- recalculate coms?  up to you...
+	--self:calcCOMs()
 end
 
 function Mesh:refreshVtxs()
@@ -849,8 +849,8 @@ function Mesh:calcEdges2()
 												and dist_11_22 < edgeDistEpsilon
 												then
 													goodTris = goodTris + 1
-													s1 = plane:dist(.5 * (v12 + v21))
-													s2 = plane:dist(.5 * (v11 + v22))
+													s1 = plane:dist(.5 * (v11 + v22))
+													s2 = plane:dist(.5 * (v12 + v21))
 
 													-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
 													local normAvg = (t1.normal + t2.normal):normalize()
@@ -2459,11 +2459,11 @@ function Mesh:drawTriPlanarGroupEdges()
 			local e = info.edge
 			local t1, t2 = table.unpack(e.tris)
 			if e.isExtEdge == nil then
-				gl.glColor4f(1,0,0, alpha)
+				gl.glColor4f(1,0,0, alpha)	-- edgeInstances
 			elseif e.isExtEdge == false then
-				gl.glColor4f(0,1,0, alpha)
+				gl.glColor4f(0,1,0, alpha)	-- cornerInstances / concaveInstances
 			else
-				gl.glColor4f(0,0,1, alpha)
+				gl.glColor4f(0,0,1, alpha)	-- cornerInstances / convexInstances
 			end
 
 			local s0, s1 = table.unpack(e.interval)
