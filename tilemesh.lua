@@ -83,6 +83,8 @@ local function tileMesh(mesh, placeFn)
 		mesh:calcTriPlanarGroups()
 	end
 	local triGroupForTri = mesh.triGroupForTri
+	-- this will calc edges2 also
+	assert(mesh.edges2)
 
 	-- TOOD here with the group info
 
@@ -163,8 +165,8 @@ local function tileMesh(mesh, placeFn)
 		-- how much to randomize placement
 		-- TODO jitterOrientation
 		local jitter = matrix_ffi(surfInst.jitterUV)
-		-- TODO pick at random per location ... based on 'bias' sums
-		local geomInst = surfInst.geometryArray[1]
+		-- TODO pick at random based on 'bias' sums
+		local geomInst = table.pickRandom(surfInst.geometryArray)
 		local omesh = assert(omeshForFn[geomInst.filename])
 
 		-- list of column-vectors

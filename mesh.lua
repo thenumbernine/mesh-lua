@@ -853,7 +853,11 @@ function Mesh:calcEdges2()
 													s2 = plane:dist(.5 * (v11 + v22))
 
 													-- in my loop i2 < i1, but i want it ordered lowest-first, so ... swap them
-													normAvg = (t1.normal + t2.normal):normalize()
+													local normAvg = (t1.normal + t2.normal):normalize()
+													local clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
+													-- ok edgeDir is aligned with edgeDir1 ... = v12 - v11
+													-- so clipPlane normal = normAvg cross edgeDir1 will point back to the t1 COM
+													-- so clipPlane normal dot t1 normal > 0 for external edges, < 0 for internal edges
 													-- TODO member functions for edge getters
 													local e = {
 														tris = {t2, t1},
@@ -862,11 +866,10 @@ function Mesh:calcEdges2()
 														dist = dist,
 														plane = plane,
 														planePos = planePos,
-														-- TODO test dot abs?  allow flipping of surface orientation?
 														isPlanar = t1.normal:dot(t2.normal) > cosPlanarAngleThreshold,
 														normAvg = normAvg,
-
-														clipPlane = plane3f():fromDirPt(normAvg:cross(edgeDir):normalize(), planePos)
+														clipPlane = clipPlane,
+														isExtEdge = clipPlane.n:dot(t1.normal) > 0,
 													}
 													self.edges2:insert(e)
 													t1.edges2:insert(e)
@@ -1108,68 +1111,7 @@ end
 	for _,g in ipairs(triGroups) do
 		g.borderEdges = table()
 	end
-	
---[=[ old way - use overlapping edges, and then bad edges
-	for _,e in ipairs(self.edges2) do
-		local t1, t2 = table.unpack(e.tris)
-		local g1 = triGroupForTri[t1]
-		local g2 = triGroupForTri[t2]
-		if g1 ~= g2 then
-			local t1side = e.clipPlane:test(t1.com)
-			local t2side = e.clipPlane:test(t2.com)
-			if t1side == t2side then
-				print("bad edge")
-				print("edge 1 vtx 1", self.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]-1].pos)
-				print("edge 1 vtx 2", self.vtxs.v[3*(t1.index-1)+e.triVtxIndexes[1]%3].pos)
-				print("edge 2 vtx 1", self.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]-1].pos)
-				print("edge 2 vtx 2", self.vtxs.v[3*(t2.index-1)+e.triVtxIndexes[2]%3].pos)
-				print("tri 1 com", t1.com, "side", t1side, "normal", t1.normal, "area", t1.area)
-				print("tri 2 com", t2.com, "side", t2side, "normal", t2.normal, "area", t2.area)
-				print("interval", table.unpack(e.interval))
-				print("dist", e.dist)
-				print("plane", e.plane)
-				print("planePos", e.planePos)
-				print("normAvg", e.normAvg)
-				print("clipPlane", e.clipPlane)
-				error'here'
-			end
-			-- TODO rename 'plane' to 'clipPlane'
-			g1.borderEdges:insert{edge = e, clipPlane = t1side and e.clipPlane or -e.clipPlane}
-			g2.borderEdges:insert{edge = e, clipPlane = t2side and e.clipPlane or -e.clipPlane}
-		end
-	end
-	--]]
 
--- [[ TODO do this after changing findBadEdges to use edges2
-	-- while we're here, find all loops that are boundaries to our surface
-	-- these are the red edges
-	local loops, lines = self:findBadEdges()
-	for _,loopsOrLines in ipairs{loops, lines} do
-		for _,lol in ipairs(loopsOrLines) do
-			for i=1,(loopsOrLines==loops and #lol or #lol-1) do
-				local e = assert(lol[i].e)
-				local t = e.tris[1]
-				local i1 = self:getIndexForLoopChain(lol[i])
-				local i2 = self:getIndexForLoopChain(lol[i%#lol+1])
-				local v1 = self.vtxs.v[i1].pos
-				local v2 = self.vtxs.v[i2].pos
-				local edgeDir = v2 - v1
-				local edgeDirLen = edgeDir:norm()
-				if edgeDirLen > 1e-7 then
-					local tside = e.clipPlane:test(t.com)
-					edgeDir = edgeDir / edgeDirLen
-					local g = triGroupForTri[t]
-					-- what clip plane ....
-					-- one at a right angle to the plane and edge
-					g.borderEdges:insert{edge = e, clipPlane = tside and e.clipPlane or -e.clipPlane}
-				end
-			end
-		end
-	end
-	-- lines aren't supposed to exist -- that's a sign of a really really bad mesh.
---]]
---]=]
--- [=[ new way - use all edges and exclude overlapping edges
 	assert(#self.tris*3 == self.triIndexes.size)
 	for ti=0,#self.tris-1 do
 		local t = self.tris[ti+1]
@@ -1222,7 +1164,7 @@ end
 			end
 		end
 	end
---]=]
+
 	self.triGroupForTri = triGroupForTri
 end
 
@@ -1294,16 +1236,16 @@ function Mesh:clipToTriGroup(g)
 			backMesh = nil
 		else
 			local edgesFront, edgesBack = clipEdgesAgainstEdges(edgeInfos, info.clipPlane)
-			if #edgesBack > 0 then
-				if backMesh then
-					backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
-				end
-			else
+			if #edgesBack == 0 then
 				-- backMesh is fully outside the poly -- toss it
 				if backMesh then
 					anythingRemoved = true
 				end
 				backMesh = nil
+			else
+				if backMesh then
+					backMesh = clipMeshAgainstEdges(edgesBack, backMesh)
+				end
 			end
 			if #edgesFront > 0 then
 				if frontMesh then
@@ -1848,10 +1790,11 @@ end
 			end
 		end
 		if totalArea < 1e-7 then
-			print('loop #'..i..' has area '..totalArea..' ... removing')
+			-- turns out this comes up zero on some loops with volume (cube with x+ x- y+ removed)
+			print('loop #'..i..' has area '..totalArea..' ... ')
 --			loops:remove(i)
 		else
-			print('loop #'..i..' has area '..totalArea..' ... keeping')
+			print('loop #'..i..' has area '..totalArea..' ... ')
 		end
 	end
 
@@ -2515,12 +2458,13 @@ function Mesh:drawTriPlanarGroupEdges()
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
 			local t1, t2 = table.unpack(e.tris)
-			--local t2plane = t2.normal:cross(e.plane.n)
-			--if t1.normal:dot(t2plane) > 0 then
-			--	gl.glColor4f(0,1,0, alpha)
-			--else
+			if e.isExtEdge == nil then
+				gl.glColor4f(1,0,0, alpha)
+			elseif e.isExtEdge == false then
+				gl.glColor4f(0,1,0, alpha)
+			else
 				gl.glColor4f(0,0,1, alpha)
-			--end
+			end
 
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
