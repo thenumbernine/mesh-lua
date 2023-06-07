@@ -294,11 +294,23 @@ end
 -- quaternion for now.
 function Mesh:rotate(q)
 	for i=0,self.vtxs.size-1 do
-		local v = self.vtxs.v[i].pos
-		for j=0,2 do
-			v.s[j] = q:rotate(v.s[j])
+		local v = self.vtxs.v[i]
+		v.pos = q:rotate(v.pos)
+		v.normal = q:rotate(v.normal)
+	end
+	if self.tris then
+		for _,t in ipairs(self.tris) do
+			if t.normal then
+				t.normal = q:rotate(t.normal)
+			end
+			if t.basis then
+				for i=1,3 do
+					t.basis[i] = q:rotate(t.basis[i])
+				end
+			end
 		end
 	end
+	-- TODO edges?
 	self:refreshVtxs()
 	return self
 end
@@ -1129,6 +1141,7 @@ end
 						local g2 = assert(triGroupForTri[ot])
 						if g ~= g2 then
 							local tside = e.clipPlane:test(t.com)
+							-- TODO I could just store the edge and a flag for whether to flip the clip plane ...
 							g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
 							foundClipEdge = true
 							break

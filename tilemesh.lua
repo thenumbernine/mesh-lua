@@ -167,9 +167,54 @@ local function tileMesh(mesh, placeFn)
 --]]
 
 	local merged = Mesh()
+	
+	mesh.tilePlaces = table()
+
+	local function mergeOrPlace(xform, fn, tg)
+		local omesh = omeshForFn[fn]
+		
+		local allInside
+		
+		if not tg then
+			-- nothing to clip against.
+			allInside = true
+		else
+			--[[ TODO prelim bbox test ...
+			-- if any corners in placement-space are within the tri ... continue
+			local allInside = true
+			local anyInside = false
+			for _,ctc in ipairs(cornersTC) do
+				local cornerPos = pl.t.basis[1] * ctc[1] + pl.t.basis[2] * ctc[2] + pl.jitteredPos
+				local cornerInside = pl.t:insideBCC(cornerPos, mesh)
+				allInside = allInside and cornerInside
+				anyInside = anyInside or cornerInside
+			end
+			--]]
+			-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
+			--if anyInside
+			--and not allInside
+			--then
+			local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
+			if not clipped then
+				-- ... then the mesh is all outside
+			elseif anythingRemoved then
+				-- then part of the mesh was inside
+				merged:combine(clipped)
+			else
+				allInside = true
+			end
+		end
+
+		if allInside then
+			-- all was inside
+			mesh.tilePlaces:insert{
+				filename = fn,
+				xform = xform,
+			}
+		end
+	end
 
 	-- for each tri
-	mesh.tilePlaces = table()
 	for _,surfInst in ipairs(placeInfo.surfaceInstances) do
 		local offsetU, offsetV = table.unpack(surfInst.offsetUV)
 		-- true = centered-rectangular lattice
@@ -332,41 +377,10 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 			local beforeTilePlaceCount = #mesh.tilePlaces
 			for key,pl in pairs(placementsForThisGroup) do
 				--local pu, pv = string.split(key,','):mapi(function(x) return tonumber(x) end):unpack()
-				local jitteredPos = pl.jitteredPos
-				local t = pl.t
-
-				local xform = translateMat4x4(jitteredPos)
-					* matrix3x3To4x4(t.basis)
+				local xform = translateMat4x4(pl.jitteredPos)
+					* matrix3x3To4x4(pl.t.basis)
 					* matrix3x3To4x4(spatialConvention)
-
-				--[[ TODO prelim bbox test ...
-				-- if any corners in placement-space are within the tri ... continue
-				local allInside = true
-				local anyInside = false
-				for _,ctc in ipairs(cornersTC) do
-					local cornerPos = t.basis[1] * ctc[1] + t.basis[2] * ctc[2] + jitteredPos
-					local cornerInside = t:insideBCC(cornerPos, mesh)
-					allInside = allInside and cornerInside
-					anyInside = anyInside or cornerInside
-				end
-				--]]
-				-- [=[ if anywhere is touching the tri, then clip it ... by ... ???
-				--if anyInside
-				--and not allInside
-				--then
-				local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
-				if not clipped then
-					-- ... then the mesh is all outside
-				elseif anythingRemoved then
-					-- then part of the mesh was inside
-					merged:combine(clipped)
-				else
-					-- all was inside
-					mesh.tilePlaces:insert{
-						filename = geomInst.filename,
-						xform = xform,
-					}
-				end
+				mergeOrPlace(xform, geomInst.filename, tg)
 			end
 			print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount)..' tiles')
 		end
@@ -383,13 +397,43 @@ print('#tilePlaces from edges', #mesh.tilePlaces - numSurfTilePlaces)
 			-- but then how do we know how much to step if we haven't picked until after we step?
 			-- is that what offsetDistance is supposed to be?
 			-- yes?
-			if e.isExtEdge == nil then	-- edge
+			if e.isExtEdge == nil then	-- edge ... only has 1 tri
 				insts = placeInfo.edgeInstances
 			else	-- corner
 				insts = placeInfo.cornerInstances
 				-- e.isExtEdge == false <=> concave
 				-- e.isExtEdge == true <=> convex
 			end
+			
+			-- now clip against endpoint edges
+			-- look at the tris that this edge has, add their other edges to the new clip tri group
+			local tg = {borderEdges = table()}
+			for _,t in ipairs(e.tris) do	-- t2 might not exist for our red edges.
+				for _,e2 in ipairs(t.edges2) do
+					if e2 ~= e then
+						local j = assert((table.find(e2.tris, t)))
+						-- the clip plane will be along the edge pointing towards the COM
+						-- same clip plane as used for single-tri edges (maybe store it somewhere for all edges?)
+						local clipPlane
+						if e2.isExtEdge == nil then	-- tri inside tri group
+							local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t.index-1)+e2.triVtxIndexes[j]-1]].pos
+							local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t.index-1)+e2.triVtxIndexes[j]%3]].pos
+							local edgeDir = v2 - v1
+							local edgeDirLen = edgeDir:norm()
+							if edgeDirLen > 1e-7 then
+								edgeDir = edgeDir / edgeDirLen
+								local clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), .5 * (v1 + v2)),
+								tg.borderEdges:insert{edge=e2, clipPlane=clipPlane}
+							end
+						else	-- tri at border of tri group
+							local tside = e2.clipPlane:test(t.com)
+							tg.borderEdges:insert{edge=e2, clipPlane=tside and e2.clipPlane or -e2.clipPlane}
+						end
+					end
+				end
+			end 
+
+
 			for _,inst in ipairs(insts) do
 				local smin, smax = table.unpack(e.interval)
 				local numInsts = (smax - smin) / inst.offsetDistance
@@ -404,11 +448,10 @@ print('edge has '..numInsts..' placements')
 					local ex = ey:cross(ez)
 					local pos = e.planePos + s * e.plane.n
 print('placing at interval param', s, 'pos', pos)
-					mesh.tilePlaces:insert{
-						filename = inst.geometryFilename,
-						xform = translateMat4x4(pos)
+					
+					local xform = translateMat4x4(pos)
 							* matrix3x3To4x4{ex, ey, ez}
-					}
+					mergeOrPlace(xform, inst.geometryFilename, tg)
 				end
 			end
 		end
