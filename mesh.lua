@@ -759,6 +759,8 @@ function Mesh:calcEdges2()
 	local normEpsilon = 1e-7
 	--local edgeDistEpsilon = 1e-7 -- ... is too strict for roof
 	local edgeDistEpsilon = 1e-3
+	-- TODO use getUniqueVtxs, instead of cycling through all?
+	--  come to think of it, that's what getUniqueVtxs now does ...
 	--local edgeAngleThreshold = math.rad(1e-1)
 	--local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
 
@@ -875,12 +877,13 @@ function Mesh:calcEdges2()
 														tris = {t2, t1},
 														triVtxIndexes = {j2, j1},
 														interval = {s1, s2},
-														dist = dist,
 														plane = plane,
 														planePos = planePos,
-														isPlanar = t1.normal:dot(t2.normal) > cosPlanarAngleThreshold,
 														normAvg = normAvg,
 														clipPlane = clipPlane,
+														-- specific to two-tri edges:
+														dist = dist,
+														isPlanar = t1.normal:dot(t2.normal) > cosPlanarAngleThreshold,
 														isExtEdge = clipPlane.n:dot(t1.normal) > 0,
 													}
 													self.edges2:insert(e)
@@ -1068,7 +1071,7 @@ calculates .triGroupForTri to map from each tri to .triGroups
  ... unless I change .triGroupForTri to map from index to group)
 uses .edges2 and :findBadEdges (which uses .edges)
 --]]
-function Mesh:calcTriPlanarGroups()
+function Mesh:calcTriSurfaceGroups()
 	if not self.edges2 then
 		self:calcEdges2()
 	end
@@ -1141,6 +1144,7 @@ end
 						local g2 = assert(triGroupForTri[ot])
 						if g ~= g2 then
 							local tside = e.clipPlane:test(t.com)
+							e.isGroupBorderEdge = true
 							-- TODO I could just store the edge and a flag for whether to flip the clip plane ...
 							g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
 							foundClipEdge = true
@@ -1165,13 +1169,15 @@ end
 					local plane = plane3f():fromDirPt(edgeDir, planePos)
 					local e = {
 						tris = {t},
+						triVtxIndexes = {j+1},	-- TODO make this 0-based, here and in calcEdges2 ...
+						interval = {plane:dist(v1), plane:dist(v2)},
 						plane = plane,
 						planePos = planePos,
 						clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), .5 * (v1 + v2)),
 						normAvg = vec3f(t.normal),
-						interval = {plane:dist(v1), plane:dist(v2)},
 					}
 					local tside = e.clipPlane:test(t.com)
+					e.isGroupBorderEdge = true
 					g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
 				end
 			end
@@ -1179,6 +1185,90 @@ end
 	end
 
 	self.triGroupForTri = triGroupForTri
+end
+
+-- calculate the edge clip-plane-groups 
+function Mesh:calcTriEdgeGroups()
+	if not self.triGroups then
+		self:calcTriSurfaceGroups()
+	end
+	-- build edge groups as well
+	-- ... and insert them into the 'triGroups' as well ...
+	-- ... I should really put this in its own function off of 'calcTriSurfaceGroups'
+	-- ... and flag some groups as surface, others as edge ...
+	-- ... or just put them in a new data structure?
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-4)
+	self.edgeClipGroups = {} 	-- key is the edge 
+	for _,g in ipairs(self.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+		
+			-- now clip against endpoint edges
+			-- for each vtx of the edge ...
+			--  for all other tris on vtx ...
+			--   (if the tri and the vertex don't touch another triGroup-brorder-edge then keep going until we run out of tris or reach this first edge again.)
+			--   make clip plane at the edge and use it in our clip polytope
+			-- TODO might need the uniquevs used to create edges2 here ...
+			-- TODO TODO maybe we should be using it to make edges2 in the first place ...
+			local tg = {borderEdges = table()}
+			self.edgeClipGroups[e] = tg
+			
+			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt' 
+			-- stop if you come back to the start edge  'e'
+			-- stop if you cover the same triangle twice
+			-- stop if you find a triGroup boundary edge
+			--  if you do find a triGroup boundary edge then 
+			--   create a clip plane midway between the start edge 'e' and the triGroup boundary edge
+			local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
+			local triHasBeenTested
+			local function propagateEdge(vi, edgeDir, preve)
+				vi = uniquevtx(vi)
+				-- for all tris touching the previous edge ...
+				-- (they also have this vtx in common)
+				for _,t in ipairs(preve.tris) do
+					if not triHasBeenTested[t] then
+						triHasBeenTested[t] = true
+						-- find their edges
+						for _,e2 in ipairs(t.edges2) do
+							if e2 ~= preve then
+								for j2=1,2 do
+									local vo = uniquevtx(self.triIndexes.v[3*(e2.tris[1].index-1) + (e2.triVtxIndexes[1]-1+j2-1)%3])
+									-- ... that also share this vertex in common ...
+									if vo == vi then
+										if not e2.isGroupBorderEdge then
+											-- ... if it's not a triGroup boundary then keep looking
+											propagateEdge(vi, edgeDir, e2)
+										else
+											-- ... if it's a triGroup boundary  ....
+											-- ... then use it as a clip plane
+											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
+											local edgeDir2 = j2 == 2 and -e2.plane.n or e2.plane.n
+											-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
+											local edgeDirAvg = (edgeDir + edgeDir2):normalize()
+											-- how to form a right angle to point back at 'e'? triple cross product?
+											local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
+											local clipN = edgeDir2:cross(edgePlaneN):normalize()
+
+											local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
+											-- then add a clip plane between these two edges,
+											-- make sure it's pointing at the first edge.
+											tg.borderEdges:insert{edge=e2, clipPlane=clipPlane}
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+			
+			-- reset this between each test
+			triHasBeenTested = {}
+			propagateEdge(uniquevtx(self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]-1]), e.plane.n, e)
+			triHasBeenTested = {}
+			propagateEdge(uniquevtx(self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]), -e.plane.n, e)
+		end
+	end
 end
 
 -- clip the current mesh to the specified trigroup
@@ -2454,12 +2544,12 @@ function Mesh:drawTriBasis()
 	gl.glLineWidth(1)
 end
 
--- works with mesh:calcTriPlanarGroups
+-- works with mesh:calcTriSurfaceGroups
 -- draw lines of triGroups[]  .borderEdges[]
 -- this duplicates drawUnwrapUVEdges except for the mesh.triGroups
-function Mesh:drawTriPlanarGroupEdges()
+function Mesh:drawTriSurfaceGroupEdges()
 	if not self.triGroups then
-		self:calcTriPlanarGroups()
+		self:calcTriSurfaceGroups()
 	end
 	local alpha = .5
 	local gl = require 'gl'
@@ -2494,9 +2584,9 @@ function Mesh:drawTriPlanarGroupEdges()
 	gl.glDisable(gl.GL_BLEND)
 end
 
-function Mesh:drawTriPlanarGroupPlanes()
+function Mesh:drawTriSurfaceGroupPlanes()
 	if not self.triGroups then
-		self:calcTriPlanarGroups()
+		self:calcTriSurfaceGroups()
 	end
 	local gl = require 'gl'
 	gl.glEnable(gl.GL_BLEND)
@@ -2540,5 +2630,59 @@ function Mesh:drawTriPlanarGroupPlanes()
 	gl.glEnd()
 	gl.glLineWidth(1)
 end
+
+-- TODO this won't draw correctly
+-- because it's showing the normAvg ... not the clipPlane of the info
+-- fwiw neither will the other debug draw clip plane function just above
+-- both need a perpendicular basis here
+function Mesh:drawTriGroupEdgeClipPlanes()
+	if not self.edgeClipGroups then
+		self:calcTriEdgeGroups()
+	end
+	local gl = require 'gl'
+	gl.glEnable(gl.GL_BLEND)
+	gl.glDepthMask(gl.GL_FALSE)
+	gl.glDisable(gl.GL_CULL_FACE)
+	gl.glColor4f(1,0,0,.1)
+	gl.glBegin(gl.GL_QUADS)
+	for _,g in pairs(self.edgeClipGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local n = e.plane.n:cross(info.clipPlane.n)
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			-- [[ make plane perpendicular to normal
+			gl.glVertex3f((v1 + n):unpack())
+			gl.glVertex3f((v1 - n):unpack())
+			gl.glVertex3f((v2 - n):unpack())
+			gl.glVertex3f((v2 + n):unpack())
+			--]]
+		end
+	end
+	gl.glEnd()
+	gl.glEnable(gl.GL_CULL_FACE)
+	gl.glDepthMask(gl.GL_TRUE)
+	gl.glDisable(gl.GL_BLEND)
+
+	-- now repeat and draw normals
+	gl.glLineWidth(3)
+	gl.glBegin(gl.GL_LINES)
+	for _,g in pairs(self.edgeClipGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local n = e.plane.n:cross(info.clipPlane.n)
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			local vavg = .5 * (v1 + v2)
+			gl.glVertex3f((vavg + n):unpack())
+			gl.glVertex3f((vavg + n + info.clipPlane.n * .5):unpack())
+		end
+	end
+	gl.glEnd()
+	gl.glLineWidth(1)
+end
+
 
 return Mesh

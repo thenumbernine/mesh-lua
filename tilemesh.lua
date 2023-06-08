@@ -80,9 +80,18 @@ local function matrix3x3To4x4(b)
 	return m
 end
 
+--[[
+TODO break this down into
+1) find the tile placements / merge clipped meshes ... for surface
+2) ... for edges
+3) place tiles
+--]]
 local function tileMesh(mesh, placeFn)
 	if not mesh.triGroups then
-		mesh:calcTriPlanarGroups()
+		mesh:calcTriSurfaceGroups()
+	end
+	if not mesh.edgeClipGroups then
+		mesh:calcTriEdgeGroups()
 	end
 	local triGroupForTri = mesh.triGroupForTri
 	-- this will calc edges2 also
@@ -387,8 +396,8 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 	end
 print('#tilePlaces from surfaces', #mesh.tilePlaces)
 
+-- [=[
 	local numSurfTilePlaces = #mesh.tilePlaces
-print('#tilePlaces from edges', #mesh.tilePlaces - numSurfTilePlaces)
 	for _,g in ipairs(mesh.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
@@ -404,35 +413,8 @@ print('#tilePlaces from edges', #mesh.tilePlaces - numSurfTilePlaces)
 				-- e.isExtEdge == false <=> concave
 				-- e.isExtEdge == true <=> convex
 			end
-			
-			-- now clip against endpoint edges
-			-- look at the tris that this edge has, add their other edges to the new clip tri group
-			local tg = {borderEdges = table()}
-			for _,t in ipairs(e.tris) do	-- t2 might not exist for our red edges.
-				for _,e2 in ipairs(t.edges2) do
-					if e2 ~= e then
-						local j = assert((table.find(e2.tris, t)))
-						-- the clip plane will be along the edge pointing towards the COM
-						-- same clip plane as used for single-tri edges (maybe store it somewhere for all edges?)
-						local clipPlane
-						if e2.isExtEdge == nil then	-- tri inside tri group
-							local v1 = mesh.vtxs.v[mesh.triIndexes.v[3*(t.index-1)+e2.triVtxIndexes[j]-1]].pos
-							local v2 = mesh.vtxs.v[mesh.triIndexes.v[3*(t.index-1)+e2.triVtxIndexes[j]%3]].pos
-							local edgeDir = v2 - v1
-							local edgeDirLen = edgeDir:norm()
-							if edgeDirLen > 1e-7 then
-								edgeDir = edgeDir / edgeDirLen
-								local clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), .5 * (v1 + v2)),
-								tg.borderEdges:insert{edge=e2, clipPlane=clipPlane}
-							end
-						else	-- tri at border of tri group
-							local tside = e2.clipPlane:test(t.com)
-							tg.borderEdges:insert{edge=e2, clipPlane=tside and e2.clipPlane or -e2.clipPlane}
-						end
-					end
-				end
-			end 
 
+			local tg = assert(mesh.edgeClipGroups[e])
 
 			for _,inst in ipairs(insts) do
 				local smin, smax = table.unpack(e.interval)
@@ -456,7 +438,9 @@ print('placing at interval param', s, 'pos', pos)
 			end
 		end
 	end
+print('#tilePlaces from edges', #mesh.tilePlaces - numSurfTilePlaces)
 print('#tilePlaces total', #mesh.tilePlaces)
+--]=]
 
 	timer('merging placed meshes', function()
 		-- place instances

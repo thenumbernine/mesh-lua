@@ -84,8 +84,9 @@ function App:initGL(...)
 	self.drawUnwrapUVGraph = false
 	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
-	self.drawTriPlanarGroupPlanes = false
-	self.drawTriPlanarGroupEdges = false
+	self.drawTriSurfaceGroupPlanes = false
+	self.drawTriGroupEdgeClipPlanes = false
+	self.drawTriSurfaceGroupEdges = false
 
 	self.editMode = editModeForName.rotate
 
@@ -409,11 +410,14 @@ function App:update()
 	if self.drawTileMeshPlaces then
 		drawTileMeshPlaces(mesh)
 	end
-	if self.drawTriPlanarGroupPlanes then
-		mesh:drawTriPlanarGroupPlanes()
+	if self.drawTriSurfaceGroupPlanes then
+		mesh:drawTriSurfaceGroupPlanes()
 	end
-	if self.drawTriPlanarGroupEdges then
-		mesh:drawTriPlanarGroupEdges()
+	if self.drawTriGroupEdgeClipPlanes then
+		mesh:drawTriGroupEdgeClipPlanes()
+	end
+	if self.drawTriSurfaceGroupEdges then
+		mesh:drawTriSurfaceGroupEdges()
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -924,8 +928,9 @@ function App:updateGUI()
 			ig.luatableCheckbox('draw tile placement locations', self, 'drawTileMeshPlaces')
 
 			ig.igSeparator()
-			ig.luatableCheckbox('draw tile clip planes', self, 'drawTriPlanarGroupPlanes')
-			ig.luatableCheckbox('draw tile clip edges', self, 'drawTriPlanarGroupEdges')
+			ig.luatableCheckbox('draw tri group edges', self, 'drawTriSurfaceGroupEdges')
+			ig.luatableCheckbox('draw tri group planes', self, 'drawTriSurfaceGroupPlanes')
+			ig.luatableCheckbox('draw edge clip planes', self, 'drawTriGroupEdgeClipPlanes')
 
 
 			ig.igSeparator()
