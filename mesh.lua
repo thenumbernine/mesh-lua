@@ -379,7 +379,7 @@ args:
 	posPrec = precision for testing .pos uniqueness.  nil means no precision means don't even check.
 	texCoordPrec = use .texcoord to test uniqueness.
 	normalPrec = use .normal to test uniqueness.
-	usedIndexes = optional map {[0-based-vtx-index] = true} to flag which indexes to check
+	usedVertexes = optional map {[0-based-vtx-index] = true} to flag which indexes to check
 
 returns:
 	uniquevs = lua-table holding all the unique 0-based vtx indexes
@@ -388,7 +388,7 @@ returns:
 it should always be the case that uniquevs[indexToUniqueV[i]] <= i
 --]=]
 -- _binning uses binning, which is fast, but means if two vtxs are really close but in the wrong bins then they wont' merge, which might be bad ...
-function Mesh:getUniqueVtxs_binning(posPrec, texCoordPrec, normalPrec, usedIndexes)
+function Mesh:getUniqueVtxs_binning(posPrec, texCoordPrec, normalPrec, usedVertexes)
 	local function vec3ToStrPrec(v, prec)
 		return tostring(v:map(function(x)
 			return math.round(x / prec) * prec
@@ -409,7 +409,7 @@ function Mesh:getUniqueVtxs_binning(posPrec, texCoordPrec, normalPrec, usedIndex
 	local keyToUnique = {}
 
 	for i=0,self.vtxs.size-1 do
-		if not usedIndexes or usedIndexes[i] then
+		if not usedVertexes or usedVertexes[i] then
 			local v = self.vtxs.v[i]
 			local k = table{
 				posPrec and vec3ToStrPrec(v.pos, posPrec) or '',
@@ -429,7 +429,7 @@ function Mesh:getUniqueVtxs_binning(posPrec, texCoordPrec, normalPrec, usedIndex
 	return uniquevs, indexToUniqueV
 end
 -- non-binning is slower but checks all previous vertexes for distance
-function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
+function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedVertexes)
 	-- map from the vtxs to unique indexes
 	local uniquevs = table()
 
@@ -440,25 +440,31 @@ function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedIndexes)
 	local indexToUniqueV = {}
 
 	for i=0,self.vtxs.size-1 do
-		if not usedIndexes or usedIndexes[i] then
+		if not usedVertexes or usedVertexes[i] then
 			local vi = self.vtxs.v[i]
 			local foundj
 			for j=0,i-1 do
-				local vj = self.vtxs.v[j]
-				if (not posPrec or (vi.pos - vj.pos):norm() <= posPrec)
-				and (not texCoordPrec or (vi.texcoord - vj.texcoord):norm() < texCoordPrec)
-				and (not normalPrec or (vi.normal - vj.normal):norm() < normalPrec)
-				then
-					foundj = j
-					break
+				if not usedVertexes or usedVertexes[j] then
+					local vj = self.vtxs.v[j]
+					if (not posPrec or (vi.pos - vj.pos):norm() <= posPrec)
+					and (not texCoordPrec or (vi.texcoord - vj.texcoord):norm() < texCoordPrec)
+					and (not normalPrec or (vi.normal - vj.normal):norm() < normalPrec)
+					then
+						foundj = j
+						break
+					end
 				end
 			end
 			if foundj then
-				indexToUniqueV[i] = indexToUniqueV[foundj]
+--print(i..' => '..foundj..' => '..tostring(indexToUniqueV[foundj]))
+				indexToUniqueV[i] = assert(indexToUniqueV[foundj])
 			else
 				uniquevs:insert(i)
+--print(i..' => '..#uniquevs..' => '..i)
 				indexToUniqueV[i] = #uniquevs
 			end
+		else
+--print(i.." skipping")
 		end
 	end
 	return uniquevs, indexToUniqueV
@@ -1202,6 +1208,7 @@ function Mesh:calcTriEdgeGroups()
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
+print('for edge', e.planePos, e.plane.n)
 		
 			-- now clip against endpoint edges
 			-- for each vtx of the edge ...
@@ -1244,15 +1251,26 @@ function Mesh:calcTriEdgeGroups()
 											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
 											local edgeDir2 = j2 == 2 and -e2.plane.n or e2.plane.n
 											-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
+											if edgeDir2:dot(edgeDir) < 0 then edgeDir2 = -edgeDir2 end
 											local edgeDirAvg = (edgeDir + edgeDir2):normalize()
 											-- how to form a right angle to point back at 'e'? triple cross product?
 											local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
-											local clipN = edgeDir2:cross(edgePlaneN):normalize()
+											local clipN = edgeDirAvg:cross(edgePlaneN):normalize()
 
 											local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
+											local tside = clipPlane:test(e.planePos)
 											-- then add a clip plane between these two edges,
 											-- make sure it's pointing at the first edge.
-											tg.borderEdges:insert{edge=e2, clipPlane=clipPlane}
+print('...adding clip plane '..clipPlane)
+											-- TODO the edge of the clip plane isn't the edge we got it from
+											-- it's a new edge halfway
+											-- needs to abstract the edge's getters for vertex endpoints
+											-- since that's what clip to group function uses
+											local fakeEdge = {}
+											fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
+											fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
+											fakeEdge.interval = {-1, 0}
+											tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
 										end
 									end
 								end

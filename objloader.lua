@@ -410,7 +410,7 @@ function OBJLoader:save(filename, mesh)
 	mesh:rebuildTris()
 
 	-- keep track of all used indexes by tris
-	local usedIndexes = {}
+	local usedVertexes = {}
 	for i=0,mesh.triIndexes.size-3,3 do
 		local t = mesh.tris[i/3+1]
 		local tp = mesh.triIndexes.v + i
@@ -418,9 +418,9 @@ function OBJLoader:save(filename, mesh)
 		local area = t.area
 		-- make sure this condition matches the tri write cond down below
 		if area > 0 then
-			usedIndexes[tp[0]] = true
-			usedIndexes[tp[1]] = true
-			usedIndexes[tp[2]] = true
+			usedVertexes[tp[0]] = true
+			usedVertexes[tp[1]] = true
+			usedVertexes[tp[2]] = true
 		end
 	end
 
@@ -430,8 +430,15 @@ function OBJLoader:save(filename, mesh)
 			ispos and prec,
 			istc and prec,
 			isnormal and prec,
-			usedIndexes
+			usedVertexes
 		)
+--[[ debugging
+for i=0,mesh.vtxs.size-1 do
+	if usedVertexes[i] then
+		assert(indexToUniqueV[i])
+	end
+end
+--]]	
 		if self.verbose then
 			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		end
@@ -460,12 +467,26 @@ function OBJLoader:save(filename, mesh)
 		local function writeFaceSoFar()
 			if not vis then return end
 			writeMtlName()
-			o:write('f ', table.mapi(vis, function(vi)
-				return table{
-					indexToUniqueV[vi],
-					indexToUniqueVt[vi],
-					indexToUniqueVn[vi],
-				}:concat'/'
+			o:write('f ', table.mapi(vis, function(i)
+				local vi = indexToUniqueV[i]
+				if not vi then
+					io.stderr:write("failed to find unique position for vertex ",i,'\n')
+					io.stderr:write('this vtx should be flagged as used ... was it? ',tostring(usedVertexes[i]),'\n')
+					error'here'
+				end
+				local vti = indexToUniqueVt[i]
+				if not vti then
+					io.stderr:write("failed to find unique texcoord for vertex ",i,'\n')
+					io.stderr:write('this vtx should be flagged as used ... was it? ',tostring(usedVertexes[i]),'\n')
+					error'here'
+				end
+				local vni = indexToUniqueVn[i]
+				if not vni then
+					io.stderr:write("failed to find unique normal for vertex ",i,'\n')
+					io.stderr:write('this vtx should be flagged as used ... was it? ',tostring(usedVertexes[i]),'\n')
+					error'here'
+				end
+				return table{vi,vti,vni}:concat'/'
 			end):concat' ', '\n')
 			numTriIndexes = numTriIndexes + #vis
 			vis = nil
