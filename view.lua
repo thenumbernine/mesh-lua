@@ -99,7 +99,8 @@ function App:initGL(...)
 	self.useAlphaTest = true
 	self.groupExplodeDist = 0
 	self.triExplodeDist = 0
-	self.bgcolor = vec4f(.2, .3, .5, 1)
+	--self.bgcolor = vec4f(.2, .3, .5, 1)
+	self.bgcolor = vec4f(0,0,0,1)
 
 
 	self.curfn = fn
