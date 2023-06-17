@@ -85,7 +85,7 @@ function App:initGL(...)
 	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
 	self.drawTriSurfaceGroupPlanes = false
-	self.drawTriGroupEdgeClipPlanes = false
+	self.drawTriGroupEdgeClipPlanes = cmdline.drawTriGroupEdgeClipPlanes or false
 	self.drawTriSurfaceGroupEdges = false
 
 	self.editMode = editModeForName.rotate
@@ -930,7 +930,7 @@ function App:updateGUI()
 			ig.igSeparator()
 			ig.luatableCheckbox('draw tri group edges', self, 'drawTriSurfaceGroupEdges')
 			ig.luatableCheckbox('draw tri group planes', self, 'drawTriSurfaceGroupPlanes')
-			ig.luatableCheckbox('draw edge clip planes', self, 'drawTriGroupEdgeClipPlanes')
+			ig.luatableCheckbox('draw tri group edge clip planes', self, 'drawTriGroupEdgeClipPlanes')
 
 
 			ig.igSeparator()

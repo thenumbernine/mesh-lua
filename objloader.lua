@@ -480,6 +480,7 @@ end
 					io.stderr:write('this vtx should be flagged as used ... was it? ',tostring(usedVertexes[i]),'\n')
 					error'here'
 				end
+				-- TODO special case?  if there's only one unique vertex normal and it is 0,0,0 then just omit it? 
 				local vni = indexToUniqueVn[i]
 				if not vni then
 					io.stderr:write("failed to find unique normal for vertex ",i,'\n')
