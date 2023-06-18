@@ -1240,6 +1240,8 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			local vi2 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
 			local normAvg = table.mapi(e.tris, function(t) return t.normal end):sum():normalize()
+			vi1 = uniquevtx(vi1)
+			vi2 = uniquevtx(vi2)
 
 			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt' 
 			-- stop if you come back to the start edge  'e'
@@ -1247,7 +1249,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			-- stop if you find a triGroup boundary edge
 			--  if you do find a triGroup boundary edge then 
 			--   create a clip plane midway between the start edge 'e' and the triGroup boundary edge
-			local triHasBeenTested
+			local trisHaveBeenTested
 			local function propagateEdge(vi, edgeDir, preve, tristack, totalAngle)
 
 -- convention : assert that our edgeDir points towards the COM
@@ -1262,8 +1264,8 @@ print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edg
 				-- for all tris touching the previous edge ...
 				-- (they also have this vtx in common)
 				for _,t in ipairs(preve.tris) do
-					if not triHasBeenTested[t] then
-						triHasBeenTested[t] = true
+					if not trisHaveBeenTested:find(t) then
+						trisHaveBeenTested:insert(t)
 						local tp = self.triIndexes.v + 3*(t.index-1)
 						
 						local nexttristack = table(tristack)
@@ -1389,18 +1391,34 @@ print('...adding clip plane '..clipPlane)
 				end
 			end
 			
-			-- vi1 is the 'from' in the edge ray from->to
-			-- so e.plane.n points into vi1
-			-- so for vi1 use the edgeDir pointing away from vi1 i.e. negative
-			-- so that for finding clip planes around the edge, vi1 can be the origin
-			triHasBeenTested = {}
-			propagateEdge(vi1, -e.plane.n, e, table(), 0)
-			-- and reverse for vi2
-			-- reset this between each test
-			triHasBeenTested = {}
-			propagateEdge(vi2, e.plane.n, e, table(), 0)
+
+			for _,info in ipairs{
+				-- vi1 is the 'from' in the edge ray from->to
+				-- so e.plane.n points into vi1
+				-- so for vi1 use the edgeDir pointing away from vi1 i.e. negative
+				-- so that for finding clip planes around the edge, vi1 can be the origin
+				{vi=vi1, plane=-e.plane.n},
+				-- and reverse for vi2
+				-- reset this between each test
+				{vi=vi2, plane=e.plane.n},
+			} do
+				trisHaveBeenTested = table()
+				propagateEdge(info.vi, info.plane, e, table(), 0)	
+			end
 		end
 	end
+				
+	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
+	-- ... due to it being the border of an open surface where an interior edge meets ..
+	-- ... then we need to add an extra clip plane by extending that
+	-- in fact
+	-- once we're done placing fake-edges ...
+	-- for each vtx
+	--   make sure the real-edges and fake-edges intersperse
+	--   if any fake-edges are missing then insert them.
+--print('for edge+vtx made '..(#tg.borderEdges - oldNumBorderEdges)..' clip edges')
+	-- THIS WOULD WORK PERFECTLY IF WE COULD GUARANTEE OUR MESH WAS A PROPR N-MANIFOLD EVERYWHERE ... WITH NO DANGLING EDGES OR TRIANGLES
+	-- but because we could have weird T intersections ... AND WE DO ... on that stupid target_basic-bricks model which is screwed up ... this won't work there.
 end
 
 -- clip the current mesh to the specified trigroup
@@ -2695,7 +2713,6 @@ function Mesh:drawTriSurfaceGroupEdges()
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local t1, t2 = table.unpack(e.tris)
 			if e.isExtEdge == nil then
 				gl.glColor4f(1,0,0, alpha)	-- edgeInstances
 			elseif e.isExtEdge == false then
