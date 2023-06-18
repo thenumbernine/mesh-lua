@@ -73,7 +73,7 @@ function App:initGL(...)
 	self.useDrawVertexes = false
 	self.useDrawBBox = false
 	self.useDrawEdges = false
-	self.useDrawPolys = true
+	self.useDrawPolys = default(cmdline.drawPolys, true)
 	self.drawVertexNormals = false
 	self.drawTriNormals = false
 	self.drawTriBasis = false
@@ -84,9 +84,9 @@ function App:initGL(...)
 	self.drawUnwrapUVGraph = false
 	self.drawUnwrapUVEdges = false
 	self.drawTileMeshPlaces = false
+	self.drawTriSurfaceGroupEdges = default(cmdline.drawTriSurfaceGroupEdges, false)
 	self.drawTriSurfaceGroupPlanes = false
-	self.drawTriGroupEdgeClipPlanes = cmdline.drawTriGroupEdgeClipPlanes or false
-	self.drawTriSurfaceGroupEdges = false
+	self.drawTriGroupEdgeClipPlanes = default(cmdline.drawTriGroupEdgeClipPlanes, false)
 
 	self.editMode = editModeForName.rotate
 
