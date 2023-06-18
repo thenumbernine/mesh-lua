@@ -1168,19 +1168,26 @@ end
 			if not foundAnyEdge then
 				local v1 = self.vtxs.v[tp[j]].pos
 				local v2 = self.vtxs.v[tp[(j+1)%3]].pos
+				local vavg = .5 * (v1 + v2)
+				-- why did I have to make the edgedir negative for the clipping to work?
 				local edgeDir = v2 - v1
 				local edgeDirLen = edgeDir:norm()
 				if edgeDirLen > 1e-7 then
 					edgeDir = edgeDir / edgeDirLen
 					local planePos = v1
 					local plane = plane3f():fromDirPt(-edgeDir, planePos)
+					local s1 = plane:dist(v1)
+					local s2 = plane:dist(v2)
+					--assert(s1 <= s2)
+					local clipNormal = t.normal:cross(edgeDir):normalize()
+					local clipPlane = plane3f():fromDirPt(clipNormal, vavg)
 					local e = {
 						tris = {t},
 						triVtxIndexes = {j+1},	-- TODO make this 0-based, here and in calcEdges2 ...
 						interval = {plane:dist(v1), plane:dist(v2)},
 						plane = plane,
 						planePos = planePos,
-						clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), .5 * (v1 + v2)),
+						clipPlane = clipPlane,
 						normAvg = vec3f(t.normal),
 						isGroupBorderEdge = true,
 					}
@@ -1229,6 +1236,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			local vi1 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]-1]
 			local vi2 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
+			local normAvg = table.mapi(e.tris, function(t) return t.normal end):sum():normalize()
 
 			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt' 
 			-- stop if you come back to the start edge  'e'
@@ -1319,6 +1327,7 @@ print(tristacknormaldots)
 											-- get a basis from the normal.  you can use edgeDir as one of the basis
 											local e1 = edgeDir:normalize()
 											local e2 = triavgnormal:cross(edgeDir):normalize()
+											local e3 = vec3f(triavgnormal)
 											-- alright if edgeDir is e1 then edgeDir has coordinates [1,0] in our {e1,e2} basis
 											-- then edgeDir2 has coordinates ...
 											local edgeDir2SurfBasisCoords = vec2f(
@@ -1351,6 +1360,16 @@ print(tristacknormaldots)
 											fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
 											fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
 											fakeEdge.interval = {0, 1}
+											--[[ basis for orientation of tiles placed
+											fakeEdge.basis = {e1, e2, e3}
+											--]]  -- why is this messed up?
+											-- [[ instead, this was there before ...
+											fakeEdge.basis = {
+												normAvg:cross(fakeEdge.plane.n):normalize(),
+												normAvg,
+												fakeEdge.plane.n,
+											}
+											--]]
 											-- for debugging:
 											fakeEdge.com = com
 											local tside = clipPlane:test(com)
@@ -2785,8 +2804,9 @@ function Mesh:drawTriGroupEdgeClipPlanes()
 	for _,g in pairs(self.edgeClipGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local n = e.plane.n:cross(info.clipPlane.n)
+			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?
 			local s0, s1 = table.unpack(e.interval)
+			assert(s0 <= s1)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			local vavg = .5 * (v1 + v2)

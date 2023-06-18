@@ -414,21 +414,32 @@ print('#tilePlaces from surfaces', #mesh.tilePlaces)
 				-- e.isExtEdge == true <=> convex
 			end
 
+			-- get the fake-trigroup associated with this edge that's used for clipping ...
 			local tg = assert(mesh.edgeClipGroups[e])
+			local edgeDir = e.plane.n
+			
+			local smin, smax = table.unpack(e.interval)
+			-- failing for outer edges of open surfaces
+			--assert(smin <= smax)
+			-- .. because outer edges' edgeDir / plane.n is BACKWARDS
+			-- but I had to put it backward to get the clipping working also .. another FIXME eh?
+			if smax < smin then
+				smin, smax = smax, smin
+				edgeDir = -edgeDir
+			end
 
 			for _,inst in ipairs(insts) do
-				local smin, smax = table.unpack(e.interval)
 				local numInsts = (smax - smin) / inst.offsetDistance
 print('edge has '..numInsts..' placements')
 				for i=0,numInsts do	-- plus one more for good measure,  i probalby have to clip this.
 					local s = smin + i * inst.offsetDistance
 					local omesh = omeshForFn[inst.geometryFilename]
 					-- e.normAvg is the up axis, going to be y
-					-- e.plane.n is the long axis, going to be z 
+					-- edgeDir is the long axis, going to be z 
 					local ey = e.normAvg
-					local ez = e.plane.n
+					local ez = edgeDir
 					local ex = ey:cross(ez)
-					local pos = e.planePos + s * e.plane.n
+					local pos = e.planePos + s * edgeDir
 print('placing at interval param', s, 'pos', pos)
 					
 					local xform = translateMat4x4(pos)
