@@ -401,11 +401,12 @@ print('#tilePlaces from surfaces', #mesh.tilePlaces)
 	for _,g in ipairs(mesh.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local insts
+print('placing along edge pos', e.planePos, 'normal', e.plane.n)			
 			-- TODO pick every step
 			-- but then how do we know how much to step if we haven't picked until after we step?
 			-- is that what offsetDistance is supposed to be?
 			-- yes?
+			local insts
 			if e.isExtEdge == nil then	-- edge ... only has 1 tri
 				insts = placeInfo.edgeInstances
 			else	-- corner
@@ -417,17 +418,10 @@ print('#tilePlaces from surfaces', #mesh.tilePlaces)
 			-- get the fake-trigroup associated with this edge that's used for clipping ...
 			local tg = assert(mesh.edgeClipGroups[e])
 			local edgeDir = e.plane.n
-			
+print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 			local smin, smax = table.unpack(e.interval)
-			-- failing for outer edges of open surfaces
-			--assert(smin <= smax)
-			-- .. because outer edges' edgeDir / plane.n is BACKWARDS
-			-- but I had to put it backward to get the clipping working also .. another FIXME eh?
-			if smax < smin then
-				smin, smax = smax, smin
-				edgeDir = -edgeDir
-			end
-
+			assert(smin <= smax)
+print('...with interval', smin, smax)
 			for _,inst in ipairs(insts) do
 				local numInsts = (smax - smin) / inst.offsetDistance
 print('edge has '..numInsts..' placements')

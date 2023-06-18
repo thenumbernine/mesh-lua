@@ -1168,6 +1168,7 @@ end
 			if not foundAnyEdge then
 				local v1 = self.vtxs.v[tp[j]].pos
 				local v2 = self.vtxs.v[tp[(j+1)%3]].pos
+				v1, v2 = v2, v1
 				local vavg = .5 * (v1 + v2)
 				-- why did I have to make the edgedir negative for the clipping to work?
 				local edgeDir = v2 - v1
@@ -1175,16 +1176,18 @@ end
 				if edgeDirLen > 1e-7 then
 					edgeDir = edgeDir / edgeDirLen
 					local planePos = v1
-					local plane = plane3f():fromDirPt(-edgeDir, planePos)
+					local plane = plane3f():fromDirPt(edgeDir, planePos)
 					local s1 = plane:dist(v1)
 					local s2 = plane:dist(v2)
-					--assert(s1 <= s2)
+					assert(s1 <= s2)
+print('interval', s1, s2)					
 					local clipNormal = t.normal:cross(edgeDir):normalize()
 					local clipPlane = plane3f():fromDirPt(clipNormal, vavg)
+print('clipPlane', clipPlane)					
 					local e = {
 						tris = {t},
 						triVtxIndexes = {j+1},	-- TODO make this 0-based, here and in calcEdges2 ...
-						interval = {plane:dist(v1), plane:dist(v2)},
+						interval = {s1, s2},
 						plane = plane,
 						planePos = planePos,
 						clipPlane = clipPlane,
@@ -1344,36 +1347,39 @@ print(tristacknormaldots)
 
 											-- how to form a right angle to point back at 'e'? triple cross product?
 											local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
-											local clipN = edgeDirAvg:cross(edgePlaneN):normalize()
+											local clipN = edgeDirAvg:cross(edgePlaneN)
+											if clipN:norm() > 1e-7 then
+												clipN = clipN:normalize()
 
-											local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
-											-- then add a clip plane between these two edges,
-											-- make sure it's pointing at the first edge.
---print('...adding clip plane '..clipPlane)
-											-- TODO the edge of the clip plane isn't the edge we got it from
-											-- it's a new edge halfway
-											-- needs to abstract the edge's getters for vertex endpoints
-											-- since that's what clip to group function uses
-											local fakeEdge = {}
-											-- planePos should lie at the edge endpoint
-											-- and plane.n should point down the edge
-											fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
-											fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
-											fakeEdge.interval = {0, 1}
-											--[[ basis for orientation of tiles placed
-											fakeEdge.basis = {e1, e2, e3}
-											--]]  -- why is this messed up?
-											-- [[ instead, this was there before ...
-											fakeEdge.basis = {
-												normAvg:cross(fakeEdge.plane.n):normalize(),
-												normAvg,
-												fakeEdge.plane.n,
-											}
-											--]]
-											-- for debugging:
-											fakeEdge.com = com
-											local tside = clipPlane:test(com)
-											tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+												local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
+												-- then add a clip plane between these two edges,
+												-- make sure it's pointing at the first edge.
+print('...adding clip plane '..clipPlane)
+												-- TODO the edge of the clip plane isn't the edge we got it from
+												-- it's a new edge halfway
+												-- needs to abstract the edge's getters for vertex endpoints
+												-- since that's what clip to group function uses
+												local fakeEdge = {}
+												-- planePos should lie at the edge endpoint
+												-- and plane.n should point down the edge
+												fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
+												fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
+												fakeEdge.interval = {0, 1}
+												--[[ basis for orientation of tiles placed
+												fakeEdge.basis = {e1, e2, e3}
+												--]]  -- why is this messed up?
+												-- [[ instead, this was there before ...
+												fakeEdge.basis = {
+													normAvg:cross(fakeEdge.plane.n):normalize(),
+													normAvg,
+													fakeEdge.plane.n,
+												}
+												--]]
+												-- for debugging:
+												fakeEdge.com = com
+												local tside = clipPlane:test(com)
+												tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+											end
 										end
 									end
 								end
