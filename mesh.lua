@@ -1192,6 +1192,7 @@ print('clipPlane', clipPlane)
 						planePos = planePos,
 						clipPlane = clipPlane,
 						normAvg = vec3f(t.normal),
+						com = vavg,
 						isGroupBorderEdge = true,
 					}
 					local tside = e.clipPlane:test(t.com)
@@ -1218,7 +1219,29 @@ function Mesh:calcTriEdgeGroups()
 	-- ... and flag some groups as surface, others as edge ...
 	-- ... or just put them in a new data structure?
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-4)
+	local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
+	
+
+	--[[
+	new algorithm
+	1) go through all border edges (of tri groups and of open meshes)
+	2) flag all their vertexes at each endpoint (via uniquevtx)
+		2.a) don't flag the ones that are in straight lines.  or within tolerance for curved corners.
+	3) cycle through all those vertexes
+	 ... we have to assume the touching vtxs are a 2D surface.  though there are T's in our shitty quality meshes. hmm.
+	4) between each two edges around the vtx, insert a new fake-edge.  give a coyp of the fake-clip-edge to each edge's clipGroup, pointed back at that edge's COM 
+	--]]
+
 	self.edgeClipGroups = {} 	-- key is the edge 
+	local function makeEdgeClipGroups(e)
+		local tg = self.edgeClipGroups[e]
+		if not tg then
+			tg = {borderEdges = table()}
+			self.edgeClipGroups[e] = tg
+		end
+		return tg
+	end
+
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
@@ -1232,10 +1255,8 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			--   make clip plane at the edge and use it in our clip polytope
 			-- TODO might need the uniquevs used to create edges2 here ...
 			-- TODO TODO maybe we should be using it to make edges2 in the first place ...
-			local tg = {borderEdges = table()}
-			self.edgeClipGroups[e] = tg
+			local tg = makeEdgeClipGroups(e)
 
-			local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
 			local vi1 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]-1]
 			local vi2 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
@@ -1250,6 +1271,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			--  if you do find a triGroup boundary edge then 
 			--   create a clip plane midway between the start edge 'e' and the triGroup boundary edge
 			local trisHaveBeenTested
+			local outerEdges
 			local function propagateEdge(vi, edgeDir, preve, tristack, totalAngle)
 
 -- convention : assert that our edgeDir points towards the COM
@@ -1302,6 +1324,22 @@ print('adding angle', math.deg(angle))
 											-- ... if it's not a triGroup boundary then keep looking
 											propagateEdge(vi, edgeDir, e2, nexttristack, nextTotalAngle)
 										else
+
+											-- ok here ... we're considering between edges 'e' and 'e2' ... 
+											-- because I am following triangles to get here, I can account for T's in meshes (if the mesh has errors in it)
+											-- but because I'm following triangles, I can't loop around the whole vertex when we're at an open mesh's border.
+											-- This skips exterior angles.
+											-- I could account for exterior angles if instead of doing this I simply found all vtxs used by meshes and rotated around them, inserting fake-planes between.
+											--  but doing that would skip T's in meshes provided by incompotent modellers / CAD users.
+											-- so how do I combine the two algorithms?
+											-- by storing all outside-edges that I hit on a single vertex (there should always only be 0 or 2)
+											-- and then if we found 2, put a fake-edge between them.
+											-- how to find an outside edge?
+											-- it'll have here 'isExtEdge == nil'
+											if e2.isExtEdge == nil then
+												outerEdges:insertUnique(e2) 
+											end
+
 print('ending on edge pos', e2.planePos, 'normal', e2.plane.n)
 print('adding fake edge with tri stack', #nexttristack, 'total angle', math.deg(nextTotalAngle))
 											
@@ -1391,7 +1429,6 @@ print('...adding clip plane '..clipPlane)
 				end
 			end
 			
-
 			for _,info in ipairs{
 				-- vi1 is the 'from' in the edge ray from->to
 				-- so e.plane.n points into vi1
@@ -1402,8 +1439,56 @@ print('...adding clip plane '..clipPlane)
 				-- reset this between each test
 				{vi=vi2, plane=e.plane.n},
 			} do
+				local vi = info.vi
 				trisHaveBeenTested = table()
-				propagateEdge(info.vi, info.plane, e, table(), 0)	
+				outerEdges = table()
+				propagateEdge(vi, info.plane, e, table(), 0)
+				-- hmm, some have 1
+				-- I.g. those are outer-edges with no inner-edges connecting to them, esp if they are sequences-of-edges
+				--assert(#outerEdges >= 0 and #outerEdges <= 2, "got bad # outer edges: "..#outerEdges)
+print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
+-- [=[
+				if #outerEdges == 2 then
+					local edge1 = outerEdges[1]
+					local edge2 = outerEdges[2]
+					local edgeDir = edge1.plane.n
+					local edgeDir2 = edge2.plane.n
+					if (self.vtxs.v[vi].pos - edge1.com):dot(edgeDir) < 0 then edgeDir = -edgeDir end
+					if (self.vtxs.v[vi].pos - edge2.com):dot(edgeDir2) < 0 then edgeDir2 = -edgeDir2 end
+					-- then insert a fake-edge averaged between them.  using angle bisection in case the angle between them is >180
+					-- but rlly how cna you tell?  seems you'll have to use more info, like which side their triangles are on ...
+					local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
+					local edgeDirAvg = (edgeDir + edgeDir2):normalize()
+					local clipN = edgeDirAvg:cross(edgePlaneN)
+					if clipN:norm() > 1e-7 then
+						clipN = clipN:normalize()
+						local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
+						local fakeEdge = {}
+						fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
+						fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
+						fakeEdge.interval = {0, 1}
+						fakeEdge.basis = {
+							normAvg:cross(fakeEdge.plane.n):normalize(),
+							normAvg,
+							fakeEdge.plane.n,
+						}
+						-- TODO NONE OF THESE SEEM TO BE TIED TO THE CORRECT EDGE> WTF>?!??!!?
+						-- [[ do I attach them to the group of those edges?
+						fakeEdge.com = com
+						local tside = clipPlane:test(edge1.com)
+						makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+						tside = not tside
+						clipPlane = -clipPlane
+						makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+						--]]
+						--[[ or do I attach them to 'e's group?  can 'e' be outer edges?
+						fakeEdge.com = com
+						local tside = clipPlane:test(edge1.com)
+						tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+						--]]				
+					end
+				end
+--]=]
 			end
 		end
 	end
@@ -2700,11 +2785,10 @@ end
 -- works with mesh:calcTriSurfaceGroups
 -- draw lines of triGroups[]  .borderEdges[]
 -- this duplicates drawUnwrapUVEdges except for the mesh.triGroups
-function Mesh:drawTriSurfaceGroupEdges()
+function Mesh:drawTriSurfaceGroupEdges(highlightEdge)
 	if not self.triGroups then
 		self:calcTriSurfaceGroups()
 	end
-	local alpha = .5
 	local gl = require 'gl'
 	gl.glLineWidth(3)
 	gl.glEnable(gl.GL_BLEND)
@@ -2713,6 +2797,7 @@ function Mesh:drawTriSurfaceGroupEdges()
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
+			local alpha = e == highlightEdge and 1 or .3
 			if e.isExtEdge == nil then
 				gl.glColor4f(1,0,0, alpha)	-- edgeInstances
 			elseif e.isExtEdge == false then

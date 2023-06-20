@@ -13,6 +13,7 @@ local ig = require 'imgui'
 local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
+local plane3f = require 'vec-ffi.plane3f'
 local quatd = require 'vec-ffi.quatd'
 local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
@@ -36,6 +37,7 @@ local editModeNames = table{
 	'rotate',
 	'vertex',
 	'tri',
+	'edge',
 	'insertMesh',
 }
 local editModeForName = editModeNames:mapi(function(v,k) return k,v end)
@@ -418,7 +420,7 @@ function App:update()
 		mesh:drawTriGroupEdgeClipPlanes()
 	end
 	if self.drawTriSurfaceGroupEdges then
-		mesh:drawTriSurfaceGroupEdges()
+		mesh:drawTriSurfaceGroupEdges(self.hoverEdge)
 	end
 	if self.useDrawEdges then
 		mesh:drawEdges(self.triExplodeDist, self.groupExplodeDist)
@@ -538,7 +540,11 @@ function App:update()
 		if self.mouse.leftPress then
 			self.dragTri = self.hoverTri
 		end
-
+	elseif self.editMode == editModeForName.edge then
+		self.hoverEdge = self:findClosestTriGroupEdgeToMouse()
+		if self.mouse.leftPress then
+			self.dragEdge = self.hoverEdge
+		end
 	elseif self.editMode == editModeForName.insertMesh then
 		local lastPt = self.insertMeshPt
 		self.insertMeshTri, self.insertMeshPt = self:findClosestTriToMouse()
@@ -642,6 +648,112 @@ function App:findClosestTriToMouse()
 		cosEpsAngle)
 	if triIndex then
 		return triIndex, pos + dir * bestDist
+	end
+end
+
+--[[
+intersects a+s*b with c+t*d
+returns s,t
+if they're parallel returns nil
+--]]
+--[[
+|(a + s b) - (c + t d)| is minimal wrt (s,t)
+(a + s b).(a + s b) - (a + s b).(c + t d) - (c + t d).(a + s b) + (c + t d).(c + t d) is minimal wrt (s,t)
+(
+	+ a.a 
+	+ 2 s a.b 
+	+ s^2 b.b
+	
+	- 2 a.c
+	- 2 s b.c
+	- 2 t a.d
+	- 2 s t b.d
+
+	+ c.c 
+	+ 2 t c.d 
+	+ t^2 d.d
+) is minimal wrt (s,t)
+...which is where [d/ds, d/dt] = [0,0]
+
+d/ds = 2 (
+	a.b - c.b
+	+ s b.b
+	- t d.b
+)
+
+d/dt = -2 (
+	a.d - c.d 
+	+ s b.d
+	- t d.d
+)
+
+[(c-a).b]   [b.b -b.d] [s]
+[(c-a).d] = [b.d -d.d] [t]
+
+[s]   [b.b -b.d]^-1 [(c-a).b]
+[t] = [b.d -d.d]    [(c-a).d]
+
+det = b.d^2 - b.b d.d
+
+[s]   [-d.d b.d] [(c-a).b]
+[t] = [-b.d b.b] [(c-a).d] / det
+
+s = (-d.d (c-a).b + b.d (c-a).d) / det
+t = (-b.d (c-a).b + b.b (c-a).d) / det
+
+s = d.(b (c-a).d - d (c-a).b) / det
+t = b.(b (c-a).d - d (c-a).b) / det
+--]]
+function rayRayIntersect(a,b,c,d)
+--print('e', e, 's', s0, s1)
+	local ac = c - a
+	local b_dot_d = b:dot(d)
+	local b_dot_b = b:lenSq()
+	local d_dot_d = d:lenSq()
+	local detA = b_dot_d*b_dot_d - b_dot_b*d_dot_d
+--print('detA', detA)			
+	if math.abs(detA) < 1e-7 then
+		return nil, "rays are parallel"
+	end
+	local invDetA = 1/detA
+	local s = (-d_dot_d * ac:dot(b) + b_dot_d * ac:dot(d)) * invDetA
+	local t = (-b_dot_d * ac:dot(b) + b_dot_b * ac:dot(d)) * invDetA
+--print('s', s, 't', t)				
+	return s, t
+end
+
+function App:findClosestTriGroupEdgeToMouse()
+--print('App:findClosestTriGroupEdgeToMouse()')
+	local mousePos, mouseDir = self:mouseRay()
+--print('mousePos', mousePos, 'mouseDir', mouseDir)			
+	local bestDistSq = math.huge
+	local bestEdge
+	for _,g in ipairs(self.mesh.triGroups) do
+		for _,info in ipairs(g.borderEdges) do
+			local e = info.edge
+			local s0, s1 = table.unpack(e.interval)
+			local a = mousePos
+			local b = mouseDir
+			local c = e.planePos
+			local d = e.plane.n
+			local s, t = rayRayIntersect(a,b,c,d)
+			if s 		-- rays aren't parallel
+			and s > 0 	-- front facing the camera
+			then	
+				-- clamp to edge line segment parameter length
+				t = math.clamp(t, s0, s1)
+				local p1 = a + b * s
+				local p2 = c + d * t
+				local distSq = (p2 - p1):lenSq()
+				if distSq < bestDistSq then
+					bestDistSq = distSq
+					bestEdge = e
+				end
+			end
+		end
+	end
+	if bestEdge then
+		return bestEdge
 	end
 end
 
@@ -966,6 +1078,7 @@ function App:updateGUI()
 			ig.luatableRadioButton('rotate mode', self, 'editMode', editModeForName.rotate)
 			ig.luatableRadioButton('edit vertex mode', self, 'editMode', editModeForName.vertex)
 			ig.luatableRadioButton('edit tri mode', self, 'editMode', editModeForName.tri)
+			ig.luatableRadioButton('edit edge mode', self, 'editMode', editModeForName.edge)
 
 			ig.igSeparator()
 			ig.luatableRadioButton('insert mesh mode', self, 'editMode', editModeForName.insertMesh)
