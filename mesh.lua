@@ -2797,7 +2797,7 @@ function Mesh:drawTriSurfaceGroupEdges(highlightEdge)
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local alpha = e == highlightEdge and 1 or .3
+			local alpha = e == highlightEdge and 1 or .1
 			if e.isExtEdge == nil then
 				gl.glColor4f(1,0,0, alpha)	-- edgeInstances
 			elseif e.isExtEdge == false then
@@ -2872,30 +2872,33 @@ end
 -- because it's showing the normAvg ... not the clipPlane of the info
 -- fwiw neither will the other debug draw clip plane function just above
 -- both need a perpendicular basis here
-function Mesh:drawTriGroupEdgeClipPlanes()
+function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	if not self.edgeClipGroups then
 		self:calcTriEdgeGroups()
 	end
 	local gl = require 'gl'
+	gl.glDisable(gl.GL_DEPTH_TEST)
+	gl.glEnable(gl.GL_BLEND)
 
 	-- draw along the fake-edge, then turn and draw along its clip-plane
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
-	for _,g in pairs(self.edgeClipGroups) do
+	for srce,g in pairs(self.edgeClipGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
+			local alpha = srce == highlightEdge and 1 or .1
 			local n = e.plane.n:cross(info.clipPlane.n)
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			local vavg = .5 * (v1 + v2)
 			-- [[ draw edge
-			gl.glColor4f(1,0,0,.1)
+			gl.glColor4f(1,0,0,alpha)
 			gl.glVertex3f((e.planePos + 1e-3 * n):unpack())
 			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5):unpack())
 			--]]
 			-- [[ draw normal
-			gl.glColor4f(0,1,1,.1)
+			gl.glColor4f(0,1,1,alpha)
 			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5):unpack())
 			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5 + info.clipPlane.n * .25):unpack())
 			--]]
@@ -2906,26 +2909,25 @@ function Mesh:drawTriGroupEdgeClipPlanes()
 
 	-- [[ draw from real plane to fake plane?
 	gl.glDisable(gl.GL_CULL_FACE)
-	gl.glDisable(gl.GL_DEPTH_TEST)
-	gl.glEnable(gl.GL_BLEND)
 	gl.glBegin(gl.GL_TRIANGLES)
-	for _,g in pairs(self.edgeClipGroups) do
+	for srce,g in pairs(self.edgeClipGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
+			local alpha = srce == highlightEdge and 1 or .1
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?
 			local s0, s1 = table.unpack(e.interval)
 			assert(s0 <= s1)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			local vavg = .5 * (v1 + v2)
-			gl.glColor4f(1,0,0,.3)
+			gl.glColor4f(1,0,0,alpha)
 			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .05 + info.clipPlane.n * .05):unpack())
-			gl.glColor4f(0,1,0,.3)
+			gl.glColor4f(0,1,0,alpha)
 			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .5 + info.clipPlane.n * .05):unpack())
 			-- move back along clip plane normal ...
 			--gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5 + info.clipPlane.n * .25):unpack())
 			-- or just use the COM
-			gl.glColor4f(0,0,1,.3)
+			gl.glColor4f(0,0,1,alpha)
 			gl.glVertex3f((1e-3 * n + e.com):unpack())
 		end
 	end

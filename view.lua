@@ -417,7 +417,7 @@ function App:update()
 		mesh:drawTriSurfaceGroupPlanes()
 	end
 	if self.drawTriGroupEdgeClipPlanes then
-		mesh:drawTriGroupEdgeClipPlanes()
+		mesh:drawTriGroupEdgeClipPlanes(self.hoverEdge)
 	end
 	if self.drawTriSurfaceGroupEdges then
 		mesh:drawTriSurfaceGroupEdges(self.hoverEdge)
@@ -517,6 +517,7 @@ function App:update()
 	if self.editMode == editModeForName.rotate then
 		self.hoverVtx = nil
 		self.hoverTri = nil
+		self.hoverEdge = nil
 		self.bestTriPt = nil
 	elseif self.editMode == editModeForName.vertex then
 		self.hoverVtx = self:findClosestVtxToMouse()
