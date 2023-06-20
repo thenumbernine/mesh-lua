@@ -1197,6 +1197,7 @@ print('clipPlane', clipPlane)
 					}
 					local tside = e.clipPlane:test(t.com)
 					g.borderEdges:insert{edge=e, clipPlane=tside and e.clipPlane or -e.clipPlane}
+					-- keep here so i can search these as well as t.edges2 when looking for adjacent edges
 					t.borderEdges = t.borderEdges or table()
 					t.borderEdges:insert(e)
 				end
@@ -1221,7 +1222,6 @@ function Mesh:calcTriEdgeGroups()
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-4)
 	local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
 	
-
 	--[[
 	new algorithm
 	1) go through all border edges (of tri groups and of open meshes)
@@ -1232,14 +1232,21 @@ function Mesh:calcTriEdgeGroups()
 	4) between each two edges around the vtx, insert a new fake-edge.  give a coyp of the fake-clip-edge to each edge's clipGroup, pointed back at that edge's COM 
 	--]]
 
-	self.edgeClipGroups = {} 	-- key is the edge 
+	self.edgeClipGroups = table() 	-- key is the edge 
 	local function makeEdgeClipGroups(e)
-		local tg = self.edgeClipGroups[e]
-		if not tg then
-			tg = {borderEdges = table()}
-			self.edgeClipGroups[e] = tg
+		local _, eg = self.edgeClipGroups:find(nil, function(eg) return eg.srcEdges:find(e) end)
+		if not eg then
+			eg = {
+				-- this is the real edges that map to this edge-clip-group
+				-- it can be from .edges2 or from .borderEdges
+				srcEdges = table(),
+				-- this is the fake-edges to-be-used for clipping
+				borderEdges = table(),
+			}
+			self.edgeClipGroups:insert(eg)
 		end
-		return tg
+		eg.srcEdges:insertUnique(e)
+		return eg
 	end
 
 	for _,g in ipairs(self.triGroups) do
@@ -1473,7 +1480,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 							fakeEdge.plane.n,
 						}
 						-- TODO NONE OF THESE SEEM TO BE TIED TO THE CORRECT EDGE> WTF>?!??!!?
-						-- [[ do I attach them to the group of those edges?
+						--[[ do I attach them to the group of those edges?
 						fakeEdge.com = com
 						local tside = clipPlane:test(edge1.com)
 						makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
@@ -1492,7 +1499,56 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			end
 		end
 	end
-				
+
+	-- now while we're here, do like with tri groups, and merge the ones that are within angle epsilon
+	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
+	local distEps = 1e-5
+	local found
+	repeat
+		found = false
+		for i1=1,#self.edgeClipGroups-1 do
+			local eg1 = self.edgeClipGroups[i1]
+			for i2=i1+1,#self.edgeClipGroups do
+				local eg2 = self.edgeClipGroups[i2]
+				-- if any in eg1 and eg2 are within threshold 
+				-- and their points align
+				-- and they only have 2 edge neighbors? 
+				-- i think so yeah.
+				-- then merge the two groups
+				for j1,e1 in ipairs(eg1.srcEdges) do
+					local e1smin, e1smax = table.unpack(e1.interval)
+					local v11 = e1.planePos + e1.plane.n * e1smin
+					local v12 = e1.planePos + e1.plane.n * e1smax
+					for j2,e2 in ipairs(eg2.srcEdges) do
+						local e2smin, e2smax = table.unpack(e2.interval)
+						local v21 = e2.planePos + e2.plane.n * e2smin
+						local v22 = e2.planePos + e2.plane.n * e2smax
+						if math.abs(e1.plane.n:dot(e2.plane.n)) > cosAngleThreshold
+						and (
+							(v11 - v21):norm() < distEps
+							or (v11 - v22):norm() < distEps
+							or (v12 - v21):norm() < distEps
+							or (v12 - v22):norm() < distEps
+						)
+						then
+							found = true
+							break
+						end
+					end
+					if found then break end
+				end
+				if found then
+					-- then merge eg1 and eg2
+					eg1.srcEdges:append(eg2.srcEdges)
+					eg1.borderEdges:append(eg2.borderEdges)
+					self.edgeClipGroups:remove(i2)
+					break
+				end
+			end
+			if found then break end
+		end
+	until not found
+
 	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
 	-- ... due to it being the border of an open surface where an interior edge meets ..
 	-- ... then we need to add an extra clip plane by extending that
@@ -2883,10 +2939,10 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	-- draw along the fake-edge, then turn and draw along its clip-plane
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
-	for srce,g in pairs(self.edgeClipGroups) do
+	for _,g in ipairs(self.edgeClipGroups) do
+		local alpha = g.srcEdges:find(highlightEdge) and 1 or .1
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local alpha = srce == highlightEdge and 1 or .1
 			local n = e.plane.n:cross(info.clipPlane.n)
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
@@ -2910,10 +2966,10 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	-- [[ draw from real plane to fake plane?
 	gl.glDisable(gl.GL_CULL_FACE)
 	gl.glBegin(gl.GL_TRIANGLES)
-	for srce,g in pairs(self.edgeClipGroups) do
+	for _,g in ipairs(self.edgeClipGroups) do
+		local alpha = g.srcEdges:find(highlightEdge) and 1 or .1
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local alpha = srce == highlightEdge and 1 or .1
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?
 			local s0, s1 = table.unpack(e.interval)
 			assert(s0 <= s1)

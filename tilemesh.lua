@@ -416,7 +416,7 @@ print('placing along edge pos', e.planePos, 'normal', e.plane.n)
 			end
 
 			-- get the fake-trigroup associated with this edge that's used for clipping ...
-			local tg = assert(mesh.edgeClipGroups[e])
+			local tg = assert((select(2,mesh.edgeClipGroups:find(nil, function(eg) return eg.srcEdges:find(e) end))))
 			local edgeDir = e.plane.n
 print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 			local smin, smax = table.unpack(e.interval)
