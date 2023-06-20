@@ -38,7 +38,8 @@ local editModeNames = table{
 	'vertex',
 	'tri',
 	'edge',
-	'insertMesh',
+	'insertMeshToSurfaceClipGroup',
+	'insertMeshToEdgeClipGroup',
 }
 local editModeForName = editModeNames:mapi(function(v,k) return k,v end)
 
@@ -392,8 +393,11 @@ function App:update()
 		if self.useDrawPolys then
 			self:drawMesh(mesh)
 		end
-		if self.insertMesh then
-			self:drawMesh(self.insertMesh)
+		if self.insertMeshToSurfaceClipGroup then
+			self:drawMesh(self.insertMeshToSurfaceClipGroup)
+		end
+		if self.insertMeshToEdgeClipGroup then
+			self:drawMesh(self.insertMeshToEdgeClipGroup)
 		end
 		self.shader:useNone()
 	end
@@ -546,37 +550,82 @@ function App:update()
 		if self.mouse.leftPress then
 			self.dragEdge = self.hoverEdge
 		end
-	elseif self.editMode == editModeForName.insertMesh then
-		local lastPt = self.insertMeshPt
+	elseif self.editMode == editModeForName.insertMeshToSurfaceClipGroup then
 		self.insertMeshTri, self.insertMeshPt = self:findClosestTriToMouse()
 		if not self.insertMeshTri then
 			self.insertMeshPt = nil
-			self.insertMeshBase = nil
-			self.insertMesh = nil
+			self.insertMeshToSurfaceClipGroupBase = nil
+			self.insertMeshToSurfaceClipGroup = nil
 		else
-			if not self.insertMeshBase then
-				if self.triPlanarGroupPlacementFilename ~= '' then
-					self.insertMeshBase = OBJLoader():load(self.triPlanarGroupPlacementFilename)
-					self.insertMeshBase:findEdges()
-					self.insertMeshBase:calcCOMs()
+			if not self.insertMeshToSurfaceClipGroupBase then
+				if self.insertMeshFilename ~= '' then
+					xpcall(function()
+						self.insertMeshToSurfaceClipGroupBase = OBJLoader():load(self.insertMeshFilename)
+						self.insertMeshToSurfaceClipGroupBase:findEdges()
+						self.insertMeshToSurfaceClipGroupBase:calcCOMs()
+					end, function(err)
+						print(err..'\n'..debug.traceback())
+					end)
 				end
 			else
-				if self.insertMesh then
-					self.insertMesh:unloadGL()
+				if self.insertMeshToSurfaceClipGroup then
+					self.insertMeshToSurfaceClipGroup:unloadGL()
 				end
-				self.insertMesh = self.insertMeshBase:clone()
-				self.insertMesh:translate(self.insertMeshPt:unpack())
+				self.insertMeshToSurfaceClipGroup = self.insertMeshToSurfaceClipGroupBase:clone()
+				self.insertMeshToSurfaceClipGroup:translate(self.insertMeshPt:unpack())
 
 				if mesh.triGroups then
-					local g = mesh.triGroupForTri[mesh.tris[self.insertMeshTri/3+1]]
-					if g then
-						self.insertMesh = self.insertMesh:clipToTriGroup(g)
-						--self:removeEmptyTris()
+					local tg = mesh.triGroupForTri[mesh.tris[self.insertMeshTri/3+1]]
+					if tg then
+						self.insertMeshToSurfaceClipGroup = self.insertMeshToSurfaceClipGroup:clipToTriGroup(tg)
 					end
 				end
-				if #self.insertMesh.tris == 0 then self.insertMesh = nil end
-				if self.insertMesh then
-					self.insertMesh:loadGL(self.shader)
+				if #self.insertMeshToSurfaceClipGroup.tris == 0 then
+					self.insertMeshToSurfaceClipGroup = nil
+				end
+				if self.insertMeshToSurfaceClipGroup then
+					self.insertMeshToSurfaceClipGroup:loadGL(self.shader)
+				end
+			end
+		end
+	elseif self.editMode == editModeForName.insertMeshToEdgeClipGroup then
+		local insertMeshEdge
+		insertMeshEdge, self.insertMeshPt = self:findClosestTriGroupEdgeToMouse()
+		if not insertMeshEdge then
+			self.insertMeshPt = nil
+			self.insertMeshToEdgeClipGroupBase = nil
+			self.insertMeshToEdgeClipGroup = nil
+		else
+			if not self.insertMeshToEdgeClipGroupBase then
+				if self.insertMeshFilename ~= '' then
+					xpcall(function()
+						self.insertMeshToEdgeClipGroupBase = OBJLoader():load(self.insertMeshFilename)
+						self.insertMeshToEdgeClipGroupBase:findEdges()
+						self.insertMeshToEdgeClipGroupBase:calcCOMs()
+					end, function(err)
+						print(err..'\n'..debug.traceback())
+					end)
+				end
+			else
+				if self.insertMeshToEdgeClipGroup then
+					self.insertMeshToEdgeClipGroup:unloadGL()
+				end
+				self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroupBase:clone()
+				self.insertMeshToEdgeClipGroup:translate(self.insertMeshPt:unpack())
+
+				if mesh.triGroups then
+					local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
+						return eg.srcEdges:find(insertMeshEdge)
+					end)
+					if eg then
+						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToTriGroup(eg)
+					end
+				end
+				if #self.insertMeshToEdgeClipGroup.tris == 0 then
+					self.insertMeshToEdgeClipGroup = nil
+				end
+				if self.insertMeshToEdgeClipGroup then
+					self.insertMeshToEdgeClipGroup:loadGL(self.shader)
 				end
 			end
 		end
@@ -728,7 +777,7 @@ function App:findClosestTriGroupEdgeToMouse()
 	local mousePos, mouseDir = self:mouseRay()
 --print('mousePos', mousePos, 'mouseDir', mouseDir)			
 	local bestDistSq = math.huge
-	local bestEdge
+	local bestEdge, bestPt1, bestPt2
 	for _,g in ipairs(self.mesh.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
@@ -748,13 +797,15 @@ function App:findClosestTriGroupEdgeToMouse()
 				local distSq = (p2 - p1):lenSq()
 				if distSq < bestDistSq then
 					bestDistSq = distSq
+					bestPt1 = p1	-- on the mouse ray
+					bestPt2 = p2	-- on the line segment
 					bestEdge = e
 				end
 			end
 		end
 	end
 	if bestEdge then
-		return bestEdge
+		return bestEdge, bestPt2, bestPt1
 	end
 end
 
@@ -1082,9 +1133,10 @@ function App:updateGUI()
 			ig.luatableRadioButton('edit edge mode', self, 'editMode', editModeForName.edge)
 
 			ig.igSeparator()
-			ig.luatableRadioButton('insert mesh mode', self, 'editMode', editModeForName.insertMesh)
-			self.triPlanarGroupPlacementFilename = self.triPlanarGroupPlacementFilename or ''
-			ig.luatableInputText('tri group placement filename', self, 'triPlanarGroupPlacementFilename')
+			ig.luatableRadioButton('insert mesh to surface group', self, 'editMode', editModeForName.insertMeshToSurfaceClipGroup)
+			ig.luatableRadioButton('insert mesh to edge group', self, 'editMode', editModeForName.insertMeshToEdgeClipGroup)
+			self.insertMeshFilename = self.insertMeshFilename or ''
+			ig.luatableInputText('tri group placement filename', self, 'insertMeshFilename')
 
 			ig.igEndMenu()
 		end

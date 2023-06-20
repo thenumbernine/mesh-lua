@@ -416,9 +416,11 @@ print('placing along edge pos', e.planePos, 'normal', e.plane.n)
 			end
 
 			-- get the fake-trigroup associated with this edge that's used for clipping ...
-			local tg = assert((select(2,mesh.edgeClipGroups:find(nil, function(eg) return eg.srcEdges:find(e) end))))
+			local eg = assert((select(2,mesh.edgeClipGroups:find(nil, function(eg)
+				return eg.srcEdges:find(e)
+			end))))
 			local edgeDir = e.plane.n
-print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
+print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 			local smin, smax = table.unpack(e.interval)
 			assert(smin <= smax)
 print('...with interval', smin, smax)
@@ -438,7 +440,7 @@ print('placing at interval param', s, 'pos', pos)
 					
 					local xform = translateMat4x4(pos)
 							* matrix3x3To4x4{ex, ey, ez}
-					mergeOrPlace(xform, inst.geometryFilename, tg)
+					mergeOrPlace(xform, inst.geometryFilename, eg)
 				end
 			end
 		end

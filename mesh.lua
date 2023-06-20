@@ -1469,30 +1469,39 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 					local clipN = edgeDirAvg:cross(edgePlaneN)
 					if clipN:norm() > 1e-7 then
 						clipN = clipN:normalize()
+						local planePos = vec3f(self.vtxs.v[vi].pos)
+						local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
 						local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
-						local fakeEdge = {}
-						fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
-						fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
-						fakeEdge.interval = {0, 1}
-						fakeEdge.basis = {
-							normAvg:cross(fakeEdge.plane.n):normalize(),
-							normAvg,
-							fakeEdge.plane.n,
+						
+						local fakeEdge1 = {
+							planePos = planePos,
+							plane = plane,
+							interval = {0, 1},
+							basis = {
+								normAvg:cross(plane.n):normalize(),
+								normAvg,
+								plane.n,
+							},
+							com = edge1.com,
 						}
-						-- TODO NONE OF THESE SEEM TO BE TIED TO THE CORRECT EDGE> WTF>?!??!!?
-						--[[ do I attach them to the group of those edges?
-						fakeEdge.com = com
 						local tside = clipPlane:test(edge1.com)
-						makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
-						tside = not tside
+						makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge1, clipPlane=tside and clipPlane or -clipPlane}
+						
+						local fakeEdge2 = {
+							planePos = planePos,
+							plane = plane,
+							interval = {0, 1},
+							basis = {
+								normAvg:cross(plane.n):normalize(),
+								normAvg,
+								plane.n,
+							},
+							com = edge2.com,
+						}					
 						clipPlane = -clipPlane
-						makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
-						--]]
-						--[[ or do I attach them to 'e's group?  can 'e' be outer edges?
-						fakeEdge.com = com
-						local tside = clipPlane:test(edge1.com)
-						tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
-						--]]				
+						local tside = clipPlane:test(edge2.com)
+						makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge2, clipPlane=tside and clipPlane or -clipPlane}
+
 					end
 				end
 --]=]
@@ -1500,6 +1509,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 		end
 	end
 
+--[=[
 	-- now while we're here, do like with tri groups, and merge the ones that are within angle epsilon
 	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
 	local distEps = 1e-5
@@ -1548,7 +1558,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			if found then break end
 		end
 	until not found
-
+--]=]
 	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
 	-- ... due to it being the border of an open surface where an interior edge meets ..
 	-- ... then we need to add an extra clip plane by extending that
