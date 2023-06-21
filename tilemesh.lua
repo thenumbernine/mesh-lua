@@ -429,18 +429,18 @@ print('placing at arclength', s)
 					local s0, s1 = table.unpack(e.interval)
 					local slen = s1 - s0
 					assert(slen >= 0)
-					if s <= slen or j == #eg.srcEdges then
+					if s <= slen 
+					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
+					-- and do it before subtracting out the interval length
+					or j == #eg.srcEdges 
+					then
 						foundes = es
 						foundj = j
 						break
 					end
 					s = s - slen
 				end
-				if not foundes then
-					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
-					foundes = eg.srcEdges:last()
-					foundj = #eg.srcEdges
-				end
+				assert(foundes)
 print('found arclength at '..foundj..'th edge with local arclength', s, 'and starting interval in edge group', foundes.intervalIndex)				
 				-- except for the oob s range inst's we can also assert 0 <= sg <= (foundes.edge.interval difference)
 				local e = foundes.edge
@@ -451,9 +451,9 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 				local edgeDir = e.plane.n
 				if foundes.intervalIndex == 2 then
 					-- then flip the interval and go from end to start ...
-					--v1, v2 = v2, v1
-					--s = savg - (s - savg)
-					--edgeDir = -edgeDir -- or will this mess up the basis?
+					v1, v2 = v2, v1
+					s = savg - (s - savg)
+					edgeDir = -edgeDir
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
 			
@@ -463,7 +463,7 @@ print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.
 				local ey = e.normAvg
 				local ez = edgeDir
 				local ex = ey:cross(ez)
-				local pos = e.planePos + s * edgeDir
+				local pos = e.planePos + s * e.plane.n
 print('placing at interval param', s, 'pos', pos)
 				local xform = translateMat4x4(pos)
 						* matrix3x3To4x4{ex, ey, ez}

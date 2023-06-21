@@ -1382,12 +1382,7 @@ print('adding fake edge with tri stack', #nexttristack, 'total angle', math.deg(
 											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
 											local edgeDir2 = j2 == 1 and -e2.plane.n or e2.plane.n
 											-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
-
-if edgeDir2:dot(edgeDir) < 0 then
-	print()
-	print('edgeDir2:dot(edgeDir) < 0 ... SOMETHING BAD WILL HAPPEN')
-	print()
-end
+											--if edgeDir2:dot(edgeDir) < 0 then print('edgeDir2:dot(edgeDir) < 0') end
 											--if edgeDir2:dot(edgeDir) < 0 then edgeDir2 = -edgeDir2 end
 
 											-- ok the triangle stack ...
@@ -1549,8 +1544,14 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			end
 		end
 --]=]
-
 	end
+	
+print'before merging edge groups:'
+	for i,eg in ipairs(self.edgeClipGroups) do
+		print('edge group',i,'#srcEdges', #eg.srcEdges)
+	end
+	local totalSrcEdgesBeforeMerging = self.edgeClipGroups:mapi(function(eg) return #eg.srcEdges end):sum()
+print('total before', totalSrcEdgesBeforeMerging)
 
 -- [=[
 	-- now while we're here, do like with tri groups, and merge the ones that are within angle epsilon
@@ -1595,7 +1596,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 
 				local function reverseEdgeGroupSrcEdges(eg)
 					-- flip eg srcEdges
-					eg.srcEdges = eg2.srcEdges:reverse()
+					eg.srcEdges = eg.srcEdges:reverse()
 					for _,es in ipairs(eg.srcEdges) do
 						es.intervalIndex = 3 - es.intervalIndex
 					end
@@ -1660,6 +1661,14 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			assert(es.edge.isExtEdge == es1.edge.isExtEdge)
 		end
 	end
+	
+	print'after merging edge groups:'
+	for i,eg in ipairs(self.edgeClipGroups) do
+		print('edge group',i,'#srcEdges', #eg.srcEdges)
+	end
+	local totalSrcEdgesAfterMerging = self.edgeClipGroups:mapi(function(eg) return #eg.srcEdges end):sum()
+print('total after', totalSrcEdgesAfterMerging)
+	assert(totalSrcEdgesBeforeMerging == totalSrcEdgesAfterMerging)
 
 --]=]
 	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
