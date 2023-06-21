@@ -415,7 +415,7 @@ print('...with interval', smin, smax)
 				for _,inst in ipairs(insts) do
 					local numInsts = (smax - smin) / inst.offsetDistance
 print('edge has '..numInsts..' placements')
-					for i=0,numInsts do	-- plus one more for good measure,  i probalby have to clip this.
+					for i=-1,numInsts+1 do	-- plus one more for good measure,  i probalby have to clip this.
 						local s = smin + i * inst.offsetDistance
 						local omesh = omeshForFn[inst.geometryFilename]
 						-- e.normAvg is the up axis, going to be y
