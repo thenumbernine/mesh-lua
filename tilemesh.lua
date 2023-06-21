@@ -403,13 +403,14 @@ print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function
 		-- sum up srcEdges[].edge arclength and then march along it, looking up edges as you go
 		-- use srcEdge[].intervalIndex to tell which side of the edge is the start
 		local edgeGroupLength = 0
+print('edge group has '..#eg.srcEdges..' srcEdges')	
 		for _,es in ipairs(eg.srcEdges) do
 			local e = es.edge
 			local s0, s1 = table.unpack(e.interval)
 			assert(s0 <= s1)
 			edgeGroupLength = edgeGroupLength + (s1 - s0)
 		end
-print('edgeGroupLength ', edgeGroupLength )
+print('edge group has total arclength', edgeGroupLength)
 		-- TODO is it all or is it pick-one?
 		-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
 		for _,inst in ipairs(insts) do
@@ -418,38 +419,41 @@ print('edge for inst', inst,'has',numInsts,'placements')
 			local startNumTilesPlaced = #mesh.tilePlaces
 			-- TODO how come i keep having to increase this ...
 			for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
-				local sOfGroup = i * inst.offsetDistance
+				local s = i * inst.offsetDistance
+print('placing at arclength', s)				
 				-- now find edge associated with this 's' ...
-				local tmp = sOfGroup
 				local foundes 
-				for _,es in ipairs(eg.srcEdges) do
+				local foundj
+				for j,es in ipairs(eg.srcEdges) do
 					local e = es.edge
 					local s0, s1 = table.unpack(e.interval)
 					local slen = s1 - s0
 					assert(slen >= 0)
-					if sOfGroup <= slen then
+					if s <= slen or j == #eg.srcEdges then
 						foundes = es
+						foundj = j
 						break
 					end
+					s = s - slen
 				end
 				if not foundes then
 					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
 					foundes = eg.srcEdges:last()
+					foundj = #eg.srcEdges
 				end
-				-- except for the oob s range inst's we can also assert 0 <= sOfGroup <= (foundes.edge.interval difference)
+print('found arclength at '..foundj..'th edge with local arclength', s, 'and starting interval in edge group', foundes.intervalIndex)				
+				-- except for the oob s range inst's we can also assert 0 <= sg <= (foundes.edge.interval difference)
 				local e = foundes.edge
 				local s0, s1 = table.unpack(e.interval)
 				local savg = .5 * (s0 + s1)
 				local v1 = e.planePos + e.plane.n * s0
 				local v2 = e.planePos + e.plane.n * s1
 				local edgeDir = e.plane.n
-				--local s = (sOfGroup - s0) / (s1 - s0)
-				local s = sOfGroup
 				if foundes.intervalIndex == 2 then
 					-- then flip the interval and go from end to start ...
-					v1, v2 = v2, v1
+					--v1, v2 = v2, v1
 					--s = savg - (s - savg)
-					edgeDir = -edgeDir -- or will this mess up the basis?
+					--edgeDir = -edgeDir -- or will this mess up the basis?
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
 			
