@@ -1180,10 +1180,10 @@ end
 					local s1 = plane:dist(v1)
 					local s2 = plane:dist(v2)
 					assert(s1 <= s2)
-print('interval', s1, s2)					
+print('interval', s1, s2)
 					local clipNormal = t.normal:cross(edgeDir):normalize()
 					local clipPlane = plane3f():fromDirPt(clipNormal, vavg)
-print('clipPlane', clipPlane)					
+print('clipPlane', clipPlane)
 					local e = {
 						tris = {t},
 						triVtxIndexes = {j+1},	-- TODO make this 0-based, here and in calcEdges2 ...
@@ -1209,7 +1209,7 @@ print('clipPlane', clipPlane)
 	self.triGroupForTri = triGroupForTri
 end
 
--- calculate the edge clip-plane-groups 
+-- calculate the edge clip-plane-groups
 function Mesh:calcTriEdgeGroups()
 	if not self.triGroups then
 		self:calcTriSurfaceGroups()
@@ -1221,7 +1221,7 @@ function Mesh:calcTriEdgeGroups()
 	-- ... or just put them in a new data structure?
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-4)
 	local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
-	
+
 	--[[
 	new algorithm
 	1) go through all border edges (of tri groups and of open meshes)
@@ -1229,23 +1229,35 @@ function Mesh:calcTriEdgeGroups()
 		2.a) don't flag the ones that are in straight lines.  or within tolerance for curved corners.
 	3) cycle through all those vertexes
 	 ... we have to assume the touching vtxs are a 2D surface.  though there are T's in our shitty quality meshes. hmm.
-	4) between each two edges around the vtx, insert a new fake-edge.  give a coyp of the fake-clip-edge to each edge's clipGroup, pointed back at that edge's COM 
+	4) between each two edges around the vtx, insert a new fake-edge.  give a coyp of the fake-clip-edge to each edge's clipGroup, pointed back at that edge's COM
 	--]]
 
-	self.edgeClipGroups = table() 	-- key is the edge 
+	self.edgeClipGroups = table() 	-- key is the edge
 	local function makeEdgeClipGroups(e)
-		local _, eg = self.edgeClipGroups:find(nil, function(eg) return eg.srcEdges:find(e) end)
+print('makeEdgeClipGroup', e)
+		local _, eg = self.edgeClipGroups:find(nil, function(eg)
+			return eg.srcEdges:find(nil, function(es)
+				return es.edge == e
+			end)
+		end)
 		if not eg then
 			eg = {
 				-- this is the real edges that map to this edge-clip-group
-				-- it can be from .edges2 or from .borderEdges
+				-- it can be from t.edges2 or from t.borderEdges
 				srcEdges = table(),
 				-- this is the fake-edges to-be-used for clipping
 				borderEdges = table(),
 			}
 			self.edgeClipGroups:insert(eg)
 		end
-		eg.srcEdges:insertUnique(e)
+		-- insertUnique ...
+		if not eg.srcEdges:find(nil, function(es) return es.edge == e end) then
+			assert(#eg.srcEdges == 0)	-- hmmmmmmm how to insert and maintain srcEdges' order ...
+			eg.srcEdges:insert{
+				edge = e,
+				intervalIndex = 1,
+			}
+		end
 		return eg
 	end
 
@@ -1257,7 +1269,7 @@ function Mesh:calcTriEdgeGroups()
 			local e = info.edge
 print()
 print('starting on edge pos', e.planePos, 'normal', e.plane.n)
-		
+
 			-- now clip against endpoint edges
 			-- for each vtx of the edge ...
 			--  for all other tris on vtx ...
@@ -1272,7 +1284,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			local normAvg = table.mapi(e.tris, function(t) return t.normal end):sum():normalize()
 			vi1 = uniquevtx(vi1)
 			vi2 = uniquevtx(vi2)
-			
+
 			--[[ based on vtx positions
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
 			--]]
@@ -1281,14 +1293,14 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			local com = .5 * (v1 + v2)
---print('FINDING PLANES FOR EDGE WITH COM', com)			
+--print('FINDING PLANES FOR EDGE WITH COM', com)
 			--]]
 
-			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt' 
+			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt'
 			-- stop if you come back to the start edge  'e'
 			-- stop if you cover the same triangle twice
 			-- stop if you find a triGroup boundary edge
-			--  if you do find a triGroup boundary edge then 
+			--  if you do find a triGroup boundary edge then
 			--   create a clip plane midway between the start edge 'e' and the triGroup boundary edge
 			local trisHaveBeenTested
 			local function propagateEdge(vi, edgeDir, preve, tristack, totalAngle)
@@ -1299,7 +1311,7 @@ assert(edgeDot >= 0)
 --if edgeDot < 0 then edgeDir = -edgeDir end
 
 print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edgeDot)
-				
+
 				vi = uniquevtx(vi)
 				-- for all tris touching the previous edge ...
 				-- (they also have this vtx in common)
@@ -1307,10 +1319,10 @@ print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edg
 					if not trisHaveBeenTested:find(t) then
 						trisHaveBeenTested:insert(t)
 						local tp = self.triIndexes.v + 3*(t.index-1)
-						
+
 						local nexttristack = table(tristack)
 						nexttristack:insert(t)
-						
+
 						-- find their edges
 						-- have to look in this tri's edges
 						-- but all those trigroup borderEdges were added extra, so have to check those too ...
@@ -1335,7 +1347,7 @@ print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edg
 												(self.vtxs.v[tp[(k+2)%3]].pos - self.vtxs.v[tp[k]].pos):normalize()
 											),
 											-1, 1))
-print('adding angle', math.deg(angle))										
+print('adding angle', math.deg(angle))
 										local nextTotalAngle = totalAngle + angle
 
 										if not e2.isGroupBorderEdge then
@@ -1343,7 +1355,7 @@ print('adding angle', math.deg(angle))
 											propagateEdge(vi, edgeDir, e2, nexttristack, nextTotalAngle)
 										else
 
-											-- ok here ... we're considering between edges 'e' and 'e2' ... 
+											-- ok here ... we're considering between edges 'e' and 'e2' ...
 											-- because I am following triangles to get here, I can account for T's in meshes (if the mesh has errors in it)
 											-- but because I'm following triangles, I can't loop around the whole vertex when we're at an open mesh's border.
 											-- This skips exterior angles.
@@ -1359,12 +1371,12 @@ print('adding angle', math.deg(angle))
 													outerEdges = table(),
 													normAvg = normAvg,
 												}
-												outerEdgesForVtx[vi].outerEdges:insertUnique(e2) 
+												outerEdgesForVtx[vi].outerEdges:insertUnique(e2)
 											end
 
 print('ending on edge pos', e2.planePos, 'normal', e2.plane.n)
 print('adding fake edge with tri stack', #nexttristack, 'total angle', math.deg(nextTotalAngle))
-											
+
 											-- ... if it's a triGroup boundary  ....
 											-- ... then use it as a clip plane
 											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
@@ -1384,7 +1396,7 @@ end
 											-- so just testing dot product isn't enough.
 local tristacknormaldots = require 'matrix'{#nexttristack,#nexttristack}:lambda(function(i,j)
 	local d = nexttristack[i].normal:dot(nexttristack[j].normal)
-	-- tris should all be aligned ... 
+	-- tris should all be aligned ...
 	--  ...for the tri gruops to have been created in the first place ...
 	-- this assert fails for curved walls:
 	--assert(d > 1 - 1e-3)
@@ -1458,7 +1470,7 @@ print('...adding clip plane '..clipPlane)
 					end
 				end
 			end
-			
+
 			for _,info in ipairs{
 				-- vi1 is the 'from' in the edge ray from->to
 				-- so e.plane.n points into vi1
@@ -1469,7 +1481,7 @@ print('...adding clip plane '..clipPlane)
 				-- reset this between each test
 				{vi=vi2, plane=e.plane.n},
 			} do
-				
+
 				local vi = info.vi
 				trisHaveBeenTested = table()
 				propagateEdge(vi, info.plane, e, table(), 0)
@@ -1501,10 +1513,10 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			if clipPlaneNormalLen  > 1e-7 then
 				clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
 				local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
-				
+
 				local planePos = vec3f(self.vtxs.v[vi].pos)
 				local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
-				
+
 				local fakeEdge1 = {
 					planePos = planePos,
 					plane = plane,
@@ -1518,7 +1530,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 				}
 				local tside = clipPlane:test(edge1.com)
 				makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge1, clipPlane=tside and clipPlane or -clipPlane}
-				
+
 				local fakeEdge2 = {
 					planePos = planePos,
 					plane = plane,
@@ -1529,7 +1541,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 						plane.n,
 					},
 					com = edge2.com,
-				}					
+				}
 				clipPlane = -clipPlane
 				local tside = clipPlane:test(edge2.com)
 				makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge2, clipPlane=tside and clipPlane or -clipPlane}
@@ -1549,39 +1561,77 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 		found = false
 		for i1=1,#self.edgeClipGroups-1 do
 			local eg1 = self.edgeClipGroups[i1]
+
+			-- ok ... convention ... ?
+			-- srcEdges needs to keep these in-order
+			-- srcEdges[i].intervalIndex will be the index (1 or 2) into srcEdges[i].edge.interval that gives us the param of the start of the edge
+			-- so 3-intervalIndex will give us the index of the param of the end of the edge
+			local es11 = eg1.srcEdges[1] 	-- src edge start info
+			local e11 = es11.edge
+			local v11 = e11.planePos + e11.plane.n * e11.interval[es11.intervalIndex]
+			local es12 = eg1.srcEdges:last()
+			local e12 = es12.edge
+			local v12 = e12.planePos + e12.plane.n * e12.interval[3 - es12.intervalIndex]
+
 			for i2=i1+1,#self.edgeClipGroups do
 				local eg2 = self.edgeClipGroups[i2]
-				-- if any in eg1 and eg2 are within threshold 
+				-- if any in eg1 and eg2 are within threshold
 				-- and their points align
-				-- and they only have 2 edge neighbors? 
+				-- and they only have 2 edge neighbors?
 				-- i think so yeah.
 				-- then merge the two groups
-				for j1,e1 in ipairs(eg1.srcEdges) do
-					local e1smin, e1smax = table.unpack(e1.interval)
-					local v11 = e1.planePos + e1.plane.n * e1smin
-					local v12 = e1.planePos + e1.plane.n * e1smax
-					for j2,e2 in ipairs(eg2.srcEdges) do
-						local e2smin, e2smax = table.unpack(e2.interval)
-						local v21 = e2.planePos + e2.plane.n * e2smin
-						local v22 = e2.planePos + e2.plane.n * e2smax
-						if math.abs(e1.plane.n:dot(e2.plane.n)) > cosAngleThreshold
-						and (
-							(v11 - v21):norm() < distEps
-							or (v11 - v22):norm() < distEps
-							or (v12 - v21):norm() < distEps
-							or (v12 - v22):norm() < distEps
-						)
-						then
-							found = true
-							break
-						end
+
+				-- shouldn't contain eachothers edges ...
+				for _,e1 in ipairs(eg1.srcEdges) do
+					assert(not eg2.srcEdges:find(nil, function(es) return es.edge == e1 end))
+				end
+
+				local es21 = eg2.srcEdges[1]
+				local e21 = es21.edge
+				local v21 = e21.planePos + e21.plane.n * e21.interval[es21.intervalIndex]
+				local es22 = eg2.srcEdges:last()
+				local e22 = es22.edge
+				local v22 = e22.planePos + e22.plane.n * e22.interval[3 - es22.intervalIndex]
+
+				local function reverseEdgeGroupSrcEdges(eg)
+					-- flip eg srcEdges
+					eg.srcEdges = eg2.srcEdges:reverse()
+					for _,es in ipairs(eg.srcEdges) do
+						es.intervalIndex = 3 - es.intervalIndex
 					end
-					if found then break end
+				end
+
+				if (v11 - v21):norm() < distEps
+				and math.abs(e11.plane.n:dot(e21.plane.n)) > cosAngleThreshold
+				then
+					-- reverse eg1 so its end matches eg2's start
+					reverseEdgeGroupSrcEdges(eg1)
+					found = true
+				elseif (v11 - v22):norm() < distEps
+				and math.abs(e11.plane.n:dot(e22.plane.n)) > cosAngleThreshold
+				then
+					-- we can either flip both or we can swap eg1 and eg2 ...
+					reverseEdgeGroupSrcEdges(eg1)
+					reverseEdgeGroupSrcEdges(eg2)
+					found = true
+				elseif (v12 - v21):norm() < distEps
+				and math.abs(e12.plane.n:dot(e21.plane.n)) > cosAngleThreshold
+				then
+					-- already good
+					found = true
+				elseif (v12 - v22):norm() < distEps
+				and math.abs(e12.plane.n:dot(e22.plane.n)) > cosAngleThreshold
+				then
+					-- reverse eg2 so its start matches eg1's end
+					reverseEdgeGroupSrcEdges(eg2)
+					found = true
 				end
 				if found then
-					-- then merge eg1 and eg2
+					-- merge eg1 and eg2 srcEdges. maintain them in-order
 					eg1.srcEdges:append(eg2.srcEdges)
+					-- merge eg1 and eg2 borderEdges
 					eg1.borderEdges:append(eg2.borderEdges)
+					-- and remove eg2 from edgeClipGroups
 					self.edgeClipGroups:remove(i2)
 					break
 				end
@@ -2982,14 +3032,16 @@ local normalExtrusionEpsilon  = .1
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
 	for _,eg in ipairs(self.edgeClipGroups) do
-		local alpha = eg.srcEdges:find(highlightEdge) and 1 or .1
+		local alpha = eg.srcEdges:find(nil, function(es)
+			return es.edge == highlightEdge
+		end) and 1 or .1
 		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			-- if e.plane.n is const but info.clipPlane.n alternates dir then this will alternate its direction:
 			--local n = e.plane.n:cross(info.clipPlane.n)
 			-- so instead ...
-			local n = -table():append(eg.srcEdges:mapi(function(e) 
-				return table.mapi(e.tris, function(t) return t.normal end)
+			local n = table():append(eg.srcEdges:mapi(function(es)
+				return table.mapi(es.edge.tris, function(t) return t.normal end)
 			end):unpack()):sum():normalize()
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
@@ -3014,7 +3066,9 @@ local normalExtrusionEpsilon  = .1
 	gl.glDisable(gl.GL_CULL_FACE)
 	gl.glBegin(gl.GL_TRIANGLES)
 	for _,eg in ipairs(self.edgeClipGroups) do
-		local alpha = eg.srcEdges:find(highlightEdge) and 1 or .1
+		local alpha = eg.srcEdges:find(nil, function(es)
+			return es.edge == highlightEdge
+		end) and 1 or .1
 		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?

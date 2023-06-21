@@ -663,7 +663,9 @@ function App:update()
 				else
 --print("looking for closest edge to mouse")					
 					local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
-						return eg.srcEdges:find(insertMeshEdge)
+						return eg.srcEdges:find(nil, function(es)
+							return es.edge == insertMeshEdge
+						end)
 					end)
 --print("found", eg)
 					if eg then
