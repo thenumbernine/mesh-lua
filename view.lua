@@ -593,7 +593,7 @@ function App:update()
 				if mesh.triGroups then
 					local tg = mesh.triGroupForTri[mesh.tris[self.insertMeshTri/3+1]]
 					if tg then
-						self.insertMeshToSurfaceClipGroup = self.insertMeshToSurfaceClipGroup:clipToTriGroup(tg)
+						self.insertMeshToSurfaceClipGroup = self.insertMeshToSurfaceClipGroup:clipToClipGroup(tg)
 					end
 				end
 				if #self.insertMeshToSurfaceClipGroup.tris == 0 then
@@ -667,7 +667,7 @@ function App:update()
 					end)
 --print("found", eg)
 					if eg then
-						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToTriGroup(eg)
+						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToClipGroup(eg)
 					end
 				end
 				if self.insertMeshToEdgeClipGroup 

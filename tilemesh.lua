@@ -184,7 +184,7 @@ local function tileMesh(mesh, placeFn)
 			--if anyInside
 			--and not allInside
 			--then
-			local clipped, anythingRemoved = omesh:clone():transform(xform):clipToTriGroup(tg)
+			local clipped, anythingRemoved = omesh:clone():transform(xform):clipToClipGroup(tg)
 			if not clipped then
 				-- ... then the mesh is all outside
 			elseif anythingRemoved then
@@ -378,51 +378,60 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 print('#tilePlaces from surfaces', #mesh.tilePlaces)
 
 -- [=[
+	local edgesPlaced = {}
 	local numSurfTilePlaces = #mesh.tilePlaces
-	for _,g in ipairs(mesh.triGroups) do
-		for _,info in ipairs(g.borderEdges) do
+	for _,tg in ipairs(mesh.triGroups) do
+		for _,info in ipairs(tg.borderEdges) do
 			local e = info.edge
-print('placing along edge pos', e.planePos, 'normal', e.plane.n)			
-			-- TODO pick every step
-			-- but then how do we know how much to step if we haven't picked until after we step?
-			-- is that what offsetDistance is supposed to be?
-			-- yes?
-			local insts
-			if e.isExtEdge == nil then	-- edge ... only has 1 tri
-				insts = placeInfo.edgeInstances
-			else	-- corner
-				insts = placeInfo.cornerInstances
-				-- e.isExtEdge == false <=> concave
-				-- e.isExtEdge == true <=> convex
-			end
-
-			-- get the fake-trigroup associated with this edge that's used for clipping ...
-			local eg = assert((select(2,mesh.edgeClipGroups:find(nil, function(eg)
-				return eg.srcEdges:find(e)
-			end))))
-			local edgeDir = e.plane.n
-print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
-			local smin, smax = table.unpack(e.interval)
-			assert(smin <= smax)
-print('...with interval', smin, smax)
-			for _,inst in ipairs(insts) do
-				local numInsts = (smax - smin) / inst.offsetDistance
-print('edge has '..numInsts..' placements')
-				for i=0,numInsts do	-- plus one more for good measure,  i probalby have to clip this.
-					local s = smin + i * inst.offsetDistance
-					local omesh = omeshForFn[inst.geometryFilename]
-					-- e.normAvg is the up axis, going to be y
-					-- edgeDir is the long axis, going to be z 
-					local ey = e.normAvg
-					local ez = edgeDir
-					local ex = ey:cross(ez)
-					local pos = e.planePos + s * edgeDir
-print('placing at interval param', s, 'pos', pos)
-					
-					local xform = translateMat4x4(pos)
-							* matrix3x3To4x4{ex, ey, ez}
-					mergeOrPlace(xform, inst.geometryFilename, eg)
+			if not edgesPlaced[e] then
+				edgesPlaced[e] = true
+				local startNumTilesPlaced = #mesh.tilePlaces
+				local s0, s1 = table.unpack(e.interval)
+				local v1 = e.planePos + e.plane.n * s0
+				local v2 = e.planePos + e.plane.n * s1
+print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
+				-- TODO pick every step
+				-- but then how do we know how much to step if we haven't picked until after we step?
+				-- is that what offsetDistance is supposed to be?
+				-- yes?
+				local insts
+				if e.isExtEdge == nil then	-- edge ... only has 1 tri
+					insts = placeInfo.edgeInstances
+				else	-- corner
+					insts = placeInfo.cornerInstances
+					-- e.isExtEdge == false <=> concave
+					-- e.isExtEdge == true <=> convex
 				end
+
+				-- get the fake-trigroup associated with this edge that's used for clipping ...
+				local eg = assert((select(2,mesh.edgeClipGroups:find(nil, function(eg)
+					return eg.srcEdges:find(e)
+				end))))
+				local edgeDir = e.plane.n
+print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
+				local smin, smax = table.unpack(e.interval)
+				assert(smin <= smax)
+print('...with interval', smin, smax)
+				for _,inst in ipairs(insts) do
+					local numInsts = (smax - smin) / inst.offsetDistance
+print('edge has '..numInsts..' placements')
+					for i=0,numInsts do	-- plus one more for good measure,  i probalby have to clip this.
+						local s = smin + i * inst.offsetDistance
+						local omesh = omeshForFn[inst.geometryFilename]
+						-- e.normAvg is the up axis, going to be y
+						-- edgeDir is the long axis, going to be z 
+						local ey = e.normAvg
+						local ez = edgeDir
+						local ex = ey:cross(ez)
+						local pos = e.planePos + s * edgeDir
+print('placing at interval param', s, 'pos', pos)
+						local xform = translateMat4x4(pos)
+								* matrix3x3To4x4{ex, ey, ez}
+						mergeOrPlace(xform, inst.geometryFilename, eg)
+					end
+				end
+				local numTilesPlacedForThisEdge = #mesh.tilePlaces - startNumTilesPlaced 
+print('placed', numTilesPlacedForThisEdge, 'unclipped tiles for this edge')
 			end
 		end
 	end

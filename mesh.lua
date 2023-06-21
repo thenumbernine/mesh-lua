@@ -1262,14 +1262,24 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			--   make clip plane at the edge and use it in our clip polytope
 			-- TODO might need the uniquevs used to create edges2 here ...
 			-- TODO TODO maybe we should be using it to make edges2 in the first place ...
-			local tg = makeEdgeClipGroups(e)
+			local eg = makeEdgeClipGroups(e)
 
 			local vi1 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]-1]
 			local vi2 = self.triIndexes.v[3*(e.tris[1].index-1) + e.triVtxIndexes[1]%3]
-			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
 			local normAvg = table.mapi(e.tris, function(t) return t.normal end):sum():normalize()
 			vi1 = uniquevtx(vi1)
 			vi2 = uniquevtx(vi2)
+			
+			--[[ based on vtx positions
+			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
+			--]]
+			-- [[ based on edge intervals
+			local s0, s1 = table.unpack(e.interval)
+			local v1 = e.planePos + e.plane.n * s0
+			local v2 = e.planePos + e.plane.n * s1
+			local com = .5 * (v1 + v2)
+--print('FINDING PLANES FOR EDGE WITH COM', com)			
+			--]]
 
 			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt' 
 			-- stop if you come back to the start edge  'e'
@@ -1283,8 +1293,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 
 -- convention : assert that our edgeDir points towards the COM
 local edgeDot = (com - self.vtxs.v[vi].pos):dot(edgeDir)
--- this assertion is only true for the trigroup/trigroup boundaries ... not for the open boundaries of open surfaces
---assert(edgeDot > 0)
+assert(edgeDot >= 0)
 --if edgeDot < 0 then edgeDir = -edgeDir end
 
 print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edgeDot)
@@ -1355,6 +1364,12 @@ print('adding fake edge with tri stack', #nexttristack, 'total angle', math.deg(
 											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
 											local edgeDir2 = j2 == 1 and -e2.plane.n or e2.plane.n
 											-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
+
+if edgeDir2:dot(edgeDir) < 0 then
+	print()
+	print('edgeDir2:dot(edgeDir) < 0 ... SOMETHING BAD WILL HAPPEN')
+	print()
+end
 											--if edgeDir2:dot(edgeDir) < 0 then edgeDir2 = -edgeDir2 end
 
 											-- ok the triangle stack ...
@@ -1373,16 +1388,14 @@ end)
 print('tri stack angles:')
 print(tristacknormaldots)
 											-- get the surface normal
-											local triavgnormal = nexttristack:mapi(function(t) return t.normal end):sum():normalize()
+											--local triavgnormal = nexttristack:mapi(function(t) return t.normal end):sum():normalize()
 											-- get a basis from the normal.  you can use edgeDir as one of the basis
-											local e1 = edgeDir:normalize()
-											local e2 = triavgnormal:cross(edgeDir):normalize()
-											local e3 = vec3f(triavgnormal)
+											--local e1 = edgeDir:normalize()
+											--local e2 = triavgnormal:cross(edgeDir):normalize()
+											--local e3 = vec3f(triavgnormal)
 											-- alright if edgeDir is e1 then edgeDir has coordinates [1,0] in our {e1,e2} basis
 											-- then edgeDir2 has coordinates ...
-											local edgeDir2SurfBasisCoords = vec2f(
-												e1:dot(edgeDir2),
-												e2:dot(edgeDir2))
+											--local edgeDir2SurfBasisCoords = vec2f(e1:dot(edgeDir2), e2:dot(edgeDir2))
 											-- but still how do we know which dir the triangles are going around the edge?
 											-- the tri.avg.normal ... ?
 											-- how about whether we had to flip edgeDir2 ...
@@ -1393,12 +1406,12 @@ print(tristacknormaldots)
 											if nextTotalAngle > math.pi then edgeDirAvg = -edgeDirAvg end
 
 											-- how to form a right angle to point back at 'e'? triple cross product?
-											local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
-											local clipN = edgeDirAvg:cross(edgePlaneN)
-											if clipN:norm() > 1e-7 then
-												clipN = clipN:normalize()
-
-												local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
+											local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
+											local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
+											local clipPlaneNormalLen = clipPlaneNormal:norm()
+											if clipPlaneNormalLen > 1e-7 then
+												clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
+												local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
 												-- then add a clip plane between these two edges,
 												-- make sure it's pointing at the first edge.
 print('...adding clip plane '..clipPlane)
@@ -1411,7 +1424,12 @@ print('...adding clip plane '..clipPlane)
 												-- and plane.n should point down the edge
 												fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
 												fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
-												fakeEdge.interval = {0, 1}
+												-- TODO NOTICE BIG WARNING
+												-- I was setting this to {0,1} ...
+												-- .. but that would make the clip group algo sometimes toss some edges ...
+												-- so ... needs t be smaller ..
+												-- but since this is a fake edge -- how small sohuld it be?
+												fakeEdge.interval = {0, .1}
 												--[[ basis for orientation of tiles placed
 												fakeEdge.basis = {e1, e2, e3}
 												--]]  -- why is this messed up?
@@ -1425,7 +1443,7 @@ print('...adding clip plane '..clipPlane)
 												-- for debugging:
 												fakeEdge.com = com
 												local tside = clipPlane:test(com)
-												tg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+												eg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
 											end
 										end
 									end
@@ -1446,6 +1464,7 @@ print('...adding clip plane '..clipPlane)
 				-- reset this between each test
 				{vi=vi2, plane=e.plane.n},
 			} do
+				
 				local vi = info.vi
 				trisHaveBeenTested = table()
 				outerEdges = table()
@@ -1464,14 +1483,16 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 					if (self.vtxs.v[vi].pos - edge2.com):dot(edgeDir2) < 0 then edgeDir2 = -edgeDir2 end
 					-- then insert a fake-edge averaged between them.  using angle bisection in case the angle between them is >180
 					-- but rlly how cna you tell?  seems you'll have to use more info, like which side their triangles are on ...
-					local edgePlaneN = edgeDir2:cross(edgeDir):normalize()
+					local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
 					local edgeDirAvg = (edgeDir + edgeDir2):normalize()
-					local clipN = edgeDirAvg:cross(edgePlaneN)
-					if clipN:norm() > 1e-7 then
-						clipN = clipN:normalize()
+					local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
+					local clipPlaneNormalLen = clipPlaneNormal:norm()
+					if clipPlaneNormalLen  > 1e-7 then
+						clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
+						local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
+						
 						local planePos = vec3f(self.vtxs.v[vi].pos)
 						local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
-						local clipPlane = plane3f():fromDirPt(clipN, self.vtxs.v[vi].pos)
 						
 						local fakeEdge1 = {
 							planePos = planePos,
@@ -1509,7 +1530,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 		end
 	end
 
---[=[
+-- [=[
 	-- now while we're here, do like with tri groups, and merge the ones that are within angle epsilon
 	local cosAngleThreshold = math.cos(math.rad(self.angleThresholdInDeg))
 	local distEps = 1e-5
@@ -1567,13 +1588,13 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 	-- for each vtx
 	--   make sure the real-edges and fake-edges intersperse
 	--   if any fake-edges are missing then insert them.
---print('for edge+vtx made '..(#tg.borderEdges - oldNumBorderEdges)..' clip edges')
+--print('for edge+vtx made '..(#eg.borderEdges - oldNumBorderEdges)..' clip edges')
 	-- THIS WOULD WORK PERFECTLY IF WE COULD GUARANTEE OUR MESH WAS A PROPR N-MANIFOLD EVERYWHERE ... WITH NO DANGLING EDGES OR TRIANGLES
 	-- but because we could have weird T intersections ... AND WE DO ... on that stupid target_basic-bricks model which is screwed up ... this won't work there.
 end
 
 -- clip the current mesh to the specified trigroup
-function Mesh:clipToTriGroup(g)
+function Mesh:clipToClipGroup(g)
 	--[[
 	ARBITRARY POLYHEDRA/POLYTOPE CLIPPING FUNCTION
 
@@ -2860,8 +2881,8 @@ function Mesh:drawTriSurfaceGroupEdges(highlightEdge)
 	gl.glEnable(gl.GL_BLEND)
 	gl.glDepthMask(gl.GL_FALSE)
 	gl.glBegin(gl.GL_LINES)
-	for _,g in ipairs(self.triGroups) do
-		for _,info in ipairs(g.borderEdges) do
+	for _,tg in ipairs(self.triGroups) do
+		for _,info in ipairs(tg.borderEdges) do
 			local e = info.edge
 			local alpha = e == highlightEdge and 1 or .1
 			if e.isExtEdge == nil then
@@ -2946,27 +2967,33 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	gl.glDisable(gl.GL_DEPTH_TEST)
 	gl.glEnable(gl.GL_BLEND)
 
+local normalExtrusionEpsilon  = .1
 	-- draw along the fake-edge, then turn and draw along its clip-plane
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
-	for _,g in ipairs(self.edgeClipGroups) do
-		local alpha = g.srcEdges:find(highlightEdge) and 1 or .1
-		for _,info in ipairs(g.borderEdges) do
+	for _,eg in ipairs(self.edgeClipGroups) do
+		local alpha = eg.srcEdges:find(highlightEdge) and 1 or .1
+		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
-			local n = e.plane.n:cross(info.clipPlane.n)
+			-- if e.plane.n is const but info.clipPlane.n alternates dir then this will alternate its direction:
+			--local n = e.plane.n:cross(info.clipPlane.n)
+			-- so instead ...
+			local n = -table():append(eg.srcEdges:mapi(function(e) 
+				return table.mapi(e.tris, function(t) return t.normal end)
+			end):unpack()):sum():normalize()
 			local s0, s1 = table.unpack(e.interval)
 			local v1 = e.planePos + e.plane.n * s0
 			local v2 = e.planePos + e.plane.n * s1
 			local vavg = .5 * (v1 + v2)
 			-- [[ draw edge
 			gl.glColor4f(1,0,0,alpha)
-			gl.glVertex3f((e.planePos + 1e-3 * n):unpack())
-			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5):unpack())
+			gl.glVertex3f((e.planePos + normalExtrusionEpsilon * n):unpack())
+			gl.glVertex3f((e.planePos + normalExtrusionEpsilon * n + e.plane.n * .5):unpack())
 			--]]
 			-- [[ draw normal
 			gl.glColor4f(0,1,1,alpha)
-			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5):unpack())
-			gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5 + info.clipPlane.n * .25):unpack())
+			gl.glVertex3f((e.planePos + normalExtrusionEpsilon * n + e.plane.n * .5):unpack())
+			gl.glVertex3f((e.planePos + normalExtrusionEpsilon * n + e.plane.n * .5 + info.clipPlane.n * .25):unpack())
 			--]]
 		end
 	end
@@ -2976,9 +3003,9 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	-- [[ draw from real plane to fake plane?
 	gl.glDisable(gl.GL_CULL_FACE)
 	gl.glBegin(gl.GL_TRIANGLES)
-	for _,g in ipairs(self.edgeClipGroups) do
-		local alpha = g.srcEdges:find(highlightEdge) and 1 or .1
-		for _,info in ipairs(g.borderEdges) do
+	for _,eg in ipairs(self.edgeClipGroups) do
+		local alpha = eg.srcEdges:find(highlightEdge) and 1 or .1
+		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?
 			local s0, s1 = table.unpack(e.interval)
@@ -2989,9 +3016,9 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 			gl.glColor4f(1,0,0,alpha)
 			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .05 + info.clipPlane.n * .05):unpack())
 			gl.glColor4f(0,1,0,alpha)
-			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .5 + info.clipPlane.n * .05):unpack())
+			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .3 + info.clipPlane.n * .05):unpack())
 			-- move back along clip plane normal ...
-			--gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .5 + info.clipPlane.n * .25):unpack())
+			--gl.glVertex3f((e.planePos + 1e-3 * n + e.plane.n * .3 + info.clipPlane.n * .25):unpack())
 			-- or just use the COM
 			gl.glColor4f(0,0,1,alpha)
 			gl.glVertex3f((1e-3 * n + e.com):unpack())
