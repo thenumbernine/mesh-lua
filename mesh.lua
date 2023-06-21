@@ -1639,6 +1639,17 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 			if found then break end
 		end
 	until not found
+
+	-- by here, post-merge ,our groups should all either be e.isExtEdge==nil or e.isExtEdge == not nil (true or false)
+	-- hmm maybe I can even assert the true is consistent or false is consistent
+	for _,eg in ipairs(self.edgeClipGroups) do
+		local es1 = eg.srcEdges[1]
+		for i=2,#eg.srcEdges do	
+			local es = eg.srcEdges[i]
+			assert(es.edge.isExtEdge == es1.edge.isExtEdge)
+		end
+	end
+
 --]=]
 	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
 	-- ... due to it being the border of an open surface where an interior edge meets ..

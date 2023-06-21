@@ -381,55 +381,92 @@ print('#tilePlaces from surfaces', #mesh.tilePlaces)
 	local numSurfTilePlaces = #mesh.tilePlaces
 	local totalEdgesCovered = 0
 	for _,eg in ipairs(mesh.edgeClipGroups) do
+print("placing along edge group...")
+print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
 		totalEdgesCovered = totalEdgesCovered + #eg.srcEdges
-		-- TODO instead sum up srcEdges[].edge arclength and then march along it, looking up edges as you go
+
+		-- TODO pick every step?
+		-- nah, 
+		-- the edge group si already asserted to all have matching edge.isExtEdge
+		-- but then how do we know how much to step if we haven't picked until after we step?
+		-- is that what offsetDistance is supposed to be?
+		-- yes?
+		local insts
+		if eg.srcEdges[1].edge.isExtEdge == nil then	-- edge ... only has 1 tri
+			insts = placeInfo.edgeInstances
+		else	-- corner
+			insts = placeInfo.cornerInstances
+			-- e.isExtEdge == false <=> concave
+			-- e.isExtEdge == true <=> convex
+		end
+
+		-- sum up srcEdges[].edge arclength and then march along it, looking up edges as you go
 		-- use srcEdge[].intervalIndex to tell which side of the edge is the start
+		local edgeGroupLength = 0
 		for _,es in ipairs(eg.srcEdges) do
 			local e = es.edge
-			local startNumTilesPlaced = #mesh.tilePlaces
 			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
-			-- TODO pick every step
-			-- but then how do we know how much to step if we haven't picked until after we step?
-			-- is that what offsetDistance is supposed to be?
-			-- yes?
-			local insts
-			if e.isExtEdge == nil then	-- edge ... only has 1 tri
-				insts = placeInfo.edgeInstances
-			else	-- corner
-				insts = placeInfo.cornerInstances
-				-- e.isExtEdge == false <=> concave
-				-- e.isExtEdge == true <=> convex
-			end
-
-			local edgeDir = e.plane.n
-print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function(info) return tostring(info.clipPlane) end):concat', ')
-			local smin, smax = table.unpack(e.interval)
-			assert(smin <= smax)
-print('...with interval', smin, smax)
-			for _,inst in ipairs(insts) do
-				local numInsts = (smax - smin) / inst.offsetDistance
-print('edge has '..numInsts..' placements')
-				-- TODO how come i keep having to increase this ...
-				for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
-					local s = smin + i * inst.offsetDistance
-					local omesh = omeshForFn[inst.geometryFilename]
-					-- e.normAvg is the up axis, going to be y
-					-- edgeDir is the long axis, going to be z
-					local ey = e.normAvg
-					local ez = edgeDir
-					local ex = ey:cross(ez)
-					local pos = e.planePos + s * edgeDir
-print('placing at interval param', s, 'pos', pos)
-					local xform = translateMat4x4(pos)
-							* matrix3x3To4x4{ex, ey, ez}
-					mergeOrPlace(xform, inst.geometryFilename, eg)
+			assert(s0 <= s1)
+			edgeGroupLength = edgeGroupLength + (s1 - s0)
+		end
+print('edgeGroupLength ', edgeGroupLength )
+		-- TODO is it all or is it pick-one?
+		-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
+		for _,inst in ipairs(insts) do
+			local numInsts = edgeGroupLength / inst.offsetDistance
+print('edge for inst', inst,'has',numInsts,'placements')
+			local startNumTilesPlaced = #mesh.tilePlaces
+			-- TODO how come i keep having to increase this ...
+			for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
+				local sOfGroup = i * inst.offsetDistance
+				-- now find edge associated with this 's' ...
+				local tmp = sOfGroup
+				local foundes 
+				for _,es in ipairs(eg.srcEdges) do
+					local e = es.edge
+					local s0, s1 = table.unpack(e.interval)
+					local slen = s1 - s0
+					assert(slen >= 0)
+					if sOfGroup <= slen then
+						foundes = es
+						break
+					end
 				end
+				if not foundes then
+					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
+					foundes = eg.srcEdges:last()
+				end
+				-- except for the oob s range inst's we can also assert 0 <= sOfGroup <= (foundes.edge.interval difference)
+				local e = foundes.edge
+				local s0, s1 = table.unpack(e.interval)
+				local savg = .5 * (s0 + s1)
+				local v1 = e.planePos + e.plane.n * s0
+				local v2 = e.planePos + e.plane.n * s1
+				local edgeDir = e.plane.n
+				--local s = (sOfGroup - s0) / (s1 - s0)
+				local s = sOfGroup
+				if foundes.intervalIndex == 2 then
+					-- then flip the interval and go from end to start ...
+					v1, v2 = v2, v1
+					--s = savg - (s - savg)
+					edgeDir = -edgeDir -- or will this mess up the basis?
+				end
+print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
+			
+				local omesh = omeshForFn[inst.geometryFilename]
+				-- e.normAvg is the up axis, going to be y
+				-- edgeDir is the long axis, going to be z
+				local ey = e.normAvg
+				local ez = edgeDir
+				local ex = ey:cross(ez)
+				local pos = e.planePos + s * edgeDir
+print('placing at interval param', s, 'pos', pos)
+				local xform = translateMat4x4(pos)
+						* matrix3x3To4x4{ex, ey, ez}
+				mergeOrPlace(xform, inst.geometryFilename, eg)
 			end
 			local numTilesPlacedForThisEdge = #mesh.tilePlaces - startNumTilesPlaced
-print('placed', numTilesPlacedForThisEdge, 'unclipped tiles for this edge')
+print('placed', numTilesPlacedForThisEdge, 'unclipped tiles for this edge and inst')
 		end
 	end
 print('# edges placed along', totalEdgesCovered)
