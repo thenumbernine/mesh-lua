@@ -1386,9 +1386,8 @@ local tristacknormaldots = require 'matrix'{#nexttristack,#nexttristack}:lambda(
 	local d = nexttristack[i].normal:dot(nexttristack[j].normal)
 	-- tris should all be aligned ... 
 	--  ...for the tri gruops to have been created in the first place ...
-	-- TODO THIS MAY FAIL FOR CURVED WALLS
-	-- in that case ... ??? how to get around this problem?
-	assert(d > 1 - 1e-3)
+	-- this assert fails for curved walls:
+	--assert(d > 1 - 1e-3)
 	return d
 end)
 print('tri stack angles:')
