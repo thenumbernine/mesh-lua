@@ -1249,8 +1249,11 @@ function Mesh:calcTriEdgeGroups()
 		return eg
 	end
 
-	for _,g in ipairs(self.triGroups) do
-		for _,info in ipairs(g.borderEdges) do
+	-- maps from (unique) vtx index to list of outer edges
+	local outerEdgesForVtx = {}
+
+	for _,tg in ipairs(self.triGroups) do
+		for _,info in ipairs(tg.borderEdges) do
 			local e = info.edge
 print()
 print('starting on edge pos', e.planePos, 'normal', e.plane.n)
@@ -1288,7 +1291,6 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			--  if you do find a triGroup boundary edge then 
 			--   create a clip plane midway between the start edge 'e' and the triGroup boundary edge
 			local trisHaveBeenTested
-			local outerEdges
 			local function propagateEdge(vi, edgeDir, preve, tristack, totalAngle)
 
 -- convention : assert that our edgeDir points towards the COM
@@ -1353,7 +1355,11 @@ print('adding angle', math.deg(angle))
 											-- how to find an outside edge?
 											-- it'll have here 'isExtEdge == nil'
 											if e2.isExtEdge == nil then
-												outerEdges:insertUnique(e2) 
+												outerEdgesForVtx[vi] = outerEdgesForVtx[vi] or {
+													outerEdges = table(),
+													normAvg = normAvg,
+												}
+												outerEdgesForVtx[vi].outerEdges:insertUnique(e2) 
 											end
 
 print('ending on edge pos', e2.planePos, 'normal', e2.plane.n)
@@ -1467,67 +1473,72 @@ print('...adding clip plane '..clipPlane)
 				
 				local vi = info.vi
 				trisHaveBeenTested = table()
-				outerEdges = table()
 				propagateEdge(vi, info.plane, e, table(), 0)
-				-- hmm, some have 1
-				-- I.g. those are outer-edges with no inner-edges connecting to them, esp if they are sequences-of-edges
-				--assert(#outerEdges >= 0 and #outerEdges <= 2, "got bad # outer edges: "..#outerEdges)
-print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
--- [=[
-				if #outerEdges == 2 then
-					local edge1 = outerEdges[1]
-					local edge2 = outerEdges[2]
-					local edgeDir = edge1.plane.n
-					local edgeDir2 = edge2.plane.n
-					if (self.vtxs.v[vi].pos - edge1.com):dot(edgeDir) < 0 then edgeDir = -edgeDir end
-					if (self.vtxs.v[vi].pos - edge2.com):dot(edgeDir2) < 0 then edgeDir2 = -edgeDir2 end
-					-- then insert a fake-edge averaged between them.  using angle bisection in case the angle between them is >180
-					-- but rlly how cna you tell?  seems you'll have to use more info, like which side their triangles are on ...
-					local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
-					local edgeDirAvg = (edgeDir + edgeDir2):normalize()
-					local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
-					local clipPlaneNormalLen = clipPlaneNormal:norm()
-					if clipPlaneNormalLen  > 1e-7 then
-						clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
-						local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
-						
-						local planePos = vec3f(self.vtxs.v[vi].pos)
-						local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
-						
-						local fakeEdge1 = {
-							planePos = planePos,
-							plane = plane,
-							interval = {0, 1},
-							basis = {
-								normAvg:cross(plane.n):normalize(),
-								normAvg,
-								plane.n,
-							},
-							com = edge1.com,
-						}
-						local tside = clipPlane:test(edge1.com)
-						makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge1, clipPlane=tside and clipPlane or -clipPlane}
-						
-						local fakeEdge2 = {
-							planePos = planePos,
-							plane = plane,
-							interval = {0, 1},
-							basis = {
-								normAvg:cross(plane.n):normalize(),
-								normAvg,
-								plane.n,
-							},
-							com = edge2.com,
-						}					
-						clipPlane = -clipPlane
-						local tside = clipPlane:test(edge2.com)
-						makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge2, clipPlane=tside and clipPlane or -clipPlane}
-
-					end
-				end
---]=]
 			end
 		end
+	end
+
+	for vi,info in pairs(outerEdgesForVtx) do
+		local outerEdges = info.outerEdges
+		local normAvg = info.normAvg
+		-- hmm, some have 1
+		-- I.g. those are outer-edges with no inner-edges connecting to them, esp if they are sequences-of-edges
+		--assert(#outerEdges >= 0 and #outerEdges <= 2, "got bad # outer edges: "..#outerEdges)
+print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
+-- [=[
+		if #outerEdges == 2 then
+			local edge1 = outerEdges[1]
+			local edge2 = outerEdges[2]
+			local edgeDir = edge1.plane.n
+			local edgeDir2 = edge2.plane.n
+			if (self.vtxs.v[vi].pos - edge1.com):dot(edgeDir) < 0 then edgeDir = -edgeDir end
+			if (self.vtxs.v[vi].pos - edge2.com):dot(edgeDir2) < 0 then edgeDir2 = -edgeDir2 end
+			-- then insert a fake-edge averaged between them.  using angle bisection in case the angle between them is >180
+			-- but rlly how cna you tell?  seems you'll have to use more info, like which side their triangles are on ...
+			local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
+			local edgeDirAvg = (edgeDir + edgeDir2):normalize()
+			local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
+			local clipPlaneNormalLen = clipPlaneNormal:norm()
+			if clipPlaneNormalLen  > 1e-7 then
+				clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
+				local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
+				
+				local planePos = vec3f(self.vtxs.v[vi].pos)
+				local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
+				
+				local fakeEdge1 = {
+					planePos = planePos,
+					plane = plane,
+					interval = {0, 1},
+					basis = {
+						normAvg:cross(plane.n):normalize(),
+						normAvg,
+						plane.n,
+					},
+					com = edge1.com,
+				}
+				local tside = clipPlane:test(edge1.com)
+				makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge1, clipPlane=tside and clipPlane or -clipPlane}
+				
+				local fakeEdge2 = {
+					planePos = planePos,
+					plane = plane,
+					interval = {0, 1},
+					basis = {
+						normAvg:cross(plane.n):normalize(),
+						normAvg,
+						plane.n,
+					},
+					com = edge2.com,
+				}					
+				clipPlane = -clipPlane
+				local tside = clipPlane:test(edge2.com)
+				makeEdgeClipGroups(edge2).borderEdges:insert{edge=fakeEdge2, clipPlane=tside and clipPlane or -clipPlane}
+
+			end
+		end
+--]=]
+
 	end
 
 -- [=[
