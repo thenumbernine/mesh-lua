@@ -20,6 +20,8 @@ local vector = require 'ffi.cpp.vector'
 local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
+local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
+local translateMat4x4 = require 'mesh.common'.translateMat4x4
 
 -- R is a table of column vec3f's, v is a vec3f
 local function rotateVec(R, v)
@@ -50,15 +52,6 @@ local function matrixMul3x3(a, b)
 	return c
 end
 
-local function translateMat4x4(t)
-	return matrix_ffi{
-		{1,0,0,t.x},
-		{0,1,0,t.y},
-		{0,0,1,t.z},
-		{0,0,0,1},
-	}
-end
-
 local function scaleMat4x4(s)
 	return matrix_ffi{
 		{s.x,0,0,0},
@@ -66,18 +59,6 @@ local function scaleMat4x4(s)
 		{0,0,s.z,0},
 		{0,0,0,1},
 	}
-end
-
-local function matrix3x3To4x4(b)
-	-- matrix_ffi stores col-major
-	local m = matrix_ffi{4,4}:zeros()
-	for i=0,2 do
-		for j=0,2 do
-			m.ptr[i + 4 * j] = b[j+1].s[i]
-		end
-	end
-	m.ptr[3 + 4 * 3] = 1
-	return m
 end
 
 --[[

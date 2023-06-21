@@ -23,6 +23,8 @@ local drawUnwrapUVGraph = require 'mesh.unwrapuvs'.drawUnwrapUVGraph
 local drawUnwrapUVEdges = require 'mesh.unwrapuvs'.drawUnwrapUVEdges
 local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
+local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
+local translateMat4x4 = require 'mesh.common'.translateMat4x4
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = cmdline.file
@@ -515,14 +517,23 @@ function App:update()
 		gl.glEnd()
 		gl.glPointSize(1)
 	end
+	if self.bestEdgePt then
+		gl.glPointSize(5)
+		gl.glColor3f(1,1,0)
+		gl.glBegin(gl.GL_POINTS)
+		gl.glVertex3f(self.bestEdgePt:unpack())
+		gl.glEnd()
+		gl.glPointSize(1)
+	end
 
 	App.super.update(self)
 
 	if self.editMode == editModeForName.rotate then
 		self.hoverVtx = nil
 		self.hoverTri = nil
-		self.hoverEdge = nil
 		self.bestTriPt = nil
+		self.hoverEdge = nil
+		self.bestEdgePt = nil
 	elseif self.editMode == editModeForName.vertex then
 		self.hoverVtx = self:findClosestVtxToMouse()
 		if self.mouse.leftPress then
@@ -546,7 +557,8 @@ function App:update()
 			self.dragTri = self.hoverTri
 		end
 	elseif self.editMode == editModeForName.edge then
-		self.hoverEdge = self:findClosestTriGroupEdgeToMouse()
+		self.hoverEdge, self.bestEdgePt = self:findClosestTriGroupEdgeToMouse()
+		if not self.hoverEdge then self.bestEdgePt = nil end
 		if self.mouse.leftPress then
 			self.dragEdge = self.hoverEdge
 		end
@@ -559,9 +571,13 @@ function App:update()
 		else
 			if not self.insertMeshToSurfaceClipGroupBase then
 				if self.insertMeshFilename ~= '' then
+--print('loading', self.insertMeshFilename)
 					xpcall(function()
+--print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase = OBJLoader():load(self.insertMeshFilename)
+--print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase:findEdges()
+--print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase:calcCOMs()
 					end, function(err)
 						print(err..'\n'..debug.traceback())
@@ -589,42 +605,79 @@ function App:update()
 			end
 		end
 	elseif self.editMode == editModeForName.insertMeshToEdgeClipGroup then
+--print('finding closest edge to mouseray...')
 		local insertMeshEdge
 		insertMeshEdge, self.insertMeshPt = self:findClosestTriGroupEdgeToMouse()
+--print('insertMeshEdge', insertMeshEdge)
+--print('self.insertMeshPt', self.insertMeshPt)
 		if not insertMeshEdge then
+--print('insertMeshEdge exists - clearing all edge placement vars')
 			self.insertMeshPt = nil
 			self.insertMeshToEdgeClipGroupBase = nil
 			self.insertMeshToEdgeClipGroup = nil
 		else
+--print('insertMeshEdge exists...')
+--print('self.insertMeshToEdgeClipGroupBase', self.insertMeshToEdgeClipGroupBase)			
 			if not self.insertMeshToEdgeClipGroupBase then
+--print("self.insertMeshToEdgeClipGroupBase doesn't exist - loading")
+--print('self.insertMeshFilename', self.insertMeshFilename)
 				if self.insertMeshFilename ~= '' then
+--print('loading...')
 					xpcall(function()
+--print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase = OBJLoader():load(self.insertMeshFilename)
+--print('self.insertMeshToEdgeClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase:findEdges()
+--print('self.insertMeshToEdgeClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase:calcCOMs()
 					end, function(err)
-						print(err..'\n'..debug.traceback())
+						print(tostring(err)..'\n'..debug.traceback())
 					end)
 				end
 			else
+--print("self.insertMeshToEdgeClipGroupBase does exist...")
+--print("self.insertMeshToEdgeClipGroup", self.insertMeshToEdgeClipGroup)
 				if self.insertMeshToEdgeClipGroup then
+--print("self.insertMeshToEdgeClipGroup exists ... unloading associated GL objects")
 					self.insertMeshToEdgeClipGroup:unloadGL()
+--print("self.insertMeshToEdgeClipGroup exists ... done unloading associated GL objects")
 				end
-				self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroupBase:clone()
-				self.insertMeshToEdgeClipGroup:translate(self.insertMeshPt:unpack())
+			
+--print('calculating basis of insertMeshEdge')
+				local ey = insertMeshEdge.normAvg
+				local ez = insertMeshEdge.plane.n
+				local ex = ey:cross(ez)
+--print('got', ex, ey, ez)
 
-				if mesh.triGroups then
+--print('cloning and transforming...')
+				self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroupBase:clone()
+				self.insertMeshToEdgeClipGroup:transform(
+					translateMat4x4(self.insertMeshPt)
+					* matrix3x3To4x4{ex, ey, ez}
+				)
+--print('done cloning and transforming...')
+
+--print('mesh.edgeClipGroups', mesh.edgeClipGroups)				
+				if not mesh.edgeClipGroups then
+--print("... doesn't exist - can't clip anything")
+				else
+--print("looking for closest edge to mouse")					
 					local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
 						return eg.srcEdges:find(insertMeshEdge)
 					end)
+--print("found", eg)
 					if eg then
 						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToTriGroup(eg)
 					end
 				end
-				if #self.insertMeshToEdgeClipGroup.tris == 0 then
+				if self.insertMeshToEdgeClipGroup 
+				and #self.insertMeshToEdgeClipGroup.tris == 0 
+				then
+--print("no tris after clip - clearing model")					
 					self.insertMeshToEdgeClipGroup = nil
 				end
 				if self.insertMeshToEdgeClipGroup then
+--print("loading GL stuff...")
 					self.insertMeshToEdgeClipGroup:loadGL(self.shader)
 				end
 			end
