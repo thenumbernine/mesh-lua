@@ -1234,7 +1234,7 @@ function Mesh:calcTriEdgeGroups()
 
 	self.edgeClipGroups = table() 	-- key is the edge
 	local function makeEdgeClipGroups(e)
-print('makeEdgeClipGroup', e)
+--print('makeEdgeClipGroup', e)
 		local _, eg = self.edgeClipGroups:find(nil, function(eg)
 			return eg.srcEdges:find(nil, function(es)
 				return es.edge == e
@@ -1457,7 +1457,7 @@ print('...adding clip plane '..clipPlane)
 													fakeEdge.plane.n,
 												}
 												--]]
-												-- for debugging:
+												-- for debugging ... only?
 												fakeEdge.com = com
 												local tside = clipPlane:test(com)
 												eg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
@@ -1601,11 +1601,13 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 					end
 				end
 
+				local vavg
 				if (v11 - v21):norm() < distEps
 				and math.abs(e11.plane.n:dot(e21.plane.n)) > cosAngleThreshold
 				then
 					-- reverse eg1 so its end matches eg2's start
 					reverseEdgeGroupSrcEdges(eg1)
+					vavg = .5 * (v11 + v21)
 					found = true
 				elseif (v11 - v22):norm() < distEps
 				and math.abs(e11.plane.n:dot(e22.plane.n)) > cosAngleThreshold
@@ -1613,17 +1615,20 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 					-- we can either flip both or we can swap eg1 and eg2 ...
 					reverseEdgeGroupSrcEdges(eg1)
 					reverseEdgeGroupSrcEdges(eg2)
+					vavg = .5 * (v11 + v22)
 					found = true
 				elseif (v12 - v21):norm() < distEps
 				and math.abs(e12.plane.n:dot(e21.plane.n)) > cosAngleThreshold
 				then
 					-- already good
+					vavg = .5 * (v12 + v21)
 					found = true
 				elseif (v12 - v22):norm() < distEps
 				and math.abs(e12.plane.n:dot(e22.plane.n)) > cosAngleThreshold
 				then
 					-- reverse eg2 so its start matches eg1's end
 					reverseEdgeGroupSrcEdges(eg2)
+					vavg = .5 * (v12 + v22)
 					found = true
 				end
 				if found then
@@ -1631,6 +1636,12 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 					eg1.srcEdges:append(eg2.srcEdges)
 					-- merge eg1 and eg2 borderEdges
 					eg1.borderEdges:append(eg2.borderEdges)
+					-- and while we're here, remove any fake edges whose planePos's are at the same location
+					for j=#eg1.borderEdges,1,-1 do
+						if (eg1.borderEdges[j].edge.planePos - vavg):norm() < distEps then
+							eg1.borderEdges:remove(j)
+						end
+					end
 					-- and remove eg2 from edgeClipGroups
 					self.edgeClipGroups:remove(i2)
 					break
