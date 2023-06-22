@@ -452,6 +452,7 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 					-- then flip the interval and go from end to start ...
 					v1, v2 = v2, v1
 					s = savg - (s - savg)
+					-- hmm why again do I not need to flip this when foundes.intervalIndex says we aren't starting at the first index?
 					--edgeDir = -edgeDir
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
