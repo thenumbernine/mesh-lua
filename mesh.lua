@@ -177,21 +177,27 @@ end
 --[[
 what should this class have?
 all have:
-	plane
 	planePos (really these two are a ray, but the ray's plane is used for projection for distance calculatiosn so ...)
+		- sometimes this is an endpoint, sometimes this is the average of them,
+	plane = plane with normale equal to the edge direction, and point equal to planePos
 	interval
-	clipPlane
-	normAvg
+	clipPlane = plane containing the edge and its normAvg
+	normAvg = average of normals of all adjacent triangles
 	tris = table of mesh.tris[] objects that share this edge
 mesh.edges[] has:
 	[i] = vertex index
-	length
+	length = dist between endpoints ...
+	... should be equal to the interval difference, but no promises.
+	com = average of two points
+	... equal to planePos for this particular edge.
 mesh.edges2[] has:
-	tris[] only has 2 entries exactly.
+	tris[] will only has 2 entries exactly.
 	triVtxIndexes[] has two entries = table of indexes into edge.tris[] such that it and the tri's next (mod 3) form the edge
 	dist = distance the lines are apart (based on just 1 of their 2 vtxs, lame test)
 	isPlanar = true if the two tris have matching normals (within tolerance)
 	isExtEdge = true for convex vs concave edges
+	... planePos is the average of the endpoints of both edges.
+	... no com defined, might not exactly be the avg of the two endpoints based on plane.n and planePos, because its 
 fakeEdges (that goes in mesh.edgeClipGroups)
 	basis = used for placing meshes along them? idk?
 	com = midpoint of line segment
@@ -1001,9 +1007,9 @@ function Mesh:findEdges(getIndex)
 				self.edgeIndexBuf:push_back(b-1)
 				local va = self.vtxs.v[a-1]
 				local vb = self.vtxs.v[b-1]
-				local vavg = .5 * (va.pos + vb.pos)
+				local com = .5 * (va.pos + vb.pos)
 				local edgeDir = (vb.pos - va.pos):normalize()
-				local plane = plane3f():fromDirPt(edgeDir, vavg)
+				local plane = plane3f():fromDirPt(edgeDir, com)
 				e = Edge{
 					[1] = a,
 					[2] = b,
@@ -1013,8 +1019,9 @@ function Mesh:findEdges(getIndex)
 					-- TODO build findBadEdges using .edges2 only
 					-- but tht gets into 'isPlanar' and the angleThreshold being everywhere ....
 					plane = plane,
-					planePos = vavg,
-					clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), vavg),
+					planePos = com,
+					com = com,
+					clipPlane = plane3f():fromDirPt(t.normal:cross(edgeDir):normalize(), com),
 					normAvg = vec3f(t.normal),	-- where should normAvg point? planar?  tri normal?
 					interval = {plane:dist(va.pos), plane:dist(vb.pos)},
 				}
@@ -1217,8 +1224,9 @@ end
 			if not foundAnyEdge then
 				local v1 = self.vtxs.v[tp[j]].pos
 				local v2 = self.vtxs.v[tp[(j+1)%3]].pos
+				-- hmm...
 				v1, v2 = v2, v1
-				local vavg = .5 * (v1 + v2)
+				local com = .5 * (v1 + v2)
 				-- why did I have to make the edgedir negative for the clipping to work?
 				local edgeDir = v2 - v1
 				local edgeDirLen = edgeDir:norm()
@@ -1231,7 +1239,7 @@ end
 					assert(s1 <= s2)
 print('interval', s1, s2)
 					local clipNormal = t.normal:cross(edgeDir):normalize()
-					local clipPlane = plane3f():fromDirPt(clipNormal, vavg)
+					local clipPlane = plane3f():fromDirPt(clipNormal, com)
 print('clipPlane', clipPlane)
 					local e = Edge{
 						tris = {t},
@@ -1241,7 +1249,7 @@ print('clipPlane', clipPlane)
 						planePos = planePos,
 						clipPlane = clipPlane,
 						normAvg = vec3f(t.normal),
-						com = vavg,
+						com = com,
 						isGroupBorderEdge = true,
 					}
 					local tside = e.clipPlane:test(t.com)
@@ -1492,6 +1500,7 @@ print('...adding clip plane '..clipPlane)
 												fakeEdge.basis = {e1, e2, e3}
 												--]]  -- why is this messed up?
 												-- [[ instead, this was there before ...
+												-- TODO this basis needs to have its 'fakeEdge.plane.n' vector pointing outwards
 												fakeEdge.basis = {
 													normAvg:cross(fakeEdge.plane.n):normalize(),
 													normAvg,

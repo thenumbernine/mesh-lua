@@ -452,16 +452,16 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 					-- then flip the interval and go from end to start ...
 					v1, v2 = v2, v1
 					s = savg - (s - savg)
-					edgeDir = -edgeDir
+					--edgeDir = -edgeDir
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
 			
 				local omesh = omeshForFn[inst.geometryFilename]
 				-- e.normAvg is the up axis, going to be y
 				-- edgeDir is the long axis, going to be z
+				local ex = e.normAvg:cross(-edgeDir)
 				local ey = e.normAvg
-				local ez = edgeDir
-				local ex = ey:cross(ez)
+				local ez = -edgeDir
 				local pos = e.planePos + s * e.plane.n
 print('placing at interval param', s, 'pos', pos)
 				local xform = translateMat4x4(pos)
