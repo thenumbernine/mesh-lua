@@ -1501,6 +1501,7 @@ print('...adding clip plane '..clipPlane)
 												--]]  -- why is this messed up?
 												-- [[ instead, this was there before ...
 												-- TODO this basis needs to have its 'fakeEdge.plane.n' vector pointing outwards
+												-- also .. i don't think I'm using this atm
 												fakeEdge.basis = {
 													normAvg:cross(fakeEdge.plane.n):normalize(),
 													normAvg,

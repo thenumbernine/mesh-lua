@@ -8,6 +8,7 @@ local ffi = require 'ffi'
 local range = require 'ext.range'
 local file = require 'ext.file'
 local table = require 'ext.table'
+local math = require 'ext.math'
 local timer = require 'ext.timer'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
@@ -414,6 +415,7 @@ print('edge group has total arclength', edgeGroupLength)
 		-- TODO is it all or is it pick-one?
 		-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
 		for _,inst in ipairs(insts) do
+			local offsetWidth = inst.offsetWidth or 0
 			local numInsts = edgeGroupLength / inst.offsetDistance
 print('edge for inst', inst,'has',numInsts,'placements')
 			local startNumTilesPlaced = #mesh.tilePlaces
@@ -429,6 +431,19 @@ print('placing at arclength', s)
 					local s0, s1 = table.unpack(e.interval)
 					local slen = s1 - s0
 					assert(slen >= 0)
+					-- TODO here , pythagorean theorem / curve arclength
+					-- if our next edge has turned a bit then we don't want to subtract off the full interval from our arclength parameter
+					-- instead subtract off the arclength amount associated with the outer edge of this (based on some mesh or something)
+					-- use inst.offsetWidth for this - which should be half the width of the mesh
+					-- hmm but this now means we need a new arclength per instance ...				
+					-- TODO first half of first edge line seg won't have angle influence ... next steps will
+					if j < #eg.srcEdges then
+						local theta = math.acos(math.clamp(math.abs(eg.srcEdges[j+1].edge.plane.n:dot(e.plane.n)), -1, 1))
+						local ds = offsetWidth * math.tan(theta/2)
+						--if j > 1 then ds = ds * 2 end
+						-- inc the amount subtracted off of 's' arclength parameterization
+						slen = slen + ds
+					end
 					if s <= slen 
 					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
 					-- and do it before subtracting out the interval length
