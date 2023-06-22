@@ -1392,57 +1392,61 @@ print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edg
 										local k = range(3):find(nil, function(k)
 											return uniquevtx(tp[k-1]) == vo
 										end)
-										assert(k)
-										k=k-1	-- from index to offset
-										assert(k >= 0 and k < 3)
-										local angle = math.acos(math.clamp(
-											(self.vtxs.v[tp[(k+1)%3]].pos - self.vtxs.v[tp[k]].pos)
-											:normalize():dot(
-												(self.vtxs.v[tp[(k+2)%3]].pos - self.vtxs.v[tp[k]].pos):normalize()
-											),
-											-1, 1))
-print('adding angle', math.deg(angle))
-										local nextTotalAngle = totalAngle + angle
-
-										if not e2.isGroupBorderEdge then
-											-- ... if it's not a triGroup boundary then keep looking
-											propagateEdge(vi, edgeDir, e2, nexttristack, nextTotalAngle)
+										--assert(k)
+										-- this assert fails for non-manifold meshes.
+										if not k then
+											print("!!! WARNING !!! couldn't find vertex in triangle associated with edge.  is the mesh non-manifold?")
 										else
+											k=k-1	-- from index to offset
+											assert(k >= 0 and k < 3)
+											local angle = math.acos(math.clamp(
+												(self.vtxs.v[tp[(k+1)%3]].pos - self.vtxs.v[tp[k]].pos)
+												:normalize():dot(
+													(self.vtxs.v[tp[(k+2)%3]].pos - self.vtxs.v[tp[k]].pos):normalize()
+												),
+												-1, 1))
+print('adding angle', math.deg(angle))
+											local nextTotalAngle = totalAngle + angle
 
-											-- ok here ... we're considering between edges 'e' and 'e2' ...
-											-- because I am following triangles to get here, I can account for T's in meshes (if the mesh has errors in it)
-											-- but because I'm following triangles, I can't loop around the whole vertex when we're at an open mesh's border.
-											-- This skips exterior angles.
-											-- I could account for exterior angles if instead of doing this I simply found all vtxs used by meshes and rotated around them, inserting fake-planes between.
-											--  but doing that would skip T's in meshes provided by incompotent modellers / CAD users.
-											-- so how do I combine the two algorithms?
-											-- by storing all outside-edges that I hit on a single vertex (there should always only be 0 or 2)
-											-- and then if we found 2, put a fake-edge between them.
-											-- how to find an outside edge?
-											-- it'll have here 'isExtEdge == nil'
-											if e2.isExtEdge == nil then
-												outerEdgesForVtx[vi] = outerEdgesForVtx[vi] or {
-													outerEdges = table(),
-													normAvg = normAvg,
-												}
-												outerEdgesForVtx[vi].outerEdges:insertUnique(e2)
-											end
+											if not e2.isGroupBorderEdge then
+												-- ... if it's not a triGroup boundary then keep looking
+												propagateEdge(vi, edgeDir, e2, nexttristack, nextTotalAngle)
+											else
+
+												-- ok here ... we're considering between edges 'e' and 'e2' ...
+												-- because I am following triangles to get here, I can account for T's in meshes (if the mesh has errors in it)
+												-- but because I'm following triangles, I can't loop around the whole vertex when we're at an open mesh's border.
+												-- This skips exterior angles.
+												-- I could account for exterior angles if instead of doing this I simply found all vtxs used by meshes and rotated around them, inserting fake-planes between.
+												--  but doing that would skip T's in meshes provided by incompotent modellers / CAD users.
+												-- so how do I combine the two algorithms?
+												-- by storing all outside-edges that I hit on a single vertex (there should always only be 0 or 2)
+												-- and then if we found 2, put a fake-edge between them.
+												-- how to find an outside edge?
+												-- it'll have here 'isExtEdge == nil'
+												if e2.isExtEdge == nil then
+													outerEdgesForVtx[vi] = outerEdgesForVtx[vi] or {
+														outerEdges = table(),
+														normAvg = normAvg,
+													}
+													outerEdgesForVtx[vi].outerEdges:insertUnique(e2)
+												end
 
 print('ending on edge pos', e2.planePos, 'normal', e2.plane.n)
 print('adding fake edge with tri stack', #nexttristack, 'total angle', math.deg(nextTotalAngle))
 
-											-- ... if it's a triGroup boundary  ....
-											-- ... then use it as a clip plane
-											-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
-											local edgeDir2 = j2 == 1 and -e2.plane.n or e2.plane.n
-											-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
-											--if edgeDir2:dot(edgeDir) < 0 then print('edgeDir2:dot(edgeDir) < 0') end
-											--if edgeDir2:dot(edgeDir) < 0 then edgeDir2 = -edgeDir2 end
+												-- ... if it's a triGroup boundary  ....
+												-- ... then use it as a clip plane
+												-- now edgeDir is the vector along 'e' that points from 'vi' to its opposite
+												local edgeDir2 = j2 == 1 and -e2.plane.n or e2.plane.n
+												-- edgeDir2 is the vector along 'e2' that points from 'vo' to the opposite
+												--if edgeDir2:dot(edgeDir) < 0 then print('edgeDir2:dot(edgeDir) < 0') end
+												--if edgeDir2:dot(edgeDir) < 0 then edgeDir2 = -edgeDir2 end
 
-											-- ok the triangle stack ...
-											-- the fake-edge needs to be pointed along the average angle *within the plane* of the triangles
-											-- so if the two edges' common plane makes a >180 degree, we want the fake-edge to point along that >180 degree
-											-- so just testing dot product isn't enough.
+												-- ok the triangle stack ...
+												-- the fake-edge needs to be pointed along the average angle *within the plane* of the triangles
+												-- so if the two edges' common plane makes a >180 degree, we want the fake-edge to point along that >180 degree
+												-- so just testing dot product isn't enough.
 local tristacknormaldots = require 'matrix'{#nexttristack,#nexttristack}:lambda(function(i,j)
 	local d = nexttristack[i].normal:dot(nexttristack[j].normal)
 	-- tris should all be aligned ...
@@ -1453,66 +1457,67 @@ local tristacknormaldots = require 'matrix'{#nexttristack,#nexttristack}:lambda(
 end)
 print('tri stack angles:')
 print(tristacknormaldots)
-											-- get the surface normal
-											--local triavgnormal = nexttristack:mapi(function(t) return t.normal end):sum():normalize()
-											-- get a basis from the normal.  you can use edgeDir as one of the basis
-											--local e1 = edgeDir:normalize()
-											--local e2 = triavgnormal:cross(edgeDir):normalize()
-											--local e3 = vec3f(triavgnormal)
-											-- alright if edgeDir is e1 then edgeDir has coordinates [1,0] in our {e1,e2} basis
-											-- then edgeDir2 has coordinates ...
-											--local edgeDir2SurfBasisCoords = vec2f(e1:dot(edgeDir2), e2:dot(edgeDir2))
-											-- but still how do we know which dir the triangles are going around the edge?
-											-- the tri.avg.normal ... ?
-											-- how about whether we had to flip edgeDir2 ...
-											-- how about ... depending on t2's rotation?
+												-- get the surface normal
+												--local triavgnormal = nexttristack:mapi(function(t) return t.normal end):sum():normalize()
+												-- get a basis from the normal.  you can use edgeDir as one of the basis
+												--local e1 = edgeDir:normalize()
+												--local e2 = triavgnormal:cross(edgeDir):normalize()
+												--local e3 = vec3f(triavgnormal)
+												-- alright if edgeDir is e1 then edgeDir has coordinates [1,0] in our {e1,e2} basis
+												-- then edgeDir2 has coordinates ...
+												--local edgeDir2SurfBasisCoords = vec2f(e1:dot(edgeDir2), e2:dot(edgeDir2))
+												-- but still how do we know which dir the triangles are going around the edge?
+												-- the tri.avg.normal ... ?
+												-- how about whether we had to flip edgeDir2 ...
+												-- how about ... depending on t2's rotation?
 
-											local edgeDirAvg = (edgeDir + edgeDir2):normalize()
-											-- ok if the total angle made in this plane is > 180 then we will have to flip edgeDirAvg
-											if nextTotalAngle > math.pi then edgeDirAvg = -edgeDirAvg end
+												local edgeDirAvg = (edgeDir + edgeDir2):normalize()
+												-- ok if the total angle made in this plane is > 180 then we will have to flip edgeDirAvg
+												if nextTotalAngle > math.pi then edgeDirAvg = -edgeDirAvg end
 
-											-- how to form a right angle to point back at 'e'? triple cross product?
-											local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
-											local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
-											local clipPlaneNormalLen = clipPlaneNormal:norm()
-											if clipPlaneNormalLen > 1e-7 then
-												clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
-												local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
-												-- then add a clip plane between these two edges,
-												-- make sure it's pointing at the first edge.
+												-- how to form a right angle to point back at 'e'? triple cross product?
+												local edgePlaneNormal = edgeDir2:cross(edgeDir):normalize()
+												local clipPlaneNormal = edgeDirAvg:cross(edgePlaneNormal)
+												local clipPlaneNormalLen = clipPlaneNormal:norm()
+												if clipPlaneNormalLen > 1e-7 then
+													clipPlaneNormal = clipPlaneNormal / clipPlaneNormalLen
+													local clipPlane = plane3f():fromDirPt(clipPlaneNormal, self.vtxs.v[vi].pos)
+													-- then add a clip plane between these two edges,
+													-- make sure it's pointing at the first edge.
 print('...adding clip plane '..clipPlane)
-												-- TODO the edge of the clip plane isn't the edge we got it from
-												-- it's a new edge halfway
-												-- needs to abstract the edge's getters for vertex endpoints
-												-- since that's what clip to group function uses
-												local fakeEdge = Edge()
-												-- planePos should lie at the edge endpoint
-												-- and plane.n should point down the edge
-												fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
-												fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
-												-- TODO NOTICE BIG WARNING
-												-- I was setting this to {0,1} ...
-												-- .. but that would make the clip group algo sometimes toss some edges ...
-												-- so ... needs t be smaller ..
-												-- but since this is a fake edge -- how small sohuld it be?
-												fakeEdge.interval = {0, .1}
-												--[[ basis for orientation of tiles placed
-												fakeEdge.basis = {e1, e2, e3}
-												--]]  -- why is this messed up?
-												-- [[ instead, this was there before ...
-												-- TODO this basis needs to have its 'fakeEdge.plane.n' vector pointing outwards
-												-- also .. i don't think I'm using this atm
-												fakeEdge.basis = {
-													normAvg:cross(fakeEdge.plane.n):normalize(),
-													normAvg,
-													fakeEdge.plane.n,
-												}
-												--]]
-												-- for debugging ... only?
-												-- for consistency this should be calculated by the interval midpoint ...
-												fakeEdge.com = vec3f(com)
-												local tside = clipPlane:test(com)
-												eg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+													-- TODO the edge of the clip plane isn't the edge we got it from
+													-- it's a new edge halfway
+													-- needs to abstract the edge's getters for vertex endpoints
+													-- since that's what clip to group function uses
+													local fakeEdge = Edge()
+													-- planePos should lie at the edge endpoint
+													-- and plane.n should point down the edge
+													fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
+													fakeEdge.plane = plane3f():fromDirPt(edgeDirAvg, fakeEdge.planePos)
+													-- TODO NOTICE BIG WARNING
+													-- I was setting this to {0,1} ...
+													-- .. but that would make the clip group algo sometimes toss some edges ...
+													-- so ... needs t be smaller ..
+													-- but since this is a fake edge -- how small sohuld it be?
+													fakeEdge.interval = {0, .1}
+													--[[ basis for orientation of tiles placed
+													fakeEdge.basis = {e1, e2, e3}
+													--]]  -- why is this messed up?
+													-- [[ instead, this was there before ...
+													-- TODO this basis needs to have its 'fakeEdge.plane.n' vector pointing outwards
+													-- also .. i don't think I'm using this atm
+													fakeEdge.basis = {
+														normAvg:cross(fakeEdge.plane.n):normalize(),
+														normAvg,
+														fakeEdge.plane.n,
+													}
+													--]]
+													-- for debugging ... only?
+													-- for consistency this should be calculated by the interval midpoint ...
+													fakeEdge.com = vec3f(com)
+													local tside = clipPlane:test(com)
+													eg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
+												end
 											end
 										end
 									end
@@ -1715,7 +1720,9 @@ print('total before', totalSrcEdgesBeforeMerging)
 		local es1 = eg.srcEdges[1]
 		for i=2,#eg.srcEdges do	
 			local es = eg.srcEdges[i]
-			assert(es.edge.isExtEdge == es1.edge.isExtEdge)
+			if es.edge.isExtEdge ~= es1.edge.isExtEdge then
+				print('!!! WARNING !!! edge group has mixed isExtEdge members.  is the mesh non-manifold?')
+			end
 		end
 	end
 	

@@ -506,7 +506,11 @@ print('placing at interval param', s, 'pos', pos)
 				local extraCurveClipPlanes = table()
 				if i > 1 then
 					local pprev = places[i-1]
-					assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
+					-- failing for non-manifold meshes
+					--assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
+					if p.edge.plane.n:dot(pprev.edge.plane.n) <= 0 then
+						print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
+					end
 					local plane = plane3f():fromDirPt(
 						(p.edge.plane.n + pprev.edge.plane.n):normalize(),
 						(p.pos + pprev.pos) * .5)
@@ -515,7 +519,11 @@ print('placing at interval param', s, 'pos', pos)
 				end
 				if i < #places then
 					local pnext = places[i+1]
-					assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
+					-- fails on non-manifold meshes
+					--assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
+					if p.edge.plane.n:dot(pnext.edge.plane.n) <= 0 then
+						print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
+					end
 					local plane = plane3f():fromDirPt(
 						(p.edge.plane.n + pnext.edge.plane.n):normalize(),
 						(p.pos + pnext.pos) * .5)
