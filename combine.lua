@@ -27,7 +27,7 @@ timer('saving', function()
 end)
 --]]
 
--- [[
+--[[
 -- bbox ((-0.15080007910728, -0.10661125928164, -1.2188935279846), (0.15080018341541, 0.013977702707052, -0.71889358758926
 -- bbox size (0.3, 0.12, 0.5)
 local mesh = Mesh():combine(
@@ -41,3 +41,14 @@ timer('saving', function()
 end)
 --]]
 
+-- [[ barge_tile_approx.obj
+--bbox	((-0.08, -0.08, -0.22), (0.08, 0.08, 0.22))
+--bbox size	(0.15766206383705, 0.15265020728111, 0.43800002336502)
+-- one side is x-
+-- the other is y+
+local mesh = Mesh():combine(
+	cube:clone():scale(.01, .08, .22):translate(-.07, 0, 0),
+	cube:clone():scale(.08, .01, .22):translate(0, .07, 0)
+)
+timer('saving', function() loader:save('barge_tile_approx.obj', mesh) end)
+--]]

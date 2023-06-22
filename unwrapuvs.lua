@@ -857,9 +857,7 @@ local function drawUnwrapUVEdges(mesh)
 
 			-- pick one of the two edges.  either will produce the same line ray
 			-- use interval for start/finish along edge
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
+			local s0, s1 = e:getPts()
 			v1 = v1 + (t1.normal + t2.normal) * 1e-3
 			v2 = v2 + (t1.normal + t2.normal) * 1e-3
 			gl.glVertex3fv(v1.s)

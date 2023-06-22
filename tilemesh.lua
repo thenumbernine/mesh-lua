@@ -446,8 +446,7 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 				local e = foundes.edge
 				local s0, s1 = table.unpack(e.interval)
 				local savg = .5 * (s0 + s1)
-				local v1 = e.planePos + e.plane.n * s0
-				local v2 = e.planePos + e.plane.n * s1
+				local v1, v2 = e:getPts()
 				local edgeDir = e.plane.n
 				if foundes.intervalIndex == 2 then
 					-- then flip the interval and go from end to start ...

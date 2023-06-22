@@ -175,6 +175,55 @@ function Mesh:init(o)
 end
 
 --[[
+what should this class have?
+all have:
+	plane
+	planePos (really these two are a ray, but the ray's plane is used for projection for distance calculatiosn so ...)
+	interval
+	clipPlane
+	normAvg
+	tris = table of mesh.tris[] objects that share this edge
+mesh.edges[] has:
+	[i] = vertex index
+	length
+mesh.edges2[] has:
+	tris[] only has 2 entries exactly.
+	triVtxIndexes[] has two entries = table of indexes into edge.tris[] such that it and the tri's next (mod 3) form the edge
+	dist = distance the lines are apart (based on just 1 of their 2 vtxs, lame test)
+	isPlanar = true if the two tris have matching normals (within tolerance)
+	isExtEdge = true for convex vs concave edges
+fakeEdges (that goes in mesh.edgeClipGroups)
+	basis = used for placing meshes along them? idk?
+	com = midpoint of line segment
+--]]
+local Edge = class()
+
+function Edge:init(args)
+	if args then
+		for k,v in pairs(args) do
+			self[k] = v
+		end
+	end
+end
+
+-- get the endpoints of the edge
+function Edge:getPts()
+	assert(#self.interval == 2)
+	local s0, s1 = table.unpack(self.interval)
+	assert(s0 <= s1)
+	local v0 = self.planePos + self.plane.n * s0
+	local v1 = self.planePos + self.plane.n * s1
+	return v0, v1	
+end
+
+-- calcs the line segment COM by its endpoints' average
+function Edge:calcCOM()
+	local v0, v1 = self:getPts()
+	return .5 * (v0 + v1)
+end
+
+
+--[[
 assert that the groups span the mesh indexes and do not overlap one another
 and that the triangles are 1:1 with the indexes
 --]]
@@ -880,7 +929,7 @@ function Mesh:calcEdges2()
 													-- so clipPlane normal = normAvg cross edgeDir1 will point back to the t1 COM
 													-- so clipPlane normal dot t1 normal > 0 for external edges, < 0 for internal edges
 													-- TODO member functions for edge getters
-													local e = {
+													local e = Edge{
 														tris = {t2, t1},
 														triVtxIndexes = {j2, j1},
 														interval = {s1, s2},
@@ -955,7 +1004,7 @@ function Mesh:findEdges(getIndex)
 				local vavg = .5 * (va.pos + vb.pos)
 				local edgeDir = (vb.pos - va.pos):normalize()
 				local plane = plane3f():fromDirPt(edgeDir, vavg)
-				e = {
+				e = Edge{
 					[1] = a,
 					[2] = b,
 					tris = table(),
@@ -1289,10 +1338,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
 			--]]
 			-- [[ based on edge intervals
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-			local com = .5 * (v1 + v2)
+			local com = e.com
 --print('FINDING PLANES FOR EDGE WITH COM', com)
 			--]]
 
@@ -1431,7 +1477,7 @@ print('...adding clip plane '..clipPlane)
 												-- it's a new edge halfway
 												-- needs to abstract the edge's getters for vertex endpoints
 												-- since that's what clip to group function uses
-												local fakeEdge = {}
+												local fakeEdge = Edge()
 												-- planePos should lie at the edge endpoint
 												-- and plane.n should point down the edge
 												fakeEdge.planePos = vec3f(self.vtxs.v[vi].pos)
@@ -1453,7 +1499,8 @@ print('...adding clip plane '..clipPlane)
 												}
 												--]]
 												-- for debugging ... only?
-												fakeEdge.com = com
+												-- for consistency this should be calculated by the interval midpoint ...
+												fakeEdge.com = vec3f(com)
 												local tside = clipPlane:test(com)
 												eg.borderEdges:insert{edge=fakeEdge, clipPlane=tside and clipPlane or -clipPlane}
 											end
@@ -1512,7 +1559,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 				local planePos = vec3f(self.vtxs.v[vi].pos)
 				local plane = plane3f():fromDirPt(edgeDirAvg, planePos)
 
-				local fakeEdge1 = {
+				local fakeEdge1 = Edge{
 					planePos = planePos,
 					plane = plane,
 					interval = {0, 1},
@@ -1526,7 +1573,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 				local tside = clipPlane:test(edge1.com)
 				makeEdgeClipGroups(edge1).borderEdges:insert{edge=fakeEdge1, clipPlane=tside and clipPlane or -clipPlane}
 
-				local fakeEdge2 = {
+				local fakeEdge2 = Edge{
 					planePos = planePos,
 					plane = plane,
 					interval = {0, 1},
@@ -2983,10 +3030,7 @@ function Mesh:drawTriSurfaceGroupEdges(highlightEdge)
 			else
 				gl.glColor4f(0,0,1, alpha)	-- cornerInstances / convexInstances
 			end
-
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
+			local v1, v2 = e:getPts()
 			v1 = v1 + e.normAvg * 1e-3
 			v2 = v2 + e.normAvg * 1e-3
 			gl.glVertex3fv(v1.s)
@@ -3012,9 +3056,7 @@ function Mesh:drawTriSurfaceGroupPlanes()
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
+			local v1, v2 = e:getPts()
 			-- [[ make plane perpendicular to normal
 			gl.glVertex3f((v1 + e.normAvg):unpack())
 			gl.glVertex3f((v1 - e.normAvg):unpack())
@@ -3034,12 +3076,8 @@ function Mesh:drawTriSurfaceGroupPlanes()
 	for _,g in ipairs(self.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-			local vavg = .5 * (v1 + v2)
-			gl.glVertex3f((vavg + e.normAvg):unpack())
-			gl.glVertex3f((vavg + e.normAvg + info.clipPlane.n * .5):unpack())
+			gl.glVertex3f((e.com + e.normAvg):unpack())
+			gl.glVertex3f((e.com + e.normAvg + info.clipPlane.n * .5):unpack())
 		end
 	end
 	gl.glEnd()
@@ -3074,10 +3112,6 @@ local normalExtrusionEpsilon  = .1
 			local n = table():append(eg.srcEdges:mapi(function(es)
 				return table.mapi(es.edge.tris, function(t) return t.normal end)
 			end):unpack()):sum():normalize()
-			local s0, s1 = table.unpack(e.interval)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-			local vavg = .5 * (v1 + v2)
 			-- [[ draw edge
 			gl.glColor4f(1,0,0,alpha)
 			gl.glVertex3f((e.planePos + normalExtrusionEpsilon * n):unpack())
@@ -3103,11 +3137,6 @@ local normalExtrusionEpsilon  = .1
 		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?
-			local s0, s1 = table.unpack(e.interval)
-			assert(s0 <= s1)
-			local v1 = e.planePos + e.plane.n * s0
-			local v2 = e.planePos + e.plane.n * s1
-			local vavg = .5 * (v1 + v2)
 			gl.glColor4f(1,0,0,alpha)
 			gl.glVertex3f((1e-3 * n + e.planePos + e.plane.n * .05 + info.clipPlane.n * .05):unpack())
 			gl.glColor4f(0,1,0,alpha)
