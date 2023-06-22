@@ -161,7 +161,7 @@ local function tileMesh(mesh, placeFn)
 
 	mesh.tilePlaces = table()
 
-	local function mergeOrPlace(xform, fn, tg)
+	local function mergeOrPlace(xform, fn, tg, extraClipPlanes)
 		local omesh = omeshForFn[fn]
 
 		local allInside
@@ -186,6 +186,14 @@ local function tileMesh(mesh, placeFn)
 			--and not allInside
 			--then
 			local clipped, anythingRemoved = omesh:clone():transform(xform):clipToClipGroup(tg)
+			-- I could introduce clip gruop manipulation
+			-- but it is tied up in a BSP algorithm and edge line segment intervals for determining front/back of previously-clipped-planes so ...
+			if clipped and extraClipPlanes then
+				for _,extraClipPlane in ipairs(extraClipPlanes) do
+					local anythingRemoved2 = clipped:clip(extraClipPlane)
+					anythingRemoved = anythingRemoved or anythingRemoved2
+				end
+			end
 			if not clipped then
 				-- ... then the mesh is all outside
 			elseif anythingRemoved then
@@ -420,6 +428,7 @@ print('edge group has total arclength', edgeGroupLength)
 print('edge for inst', inst,'has',numInsts,'placements')
 			local startNumTilesPlaced = #mesh.tilePlaces
 			-- TODO how come i keep having to increase this ...
+			local places = table()
 			for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
 				local s = i * inst.offsetDistance
 print('placing at arclength', s)				
@@ -480,9 +489,40 @@ print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.
 				local ez = -edgeDir
 				local pos = e.planePos + s * e.plane.n
 print('placing at interval param', s, 'pos', pos)
-				local xform = translateMat4x4(pos)
-						* matrix3x3To4x4{ex, ey, ez}
-				mergeOrPlace(xform, inst.geometryFilename, eg)
+				-- store for now the pos and transform and clipgroup for this instance
+				-- then later go between them and add an extra clip edge
+				places:insert{
+					pos = pos,
+					basis = {ex,ey,ez},
+					inst = inst,
+					eg = eg,
+					edge = e,
+				}
+			end
+			-- now that we have all positions calculated and stored, insert new clipplanes between them
+			for i,p in ipairs(places) do
+				local extraCurveClipPlanes = table()
+				if i > 1 then
+					local pprev = places[i-1]
+					assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
+					local plane = plane3f():fromDirPt(
+						(p.edge.plane.n + pprev.edge.plane.n):normalize(),
+						(p.pos + pprev.pos) * .5)
+					local tside = plane:test(p.pos)
+					extraCurveClipPlanes:insert(tside and plane or -plane)
+				end
+				if i < #places then
+					local pnext = places[i+1]
+					assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
+					local plane = plane3f():fromDirPt(
+						(p.edge.plane.n + pnext.edge.plane.n):normalize(),
+						(p.pos + pnext.pos) * .5)
+					local tside = plane:test(p.pos)
+					extraCurveClipPlanes:insert(tside and plane or -plane)
+				end
+				local xform = translateMat4x4(p.pos)
+						* matrix3x3To4x4(p.basis)
+				mergeOrPlace(xform, p.inst.geometryFilename, p.eg, extraCurveClipPlanes)
 			end
 			local numTilesPlacedForThisEdge = #mesh.tilePlaces - startNumTilesPlaced
 print('placed', numTilesPlacedForThisEdge, 'unclipped tiles for this edge and inst')
