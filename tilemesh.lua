@@ -475,19 +475,21 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 				if foundes.intervalIndex == 2 then
 					-- then flip the interval and go from end to start ...
 					v1, v2 = v2, v1
-					s = savg - (s - savg)
+					-- don't flip both s and edgeDir or you'll double negative
+					--s = savg - (s - savg)
 					-- hmm why again do I not need to flip this when foundes.intervalIndex says we aren't starting at the first index?
-					--edgeDir = -edgeDir
+					edgeDir = -edgeDir
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
 			
 				local omesh = omeshForFn[inst.geometryFilename]
 				-- e.normAvg is the up axis, going to be y
-				-- edgeDir is the long axis, going to be z
-				local ex = e.normAvg:cross(-edgeDir)
+				-- e.plane.n is the long axis, going to be z
+				local ex = e.normAvg:cross(-e.plane.n)
 				local ey = e.normAvg
-				local ez = -edgeDir
-				local pos = e.planePos + s * e.plane.n
+				local ez = -e.plane.n
+				--local pos = e.planePos + s * e.plane.n
+				local pos = v1 + s * edgeDir
 print('placing at interval param', s, 'pos', pos)
 				-- store for now the pos and transform and clipgroup for this instance
 				-- then later go between them and add an extra clip edge

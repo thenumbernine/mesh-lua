@@ -1342,10 +1342,10 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			vi1 = uniquevtx(vi1)
 			vi2 = uniquevtx(vi2)
 
-			--[[ based on vtx positions
+			-- [[ based on vtx positions
 			local com = .5 * (self.vtxs.v[vi1].pos + self.vtxs.v[vi2].pos)
 			--]]
-			-- [[ based on edge intervals
+			--[[ based on edge intervals
 			local com = e.com
 --print('FINDING PLANES FOR EDGE WITH COM', com)
 			--]]
