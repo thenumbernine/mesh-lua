@@ -1233,7 +1233,7 @@ print('interval', s1, s2)
 					local clipNormal = t.normal:cross(edgeDir):normalize()
 					local clipPlane = plane3f():fromDirPt(clipNormal, vavg)
 print('clipPlane', clipPlane)
-					local e = {
+					local e = Edge{
 						tris = {t},
 						triVtxIndexes = {j+1},	-- TODO make this 0-based, here and in calcEdges2 ...
 						interval = {s1, s2},
