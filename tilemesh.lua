@@ -381,13 +381,13 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					* matrix3x3To4x4(spatialConvention)
 				mergeOrPlace(xform, geomInst.filename, tg)
 			end
-			print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount)..' tiles')
+print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount)..' tiles')
 		end
 	end
-print('#tilePlaces from surfaces', #mesh.tilePlaces)
+	local numSurfTilePlaces = #mesh.tilePlaces
+print('#tilePlaces from surfaces', numSurfTilePlaces)
 
 -- [=[
-	local numSurfTilePlaces = #mesh.tilePlaces
 	local totalEdgesCovered = 0
 	for _,eg in ipairs(mesh.edgeClipGroups) do
 print("placing along edge group...")
@@ -395,7 +395,7 @@ print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function
 		totalEdgesCovered = totalEdgesCovered + #eg.srcEdges
 
 		-- TODO pick every step?
-		-- nah, 
+		-- nah,
 		-- the edge group si already asserted to all have matching edge.isExtEdge
 		-- but then how do we know how much to step if we haven't picked until after we step?
 		-- is that what offsetDistance is supposed to be?
@@ -412,12 +412,13 @@ print('...with '..#eg.borderEdges..' clip planes '..eg.borderEdges:mapi(function
 		-- sum up srcEdges[].edge arclength and then march along it, looking up edges as you go
 		-- use srcEdge[].intervalIndex to tell which side of the edge is the start
 		local edgeGroupLength = 0
-print('edge group has '..#eg.srcEdges..' srcEdges')	
+print('edge group has '..#eg.srcEdges..' srcEdges')
 		for _,es in ipairs(eg.srcEdges) do
 			local e = es.edge
 			local s0, s1 = table.unpack(e.interval)
 			assert(s0 <= s1)
 			edgeGroupLength = edgeGroupLength + (s1 - s0)
+print('interval', s0, s1, 'running total', edgeGroupLength)
 		end
 print('edge group has total arclength', edgeGroupLength)
 		-- TODO is it all or is it pick-one?
@@ -431,9 +432,9 @@ print('edge for inst', inst,'has',numInsts,'placements')
 			local places = table()
 			for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
 				local s = i * inst.offsetDistance
-print('placing at arclength', s)				
+print('placing at arclength', s)
 				-- now find edge associated with this 's' ...
-				local foundes 
+				local foundes
 				local foundj
 				for j,es in ipairs(eg.srcEdges) do
 					local e = es.edge
@@ -444,7 +445,7 @@ print('placing at arclength', s)
 					-- if our next edge has turned a bit then we don't want to subtract off the full interval from our arclength parameter
 					-- instead subtract off the arclength amount associated with the outer edge of this (based on some mesh or something)
 					-- use inst.offsetWidth for this - which should be half the width of the mesh
-					-- hmm but this now means we need a new arclength per instance ...				
+					-- hmm but this now means we need a new arclength per instance ...
 					-- TODO first half of first edge line seg won't have angle influence ... next steps will
 					if j < #eg.srcEdges then
 						local theta = math.acos(math.clamp(math.abs(eg.srcEdges[j+1].edge.plane.n:dot(e.plane.n)), -1, 1))
@@ -453,10 +454,10 @@ print('placing at arclength', s)
 						-- inc the amount subtracted off of 's' arclength parameterization
 						slen = slen + ds
 					end
-					if s <= slen 
+					if s <= slen
 					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
 					-- and do it before subtracting out the interval length
-					or j == #eg.srcEdges 
+					or j == #eg.srcEdges
 					then
 						foundes = es
 						foundj = j
@@ -465,7 +466,7 @@ print('placing at arclength', s)
 					s = s - slen
 				end
 				assert(foundes)
-print('found arclength at '..foundj..'th edge with local arclength', s, 'and starting interval in edge group', foundes.intervalIndex)				
+print('found arclength at '..foundj..'th edge with local arclength', s, 'and starting interval in edge group', foundes.intervalIndex)
 				-- except for the oob s range inst's we can also assert 0 <= sg <= (foundes.edge.interval difference)
 				local e = foundes.edge
 				local s0, s1 = table.unpack(e.interval)
@@ -481,7 +482,7 @@ print('found arclength at '..foundj..'th edge with local arclength', s, 'and sta
 					edgeDir = -edgeDir
 				end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
-			
+
 				local omesh = omeshForFn[inst.geometryFilename]
 				-- e.normAvg is the up axis, going to be y
 				-- e.plane.n is the long axis, going to be z

@@ -133,7 +133,7 @@ print('#unique triangles', mesh.triIndexes.size/3)
 			-- merge vtxs with vtxs ... ignoring texcoords and normals
 			mesh:mergeMatchingVertexes(true, true)
 			mesh:removeEmptyTris()
-			
+
 print('#unique vertexes', mesh.vtxs.size)
 --[[
 for i=0,mesh.vtxs.size-1 do
@@ -617,7 +617,7 @@ function App:update()
 			self.insertMeshToEdgeClipGroup = nil
 		else
 --print('insertMeshEdge exists...')
---print('self.insertMeshToEdgeClipGroupBase', self.insertMeshToEdgeClipGroupBase)			
+--print('self.insertMeshToEdgeClipGroupBase', self.insertMeshToEdgeClipGroupBase)
 			if not self.insertMeshToEdgeClipGroupBase then
 --print("self.insertMeshToEdgeClipGroupBase doesn't exist - loading")
 --print('self.insertMeshFilename', self.insertMeshFilename)
@@ -642,7 +642,7 @@ function App:update()
 					self.insertMeshToEdgeClipGroup:unloadGL()
 --print("self.insertMeshToEdgeClipGroup exists ... done unloading associated GL objects")
 				end
-			
+
 --print('calculating basis of insertMeshEdge')
 				local ey = insertMeshEdge.normAvg
 				local ez = insertMeshEdge.plane.n
@@ -657,11 +657,11 @@ function App:update()
 				)
 --print('done cloning and transforming...')
 
---print('mesh.edgeClipGroups', mesh.edgeClipGroups)				
+--print('mesh.edgeClipGroups', mesh.edgeClipGroups)
 				if not mesh.edgeClipGroups then
 --print("... doesn't exist - can't clip anything")
 				else
---print("looking for closest edge to mouse")					
+--print("looking for closest edge to mouse")
 					local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
 						return eg.srcEdges:find(nil, function(es)
 							return es.edge == insertMeshEdge
@@ -672,10 +672,10 @@ function App:update()
 						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToClipGroup(eg)
 					end
 				end
-				if self.insertMeshToEdgeClipGroup 
-				and #self.insertMeshToEdgeClipGroup.tris == 0 
+				if self.insertMeshToEdgeClipGroup
+				and #self.insertMeshToEdgeClipGroup.tris == 0
 				then
---print("no tris after clip - clearing model")					
+--print("no tris after clip - clearing model")
 					self.insertMeshToEdgeClipGroup = nil
 				end
 				if self.insertMeshToEdgeClipGroup then
@@ -765,17 +765,17 @@ if they're parallel returns nil
 |(a + s b) - (c + t d)| is minimal wrt (s,t)
 (a + s b).(a + s b) - (a + s b).(c + t d) - (c + t d).(a + s b) + (c + t d).(c + t d) is minimal wrt (s,t)
 (
-	+ a.a 
-	+ 2 s a.b 
+	+ a.a
+	+ 2 s a.b
 	+ s^2 b.b
-	
+
 	- 2 a.c
 	- 2 s b.c
 	- 2 t a.d
 	- 2 s t b.d
 
-	+ c.c 
-	+ 2 t c.d 
+	+ c.c
+	+ 2 t c.d
 	+ t^2 d.d
 ) is minimal wrt (s,t)
 ...which is where [d/ds, d/dt] = [0,0]
@@ -787,7 +787,7 @@ d/ds = 2 (
 )
 
 d/dt = -2 (
-	a.d - c.d 
+	a.d - c.d
 	+ s b.d
 	- t d.d
 )
@@ -816,21 +816,21 @@ function rayRayIntersect(a,b,c,d)
 	local b_dot_b = b:lenSq()
 	local d_dot_d = d:lenSq()
 	local detA = b_dot_d*b_dot_d - b_dot_b*d_dot_d
---print('detA', detA)			
+--print('detA', detA)
 	if math.abs(detA) < 1e-7 then
 		return nil, "rays are parallel"
 	end
 	local invDetA = 1/detA
 	local s = (-d_dot_d * ac:dot(b) + b_dot_d * ac:dot(d)) * invDetA
 	local t = (-b_dot_d * ac:dot(b) + b_dot_b * ac:dot(d)) * invDetA
---print('s', s, 't', t)				
+--print('s', s, 't', t)
 	return s, t
 end
 
 function App:findClosestTriGroupEdgeToMouse()
 --print('App:findClosestTriGroupEdgeToMouse()')
 	local mousePos, mouseDir = self:mouseRay()
---print('mousePos', mousePos, 'mouseDir', mouseDir)			
+--print('mousePos', mousePos, 'mouseDir', mouseDir)
 	local bestDistSq = math.huge
 	local bestEdge, bestPt1, bestPt2
 	for _,g in ipairs(self.mesh.triGroups) do
@@ -844,7 +844,7 @@ function App:findClosestTriGroupEdgeToMouse()
 			local s, t = rayRayIntersect(a,b,c,d)
 			if s 		-- rays aren't parallel
 			and s > 0 	-- front facing the camera
-			then	
+			then
 				-- clamp to edge line segment parameter length
 				t = math.clamp(t, s0, s1)
 				local p1 = a + b * s

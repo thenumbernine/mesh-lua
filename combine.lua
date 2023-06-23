@@ -27,21 +27,22 @@ timer('saving', function()
 end)
 --]]
 
---[[
+-- [[
 -- bbox ((-0.15080007910728, -0.10661125928164, -1.2188935279846), (0.15080018341541, 0.013977702707052, -0.71889358758926
 -- bbox size (0.3, 0.12, 0.5)
 local mesh = Mesh():combine(
-	cube:clone():scale(.02, .02, .25):translate(.13, 0, -.95),
-	cube:clone():scale(.02, .02, .25):translate(-.13, 0, -.95),
-	cube:clone():scale(.09, .02, .25):rotate(quatf():fromAngleAxis(0,0,1,-30)):translate(.062, 0.04, -.95),
-	cube:clone():scale(.09, .02, .25):rotate(quatf():fromAngleAxis(0,0,1,30)):translate(-.062, 0.04, -.95)
+	cube:clone():scale(.02, .02, .25):translate(.13, 0, 0),
+	cube:clone():scale(.02, .02, .25):translate(-.13, 0, 0),
+	cube:clone():scale(.09, .02, .25):rotate(quatf():fromAngleAxis(0,0,1,-30)):translate(.062, 0.04, 0),
+	cube:clone():scale(.09, .02, .25):rotate(quatf():fromAngleAxis(0,0,1,30)):translate(-.062, 0.04, 0)
 )
 timer('saving', function()
-	loader:save('roof_hip_approx.obj', mesh)
+	loader:save('roof_hip_approx_centered.obj', mesh)
 end)
+-- for uncentered, offset z by -.95
 --]]
 
--- [[ barge_tile_approx.obj
+--[[ barge_tile_approx.obj
 --bbox	((-0.08, -0.08, -0.22), (0.08, 0.08, 0.22))
 --bbox size	(0.15766206383705, 0.15265020728111, 0.43800002336502)
 -- one side is x-

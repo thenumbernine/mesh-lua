@@ -197,7 +197,7 @@ mesh.edges2[] has:
 	isPlanar = true if the two tris have matching normals (within tolerance)
 	isExtEdge = true for convex vs concave edges
 	... planePos is the average of the endpoints of both edges.
-	... no com defined, might not exactly be the avg of the two endpoints based on plane.n and planePos, because its 
+	... no com defined, might not exactly be the avg of the two endpoints based on plane.n and planePos, because its
 fakeEdges (that goes in mesh.edgeClipGroups)
 	basis = used for placing meshes along them? idk?
 	com = midpoint of line segment
@@ -219,7 +219,7 @@ function Edge:getPts()
 	assert(s0 <= s1)
 	local v0 = self.planePos + self.plane.n * s0
 	local v1 = self.planePos + self.plane.n * s1
-	return v0, v1	
+	return v0, v1
 end
 
 -- calcs the line segment COM by its endpoints' average
@@ -1276,7 +1276,9 @@ function Mesh:calcTriEdgeGroups()
 	-- ... I should really put this in its own function off of 'calcTriSurfaceGroups'
 	-- ... and flag some groups as surface, others as edge ...
 	-- ... or just put them in a new data structure?
-	local uniquevs, indexToUniqueV = self:getUniqueVtxs(1e-4)
+	--local vtxMergeThreshold = 1e-4	-- causes neighboring edges at target_complex-roof to merge
+	local vtxMergeThreshold = 1e-5
+	local uniquevs, indexToUniqueV = self:getUniqueVtxs(vtxMergeThreshold)
 	local function uniquevtx(vi) return uniquevs[indexToUniqueV[vi]] end
 
 	--[[
@@ -1607,7 +1609,7 @@ print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 		end
 --]=]
 	end
-	
+
 print'before merging edge groups:'
 	for i,eg in ipairs(self.edgeClipGroups) do
 		print('edge group',i,'#srcEdges', #eg.srcEdges)
@@ -1646,7 +1648,9 @@ print('total before', totalSrcEdgesBeforeMerging)
 
 				-- shouldn't contain eachothers edges ...
 				for _,e1 in ipairs(eg1.srcEdges) do
-					assert(not eg2.srcEdges:find(nil, function(es) return es.edge == e1 end))
+					assert(not eg2.srcEdges:find(nil, function(es)
+						return es.edge == e1.edge
+					end))
 				end
 
 				local es21 = eg2.srcEdges[1]
@@ -1718,14 +1722,14 @@ print('total before', totalSrcEdgesBeforeMerging)
 	-- hmm maybe I can even assert the true is consistent or false is consistent
 	for _,eg in ipairs(self.edgeClipGroups) do
 		local es1 = eg.srcEdges[1]
-		for i=2,#eg.srcEdges do	
+		for i=2,#eg.srcEdges do
 			local es = eg.srcEdges[i]
 			if es.edge.isExtEdge ~= es1.edge.isExtEdge then
 				print('!!! WARNING !!! edge group has mixed isExtEdge members.  is the mesh non-manifold?')
 			end
 		end
 	end
-	
+
 	print'after merging edge groups:'
 	for i,eg in ipairs(self.edgeClipGroups) do
 		print('edge group',i,'#srcEdges', #eg.srcEdges)
