@@ -2913,7 +2913,7 @@ function Mesh:loadGL(shader)
 	end
 
 --print('creating array buffer of size', self.vtxs.size)
-	if not self.vtxBuf then
+	if shader and not self.vtxBuf then
 		self.vtxBuf = GLArrayBuffer{
 			size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
 			data = self.vtxs.v,
@@ -2963,7 +2963,7 @@ end
 function Mesh:draw(args)
 	local gl = require 'gl'
 
-	self:loadGL()	-- load if not loaded
+	self:loadGL(args.shader)	-- load if not loaded
 
 	local curtex
 	for _,g in ipairs(self.groups) do
@@ -2996,50 +2996,52 @@ function Mesh:draw(args)
 		--]]
 		if args.beginGroup then args.beginGroup(g) end
 
-		--[[ immediate mode
-		gl.glBegin(gl.GL_TRIANGLES)
-		for vi in self:triindexiter(g.name) do
-			-- TODO store a set of unique face v/vt/vn index-vertexes
-			-- and then bake those into a unique vertex array, and store its index alongside face's other indexes
-			-- that'll be most compat with GL indexed arrays
-			local v = self.vtxs.v[vi]
-			gl.glTexCoord2fv(v.texcoord.s)
-			gl.glNormal3fv(v.normal.s)
-			gl.glVertex3fv(self.vtxs.v[vi].pos.s)
-		end
-		gl.glEnd()
-		--]]
-		--[[ vertex client arrays
-		gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].pos.s)
-		gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].texcoord.s)
-		gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].normal.s)
-		gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
-		gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
-		gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, g.vtxs.size)
-		gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
-		gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
-		gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
-		--]]
-		--[[ vertex attrib pointers ... requires specifically-named attrs in the shader
-		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].texcoord.s)
-		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', g.vtxs.v[0].normal.s)
-		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
-		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
-		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
-		gl.glDrawArrays(gl.GL_TRIANGLES, 0, g.vtxs.size)
-		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
-		gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
-		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
-		--]]
-		-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 		if g.triCount > 0 then
-			self.vao:use()
-			gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
-			self.vao:useNone()
+			if self.vao then
+				-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
+				self.vao:use()
+				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
+				self.vao:useNone()
+				--]]
+			elseif args.shader then
+				-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
+				gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+				gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
+				gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
+				gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
+				gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
+				gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
+				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
+				gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
+				gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
+				gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
+				--]]
+			else
+				-- [[ vertex client arrays
+				gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+				gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
+				gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
+				gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
+				gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+				gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
+				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
+				gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
+				gl.glDisableClientState(gl.GL_TEXTURE_COORD_ARRAY)
+				gl.glDisableClientState(gl.GL_NORMAL_ARRAY)
+				--]]
+				--[[ immediate mode
+				gl.glBegin(gl.GL_TRIANGLES)
+				for i=0,3*g.triCount-1 do
+					local vi = self.triIndexes.v[i + g.triFirstIndex * 3]
+					local v = self.vtxs.v[vi]
+					gl.glTexCoord2fv(v.texcoord.s)
+					gl.glNormal3fv(v.normal.s)
+					gl.glVertex3fv(self.vtxs.v[vi].pos.s)
+				end
+				gl.glEnd()
+				--]]
+			end
 		end
-		--]]
 		if args.endGroup then args.endGroup(g) end
 	end
 	--[[
