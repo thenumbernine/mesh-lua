@@ -17,6 +17,7 @@ local plane3f = require 'vec-ffi.plane3f'
 local quatd = require 'vec-ffi.quatd'
 local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
+local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 local unwrapUVs = require 'mesh.unwrapuvs'.unwrapUVs
 local drawUnwrapUVGraph = require 'mesh.unwrapuvs'.drawUnwrapUVGraph
@@ -217,102 +218,7 @@ end
 		self:resetAngle(vec3d(table.unpack(dirs[dirnames:find(cmdline.fwd)])))
 	end
 
-	self.shader = GLProgram{
-		vertexCode = [[
-#version 460
-
-in vec3 pos;
-in vec3 texcoord;
-in vec3 normal;
-in vec3 com;
-
-uniform bool useFlipTexture;
-uniform vec4 Ka;
-uniform vec4 Kd;
-uniform vec4 Ks;
-uniform float Ns;
-uniform vec3 objCOM;
-uniform vec3 groupCOM;
-uniform float groupExplodeDist;
-uniform float triExplodeDist;
-uniform mat4 modelMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 projectionMatrix;
-
-out vec3 fragPosv;	// position in view space
-out vec3 texcoordv;
-out vec3 normalv;
-out vec4 Kav;
-out vec4 Kdv;
-out vec4 Ksv;
-out float Nsv;
-
-void main() {
-	texcoordv = texcoord;
-	if (useFlipTexture) texcoordv.y = 1. - texcoordv.y;
-	mat4 modelViewMatrix = viewMatrix * modelMatrix;
-	normalv = (modelViewMatrix * vec4(normal, 0.)).xyz;
-	Kav = Ka;
-	Kdv = Kd;
-	Ksv = Ks;
-	Nsv = Ns;
-	vec3 vertex = pos;
-	vertex = mix(vertex, com, triExplodeDist);
-	vertex = mix(vertex, groupCOM, groupExplodeDist);
-	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
-	fragPosv = fragPos.xyz;
-	gl_Position = projectionMatrix * fragPos;
-}
-]],
-		fragmentCode = [[
-#version 460
-
-uniform sampler2D map_Kd;
-uniform bool useLighting;
-uniform vec3 lightDir;
-uniform bool useTextures;
-
-in vec3 fragPosv;
-in vec3 texcoordv;
-in vec3 normalv;
-in vec4 Kav;
-in vec4 Kdv;
-in vec4 Ksv;
-in float Nsv;
-
-out vec4 fragColor;
-
-void main() {
-	vec3 normal = normalize(normalv);
-	fragColor = Kav;
-	vec4 diffuseColor = Kdv;
-	if (useTextures) {
-		diffuseColor *= texture(map_Kd, texcoordv.xy);
-	}
-	fragColor += diffuseColor;
-	if (useLighting) {
-		fragColor.xyz *= max(0., dot(normal, lightDir));
-	}
-	if (useLighting) {
-		vec3 viewDir = normalize(-fragPosv);
-		vec3 reflectDir = reflect(-lightDir, normal);
-		float spec = pow(max(dot(viewDir, reflectDir), 0.), Nsv);
-		fragColor += Ksv * spec;
-	}
-}
-]],
-		uniforms = {
-			objCOM = {0,0,0},
-			groupCOM = {0,0,0},
-			groupExplodeDist = 0,
-			triExplodeDist = 0,
-			map_Kd = 0,
-			Ka = {0,0,0,0},
-			Kd = {1,1,1,1},
-			Ks = {1,1,1,1},
-			Ns = 1,
-		},
-	}
+	self.shader = Mesh:makeShader()
 
 	mesh:loadGL(self.shader)
 end
