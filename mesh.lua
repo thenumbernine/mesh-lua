@@ -2966,11 +2966,17 @@ end
 
 function Mesh:draw(args)
 	local gl = require 'gl'
-
 	self:loadGL(args.shader)	-- load if not loaded
-			
+	
+	local method = args.method
+	if not method then method = 'vao' end
+	if method == 'vao' and not self.vao then method = nil end
+	if not method then method = 'attribarray' end
+	if method == 'attribarray' and not args.shader then method = nil end
+
 	-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
-	if self.vao then
+	if method == 'vao' then
+		assert(self.vao)
 		self.vao:use()
 		for _,g in ipairs(self.groups) do
 			if args.beginGroup then args.beginGroup(g) end
@@ -2982,7 +2988,8 @@ function Mesh:draw(args)
 		self.vao:useNone()
 	--]]
 	-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
-	elseif args.shader then
+	elseif method == 'attribarray' then
+		assert(args.shader)
 		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
 		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
 		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
@@ -3001,7 +3008,7 @@ function Mesh:draw(args)
 		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
 	--]]
 	else
-		--local curtex
+		local curtex
 		for _,g in ipairs(self.groups) do
 			--[[
 			if g.Kd then
@@ -3010,7 +3017,7 @@ function Mesh:draw(args)
 				gl.glColor4f(1,1,1,1)
 			end
 			--]]
-			--[[
+			-- [[
 			if g
 			and g.tex_Kd
 			and not (args and args.disableTextures)
@@ -3059,7 +3066,7 @@ function Mesh:draw(args)
 			end
 			if args.endGroup then args.endGroup(g) end
 		end
-		--[[
+		-- [[
 		if curtex then
 			curtex:unbind()
 			curtex:disable()
