@@ -160,6 +160,10 @@ end
 
 Mesh.Triangle = Triangle
 
+-- static function for generating the shader
+function Mesh:makeShader()
+end
+
 function Mesh:init(o)
 	-- TODO replace my lua-ization of cpp-vectors
 	-- ...with a cdef-ization of lua-tables
@@ -3117,7 +3121,7 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	gl.glDisable(gl.GL_DEPTH_TEST)
 	gl.glEnable(gl.GL_BLEND)
 
-local normalExtrusionEpsilon  = .1
+	local normalExtrusionEpsilon  = .1
 	-- draw along the fake-edge, then turn and draw along its clip-plane
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)

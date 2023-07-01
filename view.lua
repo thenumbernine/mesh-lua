@@ -235,7 +235,8 @@ uniform vec3 objCOM;
 uniform vec3 groupCOM;
 uniform float groupExplodeDist;
 uniform float triExplodeDist;
-uniform mat4 modelViewMatrix;
+uniform mat4 modelMatrix;
+uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 
 out vec3 fragPosv;	// position in view space
@@ -249,6 +250,7 @@ out float Nsv;
 void main() {
 	texcoordv = texcoord;
 	if (useFlipTexture) texcoordv.y = 1. - texcoordv.y;
+	mat4 modelViewMatrix = viewMatrix * modelMatrix;
 	normalv = (modelViewMatrix * vec4(normal, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
@@ -315,7 +317,8 @@ void main() {
 	mesh:loadGL(self.shader)
 end
 
-App.modelViewMatrix = matrix_ffi.zeros{4,4}
+App.modelMatrix = matrix_ffi{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}}
+App.viewMatrix = matrix_ffi.zeros{4,4}
 App.projectionMatrix = matrix_ffi.zeros{4,4}
 
 function App:update()
@@ -369,7 +372,7 @@ function App:update()
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
 
-	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.modelViewMatrix.ptr)
+	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.viewMatrix.ptr)
 	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
 
 	mesh:loadGL(self.shader)
@@ -389,7 +392,8 @@ function App:update()
 			useFlipTexture = self.useFlipTexture,
 			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
-			modelViewMatrix = self.modelViewMatrix.ptr,
+			modelMatrix = self.modelMatrix.ptr,
+			viewMatrix = self.viewMatrix.ptr,
 			projectionMatrix = self.projectionMatrix.ptr,
 		}
 		if self.useDrawPolys then
@@ -400,6 +404,12 @@ function App:update()
 		end
 		if self.insertMeshToEdgeClipGroup then
 			self:drawMesh(self.insertMeshToEdgeClipGroup)
+			gl.glPointSize(5)
+			gl.glColor3f(1,1,0)
+			gl.glBegin(gl.GL_POINTS)
+			gl.glVertex3f(self.insertMeshPt:unpack())
+			gl.glEnd()
+			gl.glPointSize(1)
 		end
 		self.shader:useNone()
 	end
@@ -542,24 +552,50 @@ function App:update()
 	elseif self.editMode == editModeForName.tri then
 		self.hoverTri, self.bestTriPt = self:findClosestTriToMouse()
 		if not self.hoverTri then self.bestTriPt = nil end
-		-- [[
-		local bestgroup
-		if self.hoverTri then
-			for j,g in ipairs(mesh.groups) do
-				if self.hoverTri >= 3*g.triFirstIndex and self.hoverTri < 3*(g.triFirstIndex + g.triCount) then
-					bestgroup = g.name
-				end
-			end
-			print('clicked on material', bestgroup, 'tri', self.hoverTri/3)
-		end
-		--]]
 		if self.mouse.leftPress then
+			-- [[
+			local bestgroup
+			if self.hoverTri then
+				for j,g in ipairs(mesh.groups) do
+					if self.hoverTri >= 3*g.triFirstIndex and self.hoverTri < 3*(g.triFirstIndex + g.triCount) then
+						bestgroup = g.name
+					end
+				end
+				print('clicked on material', bestgroup, 'tri', self.hoverTri/3)
+			end
+			--]]
 			self.dragTri = self.hoverTri
 		end
 	elseif self.editMode == editModeForName.edge then
 		self.hoverEdge, self.bestEdgePt = self:findClosestTriGroupEdgeToMouse()
 		if not self.hoverEdge then self.bestEdgePt = nil end
 		if self.mouse.leftPress then
+			if self.hoverEdge then
+				print('clicking on edge', self.hoverEdge)
+				if not mesh.edgeClipGroups then
+					mesh:calcTriEdgeGroups()
+				end
+				local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
+					return eg.srcEdges:find(nil, function(es)
+						return es.edge == self.hoverEdge
+					end)
+				end)
+				print('clicking edge group', eg)
+				if eg then
+					for i,es in ipairs(eg.srcEdges) do
+						local e = es.edge
+						print('src edge #'..i..' has intervalIndex '..es.intervalIndex)
+						print('points', e:getPts())
+						print('interval', table.unpack(e.interval))
+						print('length', e.interval[2] - e.interval[1])
+						print('plane', e.plane)
+						print('planePos', e.planePos)
+						print('clipPlane', e.clipPlane)
+						print('normAvg', e.normAvg)
+						print('com', e.com)
+					end
+				end
+			end
 			self.dragEdge = self.hoverEdge
 		end
 	elseif self.editMode == editModeForName.insertMeshToSurfaceClipGroup then
@@ -645,7 +681,7 @@ function App:update()
 
 --print('calculating basis of insertMeshEdge')
 				local ey = insertMeshEdge.normAvg
-				local ez = insertMeshEdge.plane.n
+				local ez = -insertMeshEdge.plane.n
 				local ex = ey:cross(ez)
 --print('got', ex, ey, ez)
 
@@ -659,18 +695,19 @@ function App:update()
 
 --print('mesh.edgeClipGroups', mesh.edgeClipGroups)
 				if not mesh.edgeClipGroups then
+					mesh:calcTriEdgeGroups()
+				end
+				assert(mesh.edgeClipGroups)
 --print("... doesn't exist - can't clip anything")
-				else
 --print("looking for closest edge to mouse")
-					local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
-						return eg.srcEdges:find(nil, function(es)
-							return es.edge == insertMeshEdge
-						end)
+				local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
+					return eg.srcEdges:find(nil, function(es)
+						return es.edge == insertMeshEdge
 					end)
+				end)
 --print("found", eg)
-					if eg then
-						self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToClipGroup(eg)
-					end
+				if eg then
+					self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToClipGroup(eg)
 				end
 				if self.insertMeshToEdgeClipGroup
 				and #self.insertMeshToEdgeClipGroup.tris == 0
@@ -833,7 +870,11 @@ function App:findClosestTriGroupEdgeToMouse()
 --print('mousePos', mousePos, 'mouseDir', mouseDir)
 	local bestDistSq = math.huge
 	local bestEdge, bestPt1, bestPt2
-	for _,g in ipairs(self.mesh.triGroups) do
+	local mesh = self.mesh
+	if not mesh.triGroups then
+		mesh:calcTriSurfaceGroups()
+	end
+	for _,g in ipairs(mesh.triGroups) do
 		for _,info in ipairs(g.borderEdges) do
 			local e = info.edge
 			local s0, s1 = table.unpack(e.interval)

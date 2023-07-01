@@ -387,6 +387,9 @@ print('group '..groupIndex..' placed '..(#mesh.tilePlaces - beforeTilePlaceCount
 	local numSurfTilePlaces = #mesh.tilePlaces
 print('#tilePlaces from surfaces', numSurfTilePlaces)
 
+	-- TODO put this in the json file
+	local edgeGroupTotalLengthThreshold = .12
+
 -- [=[
 	local totalEdgesCovered = 0
 	for _,eg in ipairs(mesh.edgeClipGroups) do
@@ -421,122 +424,126 @@ print('edge group has '..#eg.srcEdges..' srcEdges')
 print('interval', s0, s1, 'running total', edgeGroupLength)
 		end
 print('edge group has total arclength', edgeGroupLength)
-		-- TODO is it all or is it pick-one?
-		-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
-		for _,inst in ipairs(insts) do
-			local offsetWidth = inst.offsetWidth or 0
-			local numInsts = edgeGroupLength / inst.offsetDistance
+		if edgeGroupLength < edgeGroupTotalLengthThreshold then
+			print('...is less than threshold',edgeGroupTotalLengthThreshold, 'skipping...')
+		else
+			-- TODO is it all or is it pick-one?
+			-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
+			for _,inst in ipairs(insts) do
+				local offsetWidth = inst.offsetWidth or 0
+				local numInsts = edgeGroupLength / inst.offsetDistance
 print('edge for inst', inst,'has',numInsts,'placements')
-			local startNumTilesPlaced = #mesh.tilePlaces
-			-- TODO how come i keep having to increase this ...
-			local places = table()
-			for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
-				local s = i * inst.offsetDistance
+				local startNumTilesPlaced = #mesh.tilePlaces
+				-- TODO how come i keep having to increase this ...
+				local places = table()
+				for i=-2,numInsts+2 do	-- plus one more for good measure,  i probalby have to clip this.
+					local s = i * inst.offsetDistance
 print('placing at arclength', s)
-				-- now find edge associated with this 's' ...
-				local foundes
-				local foundj
-				for j,es in ipairs(eg.srcEdges) do
-					local e = es.edge
-					local s0, s1 = table.unpack(e.interval)
-					local slen = s1 - s0
-					assert(slen >= 0)
-					-- TODO here , pythagorean theorem / curve arclength
-					-- if our next edge has turned a bit then we don't want to subtract off the full interval from our arclength parameter
-					-- instead subtract off the arclength amount associated with the outer edge of this (based on some mesh or something)
-					-- use inst.offsetWidth for this - which should be half the width of the mesh
-					-- hmm but this now means we need a new arclength per instance ...
-					-- TODO first half of first edge line seg won't have angle influence ... next steps will
-					if j < #eg.srcEdges then
-						local theta = math.acos(math.clamp(math.abs(eg.srcEdges[j+1].edge.plane.n:dot(e.plane.n)), -1, 1))
-						local ds = offsetWidth * math.tan(theta/2)
-						--if j > 1 then ds = ds * 2 end
-						-- inc the amount subtracted off of 's' arclength parameterization
-						slen = slen + ds
+					-- now find edge associated with this 's' ...
+					local foundes
+					local foundj
+					for j,es in ipairs(eg.srcEdges) do
+						local e = es.edge
+						local s0, s1 = table.unpack(e.interval)
+						local slen = s1 - s0
+						assert(slen >= 0)
+						-- TODO here , pythagorean theorem / curve arclength
+						-- if our next edge has turned a bit then we don't want to subtract off the full interval from our arclength parameter
+						-- instead subtract off the arclength amount associated with the outer edge of this (based on some mesh or something)
+						-- use inst.offsetWidth for this - which should be half the width of the mesh
+						-- hmm but this now means we need a new arclength per instance ...
+						-- TODO first half of first edge line seg won't have angle influence ... next steps will
+						if j < #eg.srcEdges then
+							local theta = math.acos(math.clamp(math.abs(eg.srcEdges[j+1].edge.plane.n:dot(e.plane.n)), -1, 1))
+							local ds = offsetWidth * math.tan(theta/2)
+							--if j > 1 then ds = ds * 2 end
+							-- inc the amount subtracted off of 's' arclength parameterization
+							slen = slen + ds
+						end
+						if s <= slen
+						-- just pick the last if we haven't foudn one yet - for when we overflow the smax
+						-- and do it before subtracting out the interval length
+						or j == #eg.srcEdges
+						then
+							foundes = es
+							foundj = j
+							break
+						end
+						s = s - slen
 					end
-					if s <= slen
-					-- just pick the last if we haven't foudn one yet - for when we overflow the smax
-					-- and do it before subtracting out the interval length
-					or j == #eg.srcEdges
-					then
-						foundes = es
-						foundj = j
-						break
-					end
-					s = s - slen
-				end
-				assert(foundes)
+					assert(foundes)
 print('found arclength at '..foundj..'th edge with local arclength', s, 'and starting interval in edge group', foundes.intervalIndex)
-				-- except for the oob s range inst's we can also assert 0 <= sg <= (foundes.edge.interval difference)
-				local e = foundes.edge
-				local s0, s1 = table.unpack(e.interval)
-				local savg = .5 * (s0 + s1)
-				local v1, v2 = e:getPts()
-				local edgeDir = e.plane.n
-				if foundes.intervalIndex == 2 then
-					-- then flip the interval and go from end to start ...
-					v1, v2 = v2, v1
-					-- don't flip both s and edgeDir or you'll double negative
-					--s = savg - (s - savg)
-					-- hmm why again do I not need to flip this when foundes.intervalIndex says we aren't starting at the first index?
-					edgeDir = -edgeDir
-				end
+					-- except for the oob s range inst's we can also assert 0 <= sg <= (foundes.edge.interval difference)
+					local e = foundes.edge
+					local s0, s1 = table.unpack(e.interval)
+					local savg = .5 * (s0 + s1)
+					local v1, v2 = e:getPts()
+					local edgeDir = e.plane.n
+					if foundes.intervalIndex == 2 then
+						-- then flip the interval and go from end to start ...
+						v1, v2 = v2, v1
+						-- don't flip both s and edgeDir or you'll double negative
+						--s = savg - (s - savg)
+						-- hmm why again do I not need to flip this when foundes.intervalIndex says we aren't starting at the first index?
+						edgeDir = -edgeDir
+					end
 print('placing along edge from ',v1,'to',v2,'with pos', e.planePos, 'normal', e.plane.n)
 
-				local omesh = omeshForFn[inst.geometryFilename]
-				-- e.normAvg is the up axis, going to be y
-				-- e.plane.n is the long axis, going to be z
-				local ex = e.normAvg:cross(-e.plane.n)
-				local ey = e.normAvg
-				local ez = -e.plane.n
-				--local pos = e.planePos + s * e.plane.n
-				local pos = v1 + s * edgeDir
+					local omesh = omeshForFn[inst.geometryFilename]
+					-- e.normAvg is the up axis, going to be y
+					-- e.plane.n is the long axis, going to be z
+					local ex = e.normAvg:cross(-e.plane.n)
+					local ey = e.normAvg
+					local ez = -e.plane.n
+					--local pos = e.planePos + s * e.plane.n
+					local pos = v1 + s * edgeDir
 print('placing at interval param', s, 'pos', pos)
-				-- store for now the pos and transform and clipgroup for this instance
-				-- then later go between them and add an extra clip edge
-				places:insert{
-					pos = pos,
-					basis = {ex,ey,ez},
-					inst = inst,
-					eg = eg,
-					edge = e,
-				}
-			end
-			-- now that we have all positions calculated and stored, insert new clipplanes between them
-			for i,p in ipairs(places) do
-				local extraCurveClipPlanes = table()
-				if i > 1 then
-					local pprev = places[i-1]
-					-- failing for non-manifold meshes
-					--assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
-					if p.edge.plane.n:dot(pprev.edge.plane.n) <= 0 then
-						print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
-					end
-					local plane = plane3f():fromDirPt(
-						(p.edge.plane.n + pprev.edge.plane.n):normalize(),
-						(p.pos + pprev.pos) * .5)
-					local tside = plane:test(p.pos)
-					extraCurveClipPlanes:insert(tside and plane or -plane)
+					-- store for now the pos and transform and clipgroup for this instance
+					-- then later go between them and add an extra clip edge
+					places:insert{
+						pos = pos,
+						basis = {ex,ey,ez},
+						inst = inst,
+						eg = eg,
+						edge = e,
+					}
 				end
-				if i < #places then
-					local pnext = places[i+1]
-					-- fails on non-manifold meshes
-					--assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
-					if p.edge.plane.n:dot(pnext.edge.plane.n) <= 0 then
-						print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
+				-- now that we have all positions calculated and stored, insert new clipplanes between them
+				for i,p in ipairs(places) do
+					local extraCurveClipPlanes = table()
+					if i > 1 then
+						local pprev = places[i-1]
+						-- failing for non-manifold meshes
+						--assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
+						if p.edge.plane.n:dot(pprev.edge.plane.n) <= 0 then
+							print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
+						end
+						local plane = plane3f():fromDirPt(
+							(p.edge.plane.n + pprev.edge.plane.n):normalize(),
+							(p.pos + pprev.pos) * .5)
+						local tside = plane:test(p.pos)
+						extraCurveClipPlanes:insert(tside and plane or -plane)
 					end
-					local plane = plane3f():fromDirPt(
-						(p.edge.plane.n + pnext.edge.plane.n):normalize(),
-						(p.pos + pnext.pos) * .5)
-					local tside = plane:test(p.pos)
-					extraCurveClipPlanes:insert(tside and plane or -plane)
+					if i < #places then
+						local pnext = places[i+1]
+						-- fails on non-manifold meshes
+						--assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
+						if p.edge.plane.n:dot(pnext.edge.plane.n) <= 0 then
+							print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
+						end
+						local plane = plane3f():fromDirPt(
+							(p.edge.plane.n + pnext.edge.plane.n):normalize(),
+							(p.pos + pnext.pos) * .5)
+						local tside = plane:test(p.pos)
+						extraCurveClipPlanes:insert(tside and plane or -plane)
+					end
+					local xform = translateMat4x4(p.pos)
+							* matrix3x3To4x4(p.basis)
+					mergeOrPlace(xform, p.inst.geometryFilename, p.eg, extraCurveClipPlanes)
 				end
-				local xform = translateMat4x4(p.pos)
-						* matrix3x3To4x4(p.basis)
-				mergeOrPlace(xform, p.inst.geometryFilename, p.eg, extraCurveClipPlanes)
-			end
-			local numTilesPlacedForThisEdge = #mesh.tilePlaces - startNumTilesPlaced
+				local numTilesPlacedForThisEdge = #mesh.tilePlaces - startNumTilesPlaced
 print('placed', numTilesPlacedForThisEdge, 'unclipped tiles for this edge and inst')
+			end
 		end
 	end
 print('# edges placed along', totalEdgesCovered)
