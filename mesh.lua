@@ -2969,60 +2969,70 @@ function Mesh:draw(args)
 
 	self:loadGL(args.shader)	-- load if not loaded
 			
+	-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 	if self.vao then
 		self.vao:use()
-	end
-
-	local curtex
-	for _,g in ipairs(self.groups) do
-		--[[
-		if g.Kd then
-			gl.glColor4f(g.Kd:unpack())
-		else
-			gl.glColor4f(1,1,1,1)
-		end
-		--]]
-		--[[
-		if g
-		and g.tex_Kd
-		and not (args and args.disableTextures)
-		then
-			-- TODO use .Ka, Kd, Ks, Ns, etc
-			-- with fixed pipeline?  opengl lighting?
-			-- with a shader in the wavefrontobj lib?
-			-- with ... nothing?
-			curtex = g.tex_Kd
-			curtex:enable()
-			curtex:bind()
-		else
-			if curtex then
-				curtex:unbind()
-				curtex:disable()
-				curtex = nil
+		for _,g in ipairs(self.groups) do
+			if args.beginGroup then args.beginGroup(g) end
+			if g.triCount > 0 then
+				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
 			end
+			if args.endGroup then args.endGroup(g) end
 		end
-		--]]
-		if args.beginGroup then args.beginGroup(g) end
-
-		if g.triCount > 0 then
-			if self.vao then
-				-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
+		self.vao:useNone()
+	--]]
+	-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
+	elseif args.shader then
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
+		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
+		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
+		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
+		for _,g in ipairs(self.groups) do
+			if args.beginGroup then args.beginGroup(g) end
+			if g.triCount > 0 then
 				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
-				--]]
-			elseif args.shader then
-				-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
-				gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
-				gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
-				gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
-				gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
-				gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
-				gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
-				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
-				gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
-				gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
-				gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
-				--]]
+			end
+			if args.endGroup then args.endGroup(g) end
+		end	
+		gl.glDisableVertexAttribArray(args.shader.attrs.pos.loc)
+		gl.glDisableVertexAttribArray(args.shader.attrs.texcoord.loc)
+		gl.glDisableVertexAttribArray(args.shader.attrs.normal.loc)
+	--]]
+	else
+		--local curtex
+		for _,g in ipairs(self.groups) do
+			--[[
+			if g.Kd then
+				gl.glColor4f(g.Kd:unpack())
 			else
+				gl.glColor4f(1,1,1,1)
+			end
+			--]]
+			--[[
+			if g
+			and g.tex_Kd
+			and not (args and args.disableTextures)
+			then
+				-- TODO use .Ka, Kd, Ks, Ns, etc
+				-- with fixed pipeline?  opengl lighting?
+				-- with a shader in the wavefrontobj lib?
+				-- with ... nothing?
+				curtex = g.tex_Kd
+				curtex:enable()
+				curtex:bind()
+			else
+				if curtex then
+					curtex:unbind()
+					curtex:disable()
+					curtex = nil
+				end
+			end
+			--]]
+			if args.beginGroup then args.beginGroup(g) end
+
+			if g.triCount > 0 then
 				-- [[ vertex client arrays
 				gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
 				gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
@@ -3047,17 +3057,14 @@ function Mesh:draw(args)
 				gl.glEnd()
 				--]]
 			end
+			if args.endGroup then args.endGroup(g) end
 		end
-		if args.endGroup then args.endGroup(g) end
-	end
-	--[[
-	if curtex then
-		curtex:unbind()
-		curtex:disable()
-	end
-	--]]
-	if self.vao then
-		self.vao:useNone()
+		--[[
+		if curtex then
+			curtex:unbind()
+			curtex:disable()
+		end
+		--]]
 	end
 	require 'gl.report''here'
 end
