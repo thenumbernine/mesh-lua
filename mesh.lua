@@ -250,6 +250,7 @@ void main() {
 		uniforms = {
 			useFlipTexture = false,
 			useLighting = true,
+			useTextures = false,
 			lightDir = {1,1,1},
 			objCOM = {0,0,0},
 			groupCOM = {0,0,0},
@@ -260,6 +261,9 @@ void main() {
 			Kd = {1,1,1,1},
 			Ks = {1,1,1,1},
 			Ns = 100,
+			--modelMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
+			--viewMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
+			--projectionMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 		},
 	}
 end
@@ -2964,6 +2968,10 @@ function Mesh:draw(args)
 	local gl = require 'gl'
 
 	self:loadGL(args.shader)	-- load if not loaded
+			
+	if self.vao then
+		self.vao:use()
+	end
 
 	local curtex
 	for _,g in ipairs(self.groups) do
@@ -2999,9 +3007,7 @@ function Mesh:draw(args)
 		if g.triCount > 0 then
 			if self.vao then
 				-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
-				self.vao:use()
 				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
-				self.vao:useNone()
 				--]]
 			elseif args.shader then
 				-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
@@ -3050,6 +3056,9 @@ function Mesh:draw(args)
 		curtex:disable()
 	end
 	--]]
+	if self.vao then
+		self.vao:useNone()
+	end
 	require 'gl.report''here'
 end
 
