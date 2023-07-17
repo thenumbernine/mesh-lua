@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 local OBJLoader = require 'mesh.objloader'
 local cmdline = require 'ext.cmdline'(...)
-local file = require 'ext.file'
+local path = require 'ext.path'
 
 local meshfn, dotfn = ...
 assert(meshfn and dotfn, "expected mesh dot")
@@ -21,7 +21,7 @@ end
 mesh:findEdges()
 
 -- ok here ... I need to remove tris to edges with 3 tris touching them
-dotfn = file(dotfn):open'w'
+dotfn = path(dotfn):open'w'
 dotfn:write'graph G {\n'
 local edgeIndex = 1
 for a,o in pairs(mesh.edges) do

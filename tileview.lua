@@ -1,5 +1,5 @@
 #!/usr/bin/env luajit
-local file = require 'ext.file'
+local path = require 'ext.path'
 local class = require 'ext.class'
 local timer = require 'ext.timer'
 local table = require 'ext.table'
@@ -20,7 +20,7 @@ local App = class(require 'imguiapp.withorbit'())
 
 
 local placefn = assert((...), "expected placement filename")
-local d = json.decode(file(placefn):read())
+local d = json.decode(path(placefn):read())
 print('# placed', #d.instances)
 
 local instfns = table.mapi(d.instances, function(inst)
@@ -30,7 +30,7 @@ print('unique files:', tolua(instfns))
 
 local meshesForFns = {}
 for _,fn in ipairs(instfns) do
-	local base, ext = file(fn):getext()
+	local base, ext = path(fn):getext()
 	local loadfn = fn
 	if ext == 'fbx' then
 		print(fn.." ... I don't have a Lua FBX loader right now, so ... loading a model instead")

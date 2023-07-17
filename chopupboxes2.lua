@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 local timer = require 'ext.timer'
 local table = require 'ext.table'
-local file = require 'ext.file'
+local path = require 'ext.path'
 local vec3f = require 'vec-ffi.vec3f'
 local plane3f = require 'vec-ffi.plane3f'
 

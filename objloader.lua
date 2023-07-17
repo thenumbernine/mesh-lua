@@ -1,5 +1,5 @@
 --  https://en.wikipedia.org/wiki/Wavefront_.obj_file
-local file = require 'ext.file'
+local path = require 'ext.path'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local string = require 'ext.string'
@@ -52,7 +52,7 @@ function OBJLoader:load(filename)
 	-- mesh groups / materials
 	local group
 
-	mesh.relpath = file(filename):getdir()
+	mesh.relpath = path(filename):getdir()
 	mesh.mtlFilenames = table()
 
 	local function ensureGroup()
@@ -66,7 +66,7 @@ function OBJLoader:load(filename)
 		mesh.groups:insert(group)
 	end
 
-	assert(file(filename):exists(), "failed to find WavefrontObj file "..filename)
+	assert(path(filename):exists(), "failed to find WavefrontObj file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
@@ -223,9 +223,9 @@ function OBJLoader:loadMtl(filename, mesh)
 	mesh.mtlFilenames:insert(filename)
 
 	local group
-	filename = file(mesh.relpath)(filename).path
+	filename = path(mesh.relpath)(filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
-	if not file(filename):exists() then
+	if not path(filename):exists() then
 		io.stderr:write("failed to find WavefrontObj material file "..filename..'\n')
 		return
 	end
@@ -320,11 +320,11 @@ function OBJLoader:loadMtl(filename, mesh)
 			local localpath = words:concat' '
 			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
 			localpath = localpath:gsub('\\', '/')
-			local path = file(mesh.relpath)(localpath)
-			if not path:exists() then
-				print("couldn't load map_Kd "..tostring(path))
+			local pathobj = path(mesh.relpath)(localpath)
+			if not pathobj:exists() then
+				print("couldn't load map_Kd "..tostring(pathobj))
 			else
-				group.map_Kd = path.path
+				group.map_Kd = pathobj.path
 				-- TODO
 				-- load textures?
 				-- what if the caller isn't using GL?
@@ -396,7 +396,7 @@ function OBJLoader:save(filename, mesh)
 	if self.verbose then
 		print('OBJLoader:save begin', filename)
 	end
-	local o = assert(file(filename):open'w')
+	local o = assert(path(filename):open'w')
 	-- TODO write smooth flag, groups, etc
 	if mesh.mtlFilenames then
 		for _,mtlname in ipairs(mesh.mtlFilenames) do
@@ -538,7 +538,7 @@ function OBJLoader:saveMtl(filename, mesh)
 	if self.verbose then
 		print('OBJLoader:saveMtl begin', filename)
 	end
-	local o = assert(file(filename):open'w')
+	local o = assert(path(filename):open'w')
 	for i,group in ipairs(mesh.groups) do
 		if group.name ~= '' then
 			o:write('newmtl ', group.name,'\n')

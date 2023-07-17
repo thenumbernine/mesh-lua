@@ -1,7 +1,7 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
 local class = require 'ext.class'
-local file = require 'ext.file'
+local path = require 'ext.path'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
@@ -111,7 +111,7 @@ function App:initGL(...)
 
 	self.curfn = fn
 	local curname
-	self.curdir,curname = file(fn):getdir()
+	self.curdir,curname = path(fn):getdir()
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	local mesh = OBJLoader():load(self.curfn)
 
@@ -882,7 +882,7 @@ function App:cycleFile(ofs)
 	assert(self.curdir)
 	if not self.curdirfiles then
 		self.curdirfiles = table()
-		for f in file(self.curdir):dir() do
+		for f in path(self.curdir):dir() do
 			if f:match'%.obj$' then
 				self.curdirfiles:insert(f)
 			end
@@ -893,15 +893,15 @@ function App:cycleFile(ofs)
 		print("found no files in dir..?")
 		return
 	end
-	local _,prevfn = file(self.curfn):getdir()
+	local _,prevfn = path(self.curfn):getdir()
 	local i = self.curdirfiles:find(prevfn)
 	if not i then
 		print("couldn't find current file "..tostring(self.curfn))
 		i = 1
 	end
 	i = (i-1+ofs)%#self.curdirfiles+1
-	self.curfn = file(self.curdir)(self.curdirfiles[i]).path
-	local _, curname = file(self.curfn):getdir()
+	self.curfn = path(self.curdir)(self.curdirfiles[i]).path
+	local _, curname = path(self.curfn):getdir()
 print('on file '..i..' name '..self.curfn)
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	self.mesh = OBJLoader():load(self.curfn)

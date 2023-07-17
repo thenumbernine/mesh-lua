@@ -6,7 +6,7 @@ mesh is modified
 --]]
 local ffi = require 'ffi'
 local range = require 'ext.range'
-local file = require 'ext.file'
+local path = require 'ext.path'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
@@ -84,7 +84,7 @@ local function tileMesh(mesh, placeFn)
 	-- why can't dkjson catch exceptions and insert line/col info? like my parser does.  grr..
 	local placeInfo = assert(
 		json.decode((assert(
-			file(assert(
+			path(assert(
 				placeFn,
 				"failed to provide json filename"
 			)):read(),
@@ -604,7 +604,7 @@ print('#tilePlaces total', #mesh.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
 
-		file'placement.json':write(json.encode(
+		path'placement.json':write(json.encode(
 		{
 			instances = mesh.tilePlaces:mapi(function(p)
 				return {

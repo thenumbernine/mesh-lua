@@ -1,6 +1,6 @@
 #!/usr/bin/env luajit
 local table = require 'ext.table'
-local file = require 'ext.file'
+local path = require 'ext.path'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
 local range = require 'ext.range'
@@ -215,8 +215,8 @@ loader:saveMtl(mesh.mtlFilenames[1], mesh)
 -- tough problem
 -- easy solution: use planes and clip
 -- harder solution ... extrude.
-file'blocks-v1':mkdir()
-assert(file'blocks-v1':isdir())
+path'blocks-v1':mkdir()
+assert(path'blocks-v1':isdir())
 
 for tboxIndex,tbox in ipairs(tboxes) do
 	local dstfn = 'blocks-v1/'..tboxIndex..'.obj'
