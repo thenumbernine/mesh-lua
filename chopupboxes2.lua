@@ -46,7 +46,7 @@ timer('saving', function()
 end)
 
 -- [[ now chop up boxes
-file'blocks-v2':mkdir()
+path'blocks-v2':mkdir()
 for i=math.floor(mesh.bbox.min.x),math.ceil(mesh.bbox.max.x)-1 do
 	for j=math.floor(mesh.bbox.min.y),math.ceil(mesh.bbox.max.y)-1 do
 		for k=math.floor(mesh.bbox.min.z),math.ceil(mesh.bbox.max.z)-1 do
