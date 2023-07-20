@@ -1072,9 +1072,10 @@ function App:updateGUI()
 			if ig.luatableCheckbox('nearest filter', self, 'useTexFilterNearest') then
 				for _,g in ipairs(mesh.groups) do
 					if g.tex_Kd then
-						g.tex_Kd:bind()
-						g.tex_Kd:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
-						g.tex_Kd:unbind()
+						g.tex_Kd
+							:bind()
+							:setParameter(gl.GL_TEXTURE_MAG_FILTER, self.useTexFilterNearest and gl.GL_NEAREST or gl.GL_LINEAR)
+							:unbind()
 					end
 				end
 			end
