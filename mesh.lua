@@ -495,7 +495,10 @@ function Mesh:recenter(newOrigin)
 		self.vtxs.v[i].pos = self.vtxs.v[i].pos - newOrigin
 	end
 	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+		self.vtxBuf
+			:bind()
+			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:unbind()
 	end
 	-- recalculate coms?  up to you...
 	--self:calcCOMs()
@@ -503,7 +506,10 @@ end
 
 function Mesh:refreshVtxs()
 	if self.loadedGL then
-		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+		self.vtxBuf
+			:bind()
+			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:unbind()
 	end
 	self.bbox = nil
 	-- TODO invalidate instead of recalculate?
@@ -2596,7 +2602,10 @@ function Mesh:generateVertexNormals()
 	end
 
 	if self.vtxBuf then
-		self.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+		self.vtxBuf
+			:bind()
+			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:unbind()
 	end
 end
 
@@ -2922,7 +2931,7 @@ function Mesh:loadGL(shader)
 			size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
 			data = self.vtxs.v,
 			usage = gl.GL_STATIC_DRAW,
-		}
+		}:unbind()
 glreport'here'
 
 		self.vtxAttrs = table{
