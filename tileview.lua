@@ -6,7 +6,6 @@ local table = require 'ext.table'
 local tolua = require 'ext.tolua'
 local json = require 'dkjson'
 local gl = require 'gl'
-local GLProgram = require 'gl.program'
 local glCall = require 'gl.call'
 local ig = require 'imgui'
 

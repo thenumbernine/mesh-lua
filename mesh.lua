@@ -265,7 +265,7 @@ void main() {
 			--viewMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 			--projectionMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 		},
-	}
+	}:useNone()
 end
 
 function Mesh:init(o)
