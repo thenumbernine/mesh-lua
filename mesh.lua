@@ -160,12 +160,19 @@ end
 
 Mesh.Triangle = Triangle
 
--- static function for generating the shader
-function Mesh:makeShader()
+--[[
+static function for generating the shader
+args:
+	glslVersion = version to put on the shader code.
+	glslHeader = header to put on shader code.  overrides glslVersion.
+--]]
+function Mesh:makeShader(args)
+	args = args or {}
 	local GLProgram = require 'gl.program'
+	local version = args.glslVersion or '460'
+	local header = args.glslHeader or '#version '..version
 	return GLProgram{
-		vertexCode = [[
-#version 460
+		vertexCode = header..[[
 
 in vec3 pos;
 in vec3 texcoord;
@@ -210,8 +217,7 @@ void main() {
 	gl_Position = projectionMatrix * fragPos;
 }
 ]],
-		fragmentCode = [[
-#version 460
+		fragmentCode = header..[[
 
 uniform sampler2D map_Kd;
 uniform bool useLighting;
@@ -265,6 +271,9 @@ void main() {
 			--viewMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 			--projectionMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 		},
+		
+		-- TODO moving to all be through GLSceneObject
+		createVAO = false,	
 	}:useNone()
 end
 
@@ -2921,7 +2930,7 @@ function Mesh:loadGL(shader)
 				image = g.image_Kd,
 				minFilter = gl.GL_NEAREST,
 				magFilter = gl.GL_LINEAR,
-			}
+			}:unbind()
 		end
 	end
 
@@ -2989,6 +2998,7 @@ function Mesh:draw(args)
 		self.vao:use()
 		for _,g in ipairs(self.groups) do
 			if args.beginGroup then args.beginGroup(g) end
+			-- TODO use GLElementArrayBuffer?
 			if g.triCount > 0 then
 				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
 			end
