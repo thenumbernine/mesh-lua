@@ -271,9 +271,6 @@ void main() {
 			--viewMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 			--projectionMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 		},
-		
-		-- TODO moving to all be through GLSceneObject
-		createVAO = false,	
 	}:useNone()
 end
 
