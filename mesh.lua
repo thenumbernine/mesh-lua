@@ -2995,7 +2995,7 @@ function Mesh:draw(args)
 	-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 	if method == 'vao' then
 		assert(self.vao)
-		self.vao:use()
+		self.vao:bind()
 		for _,g in ipairs(self.groups) do
 			if args.beginGroup then args.beginGroup(g) end
 			-- TODO use GLElementArrayBuffer?
@@ -3004,7 +3004,7 @@ function Mesh:draw(args)
 			end
 			if args.endGroup then args.endGroup(g) end
 		end
-		self.vao:useNone()
+		self.vao:unbind()
 	--]]
 	-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
 	elseif method == 'attribarray' then
