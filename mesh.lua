@@ -173,7 +173,6 @@ function Mesh:makeShader(args)
 	local header = args.glslHeader or '#version '..version
 	return GLProgram{
 		vertexCode = header..[[
-
 in vec3 pos;
 in vec3 texcoord;
 in vec3 normal;
@@ -192,7 +191,7 @@ uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
 
-out vec3 fragPosv;	// position in view space
+out vec3 viewPosv;	// position in view space
 out vec3 texcoordv;
 out vec3 normalv;
 out vec4 Kav;
@@ -213,7 +212,7 @@ void main() {
 	vertex = mix(vertex, com, triExplodeDist);
 	vertex = mix(vertex, groupCOM, groupExplodeDist);
 	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
-	fragPosv = fragPos.xyz;
+	viewPosv = fragPos.xyz;
 	gl_Position = projectionMatrix * fragPos;
 }
 ]],
@@ -224,7 +223,7 @@ uniform bool useLighting;
 uniform vec3 lightDir;
 uniform bool useTextures;
 
-in vec3 fragPosv;
+in vec3 viewPosv;
 in vec3 texcoordv;
 in vec3 normalv;
 in vec4 Kav;
@@ -246,7 +245,7 @@ void main() {
 		fragColor.xyz *= max(0., dot(normal, lightDir));
 	}
 	if (useLighting) {
-		vec3 viewDir = normalize(-fragPosv);
+		vec3 viewDir = normalize(-viewPosv);
 		vec3 reflectDir = reflect(-lightDir, normal);
 		float spec = pow(max(dot(viewDir, reflectDir), 0.), Nsv);
 		fragColor += Ksv * spec;

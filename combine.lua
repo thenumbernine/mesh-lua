@@ -27,7 +27,7 @@ timer('saving', function()
 end)
 --]]
 
--- [[
+--[[
 -- bbox ((-0.15080007910728, -0.10661125928164, -1.2188935279846), (0.15080018341541, 0.013977702707052, -0.71889358758926
 -- bbox size (0.3, 0.12, 0.5)
 local mesh = Mesh():combine(
@@ -40,6 +40,16 @@ timer('saving', function()
 	loader:save('roof_hip_approx_centered.obj', mesh)
 end)
 -- for uncentered, offset z by -.95
+--]]
+
+-- [[ minecraft style bed
+local mesh = Mesh():combine(
+	cube:clone():scale(1/16, 1, 1/2):translate( 15/16,  0, 0),
+	cube:clone():scale(1, 1, 1/4):translate(0, 0, -3/4)
+):scale(1/2, 1/2, 1/2)
+timer('saving', function()
+	loader:save('bed.obj', mesh)
+end)
 --]]
 
 --[[ barge_tile_approx.obj
