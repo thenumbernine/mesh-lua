@@ -211,9 +211,9 @@ void main() {
 	vec3 vertex = pos;
 	vertex = mix(vertex, com, triExplodeDist);
 	vertex = mix(vertex, groupCOM, groupExplodeDist);
-	vec4 fragPos = modelViewMatrix * vec4(vertex, 1.);
-	viewPosv = fragPos.xyz;
-	gl_Position = projectionMatrix * fragPos;
+	vec4 viewPos = modelViewMatrix * vec4(vertex, 1.);
+	viewPosv = viewPos.xyz;
+	gl_Position = projectionMatrix * viewPos;
 }
 ]],
 		fragmentCode = header..[[
