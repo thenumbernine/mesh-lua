@@ -170,7 +170,7 @@ function Mesh:makeShader(args)
 	args = args or {}
 	local GLProgram = require 'gl.program'
 	local version = args.glslVersion or '460'
-	local header = args.glslHeader or '#version '..version
+	local header = args.glslHeader or '#version '..version..'\n'
 	return GLProgram{
 		vertexCode = header..[[
 in vec3 pos;
