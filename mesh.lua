@@ -3187,7 +3187,7 @@ function Mesh:drawTriSurfaceGroupEdges(highlightEdge)
 	for _,tg in ipairs(self.triGroups) do
 		for _,info in ipairs(tg.borderEdges) do
 			local e = info.edge
-			local alpha = e == highlightEdge and 1 or .1
+			local alpha = e == highlightEdge and 1 or .3
 			if e.isExtEdge == nil then
 				gl.glColor4f(1,0,0, alpha)	-- edgeInstances
 			elseif e.isExtEdge == false then
@@ -3268,7 +3268,7 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	for _,eg in ipairs(self.edgeClipGroups) do
 		local alpha = eg.srcEdges:find(nil, function(es)
 			return es.edge == highlightEdge
-		end) and 1 or .1
+		end) and 1 or .3
 		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			-- if e.plane.n is const but info.clipPlane.n alternates dir then this will alternate its direction:
@@ -3298,7 +3298,7 @@ function Mesh:drawTriGroupEdgeClipPlanes(highlightEdge)
 	for _,eg in ipairs(self.edgeClipGroups) do
 		local alpha = eg.srcEdges:find(nil, function(es)
 			return es.edge == highlightEdge
-		end) and 1 or .1
+		end) and 1 or .3
 		for _,info in ipairs(eg.borderEdges) do
 			local e = info.edge
 			local n = e.plane.n:cross(info.clipPlane.n)	-- n is solely for lifting off the plane ... TODO use e.basis[3] ?

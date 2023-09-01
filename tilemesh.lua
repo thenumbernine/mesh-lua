@@ -112,7 +112,12 @@ local function tileMesh(mesh, placeFn)
 			omeshForFn[fn] = omesh
 		end
 	end
-	for _,insts in ipairs{placeInfo.surfaceInstances, placeInfo.cornerInstances, placeInfo.edgeInstances} do
+	for _,insts in ipairs(
+		table()
+		:append{placeInfo.surfaceInstances}
+		:append{placeInfo.cornerInstances}
+		:append{placeInfo.edgeInstances}
+	) do
 		for _,inst in ipairs(insts) do
 			if inst.geometryFilename then	-- corner and edge
 				loadWithBBox(inst.geometryFilename)
@@ -214,7 +219,7 @@ local function tileMesh(mesh, placeFn)
 	end
 
 	-- for each tri
-	for _,surfInst in ipairs(placeInfo.surfaceInstances) do
+	for _,surfInst in ipairs(placeInfo.surfaceInstances or {}) do
 		local offsetU, offsetV = table.unpack(surfInst.offsetUV)
 		-- true = centered-rectangular lattice
 		-- false = rectangular lattice
@@ -429,7 +434,7 @@ print('edge group has total arclength', edgeGroupLength)
 		else
 			-- TODO is it all or is it pick-one?
 			-- and if it's pick-one then how to work around multiple offsetDistance's per-instance?
-			for _,inst in ipairs(insts) do
+			for _,inst in ipairs(insts or {}) do
 				local offsetWidth = inst.offsetWidth or 0
 				local numInsts = edgeGroupLength / inst.offsetDistance
 print('edge for inst', inst,'has',numInsts,'placements')
