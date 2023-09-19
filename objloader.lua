@@ -52,7 +52,7 @@ function OBJLoader:load(filename)
 	-- mesh groups / materials
 	local group
 
-	mesh.relpath = path(filename):getdir()
+	local relpath = path(filename):getdir()
 	mesh.mtlFilenames = table()
 
 	local function ensureGroup()
@@ -118,7 +118,7 @@ function OBJLoader:load(filename)
 			group = self:makeOrFindGroup(mtlname, mesh)
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
-			self:loadMtl(words:concat' ', mesh)
+			self:loadMtl(words:concat' ', mesh, relpath)
 		end
 	end
 
@@ -215,7 +215,7 @@ function OBJLoader:load(filename)
 	return mesh
 end
 
-function OBJLoader:loadMtl(filename, mesh)
+function OBJLoader:loadMtl(filename, mesh, relpath)
 	if self.verbose then
 		print('OBJLoader:loadMtl begin', filename)
 	end
@@ -223,7 +223,7 @@ function OBJLoader:loadMtl(filename, mesh)
 	mesh.mtlFilenames:insert(filename)
 
 	local group
-	filename = path(mesh.relpath)(filename).path
+	filename = (path(relpath)/filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
 	if not path(filename):exists() then
 		io.stderr:write("failed to find WavefrontObj material file "..filename..'\n')
@@ -320,7 +320,7 @@ function OBJLoader:loadMtl(filename, mesh)
 			local localpath = words:concat' '
 			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
 			localpath = localpath:gsub('\\', '/')
-			local pathobj = path(mesh.relpath)(localpath)
+			local pathobj = path(relpath)/localpath
 			if not pathobj:exists() then
 				print("couldn't load map_Kd "..tostring(pathobj))
 			else
