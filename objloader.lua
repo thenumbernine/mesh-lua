@@ -223,7 +223,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 	mesh.mtlFilenames:insert(filename)
 
 	local group
-	filename = (path(relpath)/filename).path
+	filename = (relpath/filename).path
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
 	if not path(filename):exists() then
 		io.stderr:write("failed to find WavefrontObj material file "..filename..'\n')
@@ -320,7 +320,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 			local localpath = words:concat' '
 			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
 			localpath = localpath:gsub('\\', '/')
-			local pathobj = path(relpath)/localpath
+			local pathobj = relpath/localpath
 			if not pathobj:exists() then
 				print("couldn't load map_Kd "..tostring(pathobj))
 			else

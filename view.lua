@@ -110,7 +110,7 @@ function App:initGL(...)
 
 	self.curfn = fn
 	local curname
-	self.curdir,curname = path(fn):getdir()
+	self.curdir, curname = path(fn):getdir()
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	local mesh = OBJLoader():load(self.curfn)
 
@@ -881,7 +881,7 @@ function App:cycleFile(ofs)
 	assert(self.curdir)
 	if not self.curdirfiles then
 		self.curdirfiles = table()
-		for f in path(self.curdir):dir() do
+		for f in self.curdir:dir() do
 			if f:match'%.obj$' then
 				self.curdirfiles:insert(f)
 			end
@@ -899,7 +899,7 @@ function App:cycleFile(ofs)
 		i = 1
 	end
 	i = (i-1+ofs)%#self.curdirfiles+1
-	self.curfn = path(self.curdir)(self.curdirfiles[i]).path
+	self.curfn = self.curdir(self.curdirfiles[i]).path
 	local _, curname = path(self.curfn):getdir()
 print('on file '..i..' name '..self.curfn)
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
