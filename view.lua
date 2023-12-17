@@ -882,8 +882,8 @@ function App:cycleFile(ofs)
 	if not self.curdirfiles then
 		self.curdirfiles = table()
 		for f in self.curdir:dir() do
-			if f:match'%.obj$' then
-				self.curdirfiles:insert(f)
+			if f.path:match'%.obj$' then
+				self.curdirfiles:insert(f.path)
 			end
 		end
 		self.curdirfiles:sort()
