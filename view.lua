@@ -893,7 +893,7 @@ function App:cycleFile(ofs)
 		return
 	end
 	local _,prevfn = path(self.curfn):getdir()
-	local i = self.curdirfiles:find(prevfn)
+	local i = self.curdirfiles:find(prevfn.path)
 	if not i then
 		print("couldn't find current file "..tostring(self.curfn))
 		i = 1
