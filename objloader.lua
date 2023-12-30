@@ -91,21 +91,9 @@ function OBJLoader:load(filename)
 				vis:insert{v=vi, vt=vti, vn=vni}
 			end
 			ensureGroup()
-			assert(#words >= 3, "got a bad polygon ... does .obj support lines or points?")
-			for i=2,#words-1 do
-				-- store a copy of the vertex indices per triangle index
-				-- v vt vn are 1-based
-				local t = Mesh.Triangle()
-				-- temporary store vertex indexes
-				t[1] = table(vis[1]):setmetatable(nil)
-				t[2] = table(vis[i]):setmetatable(nil)
-				t[3] = table(vis[i+1]):setmetatable(nil)
-				mesh.tris:insert(t)
-				-- keys:
-				t.index = #mesh.tris	-- 1-based index
-				t.group = assert(group)
-				group.triCount = #mesh.tris - group.triFirstIndex
-			end
+			assert(#words == #vis)
+			assert(#vis >= 3, "got a bad polygon ... does .obj support lines or points?")
+			self:loadFace(vis, mesh, group)
 		elseif lineType == 's' then
 			-- TODO then smooth is on
 			-- for all subsequent polys, or for the entire group (including previously defined polys) ?
@@ -135,6 +123,9 @@ function OBJLoader:load(filename)
 			mesh.groups:remove(i)
 		end
 	end
+
+	-- TODO move whats below into here:
+	self:buildTris(vs, vts, vns)
 
 	if self.verbose then
 		print'allocating vertex and index buffers...'
@@ -215,6 +206,25 @@ function OBJLoader:load(filename)
 	return mesh
 end
 
+function OBJLoader:loadFace(vis, mesh, group)
+	for i=2,#vis-1 do
+		-- store a copy of the vertex indices per triangle index
+		-- v vt vn are 1-based
+		local t = Mesh.Triangle()
+		-- temporary store vertex indexes
+		t[1] = table(vis[1]):setmetatable(nil)
+		t[2] = table(vis[i]):setmetatable(nil)
+		t[3] = table(vis[i+1]):setmetatable(nil)
+		mesh.tris:insert(t)
+		-- keys:
+		t.index = #mesh.tris	-- 1-based index
+		t.group = assert(group)
+		group.triCount = #mesh.tris - group.triFirstIndex
+	end
+end
+function OBJLoader:buildTris(vs, vts, vns)
+	-- TODO move the code here
+end
 function OBJLoader:loadMtl(filename, mesh, relpath)
 	if self.verbose then
 		print('OBJLoader:loadMtl begin', filename)
