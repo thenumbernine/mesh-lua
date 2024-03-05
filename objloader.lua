@@ -130,8 +130,8 @@ function OBJLoader:load(filename)
 	if self.verbose then
 		print'allocating vertex and index buffers...'
 	end
-	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
-	local triIndexes = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
+	local vtxs = vector'MeshVertex_t'(3*#mesh.tris)	-- vertex structure
+	local triIndexes = vector'int32_t'(3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
 	triIndexes:resize(0)
@@ -158,7 +158,7 @@ function OBJLoader:load(filename)
 			end
 			--]]
 			if not i then
-				i = vtxs.size
+				i = vtxs:size()
 				indexForVtx[k] = i
 				local dst = vtxs:emplace_back()
 				dst.pos:set(assert(vs[tj.v]):unpack())
@@ -184,8 +184,8 @@ function OBJLoader:load(filename)
 		end
 	end
 	if self.verbose then
-		print('#unique vertexes', vtxs.size)
-		print('#unique triangles', triIndexes.size)
+		print('#unique vertexes', vtxs:size())
+		print('#unique triangles', triIndexes:size())
 	end
 	--]=]
 
@@ -421,7 +421,7 @@ function OBJLoader:save(filename, mesh)
 
 	-- keep track of all used indexes by tris
 	local usedVertexes = {}
-	for i=0,mesh.triIndexes.size-3,3 do
+	for i=0,mesh.triIndexes:size()-3,3 do
 		local t = mesh.tris[i/3+1]
 		local tp = mesh.triIndexes.v + i
 		local a,b,c = t:vtxPos(mesh)
@@ -443,14 +443,14 @@ function OBJLoader:save(filename, mesh)
 			usedVertexes
 		)
 --[[ debugging
-for i=0,mesh.vtxs.size-1 do
+for i=0,mesh.vtxs:size()-1 do
 	if usedVertexes[i] then
 		assert(indexToUniqueV[i])
 	end
 end
 --]]	
 		if self.verbose then
-			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
+			print(symbol..' reduced from '..mesh.vtxs:size()..' to '..#uniquevs)
 		end
 		for _,i in ipairs(uniquevs) do
 			local v = mesh.vtxs.v[i][field]
@@ -503,10 +503,10 @@ end
 			vis = nil
 		end
 		for i=group.triFirstIndex,group.triFirstIndex+group.triCount-1 do
-			if 3*i < 0 or 3*i >= mesh.triIndexes.size then
+			if 3*i < 0 or 3*i >= mesh.triIndexes:size() then
 				error("group "..group.name
 					.." has an oob index range: "..(group.triFirstIndex*3).." size "..(group.triCount*3)
-					.." when the mesh only has a size of "..mesh.triIndexes.size)
+					.." when the mesh only has a size of "..mesh.triIndexes:size())
 			end
 			local t = mesh.tris[i+1]
 			local tp = mesh.triIndexes.v + 3*i
@@ -533,7 +533,7 @@ end
 	end
 	o:close()
 	if self.verbose then
-		print('tri indexes reduced from '..mesh.triIndexes.size..' to '..numTriIndexes)
+		print('tri indexes reduced from '..mesh.triIndexes:size()..' to '..numTriIndexes)
 		print('OBJLoader:save end', filename)
 	end
 end

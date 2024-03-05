@@ -13,7 +13,7 @@ end):setmetatable(nil)
 print('keeping '..require'ext.tolua'(keepers))
 
 local mesh = loader:load(infn)
-print('mesh has '..(mesh.triIndexes.size/3)..' triangles')
+print('mesh has '..(#mesh.triIndexes/3)..' triangles')
 for i,groupname in ipairs(keepers) do
 	print(groupname, mesh:getTriIndexesForMaterial(groupname))
 end

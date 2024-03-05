@@ -122,8 +122,8 @@ function App:initGL(...)
 		self.drawTriBasis = true
 	end
 
-print('#unique vertexes', mesh.vtxs.size)
-print('#unique triangles', mesh.triIndexes.size/3)
+print('#unique vertexes', #mesh.vtxs)
+print('#unique triangles', #mesh.triIndexes/3)
 
 	-- TODO make this an option with specified threshold.
 	-- calcBBox has to be done first
@@ -134,15 +134,15 @@ print('#unique triangles', mesh.triIndexes.size/3)
 			mesh:mergeMatchingVertexes(true, true)
 			mesh:removeEmptyTris()
 
-print('#unique vertexes', mesh.vtxs.size)
+print('#unique vertexes', #mesh.vtxs)
 --[[
-for i=0,mesh.vtxs.size-1 do
+for i=0,#mesh.vtxs-1 do
 	print(('%f\t%f\t%f'):format(mesh.vtxs.v[i].pos:unpack()))
 end
 --]]
-print('#unique triangles', mesh.triIndexes.size/3)
+print('#unique triangles', #mesh.triIndexes/3)
 --[[
-for i=0,mesh.triIndexes.size-3,3 do
+for i=0,#mesh.triIndexes-3,3 do
 	local tp = mesh.triIndexes.v + i
 	print(tp[0], tp[1], tp[2])
 end
@@ -1046,7 +1046,7 @@ function App:updateGUI()
 					unwrapUVs(mesh)
 				end)
 				if mesh.loadedGL then
-					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * mesh.vtxs.size, mesh.vtxs.v)
+					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * #mesh.vtxs, mesh.vtxs.v)
 				end
 			end
 

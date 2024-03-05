@@ -30,7 +30,7 @@ local trisForBox = {}
 local mini = vec3i(999,999,999)
 local maxi = -mini
 local tboxes = table()
-for i=0,mesh.triIndexes.size-3,3 do
+for i=0,#mesh.triIndexes-3,3 do
 	local t = mesh.tris[i/3+1]
 	local a,b,c = t:vtxPos(mesh)
 	local com = t.com
@@ -174,7 +174,7 @@ for _,b in ipairs(tboxes) do
 end
 print('# clusters left', #tboxes)
 print('# binned tris', numBinnedTris)
-print('# orig tris', mesh.triIndexes.size/3)
+print('# orig tris', #mesh.triIndexes/3)
 print('ibounds', mini, maxi)
 
 -- now convert tboxes tris into unique materials
@@ -189,7 +189,7 @@ for i,tbox in ipairs(tboxes) do
 	local groupname = 'm'..i
 	mesh.groups:insert{
 		name = groupname,
-		triFirstIndex = mesh.triIndexes.size / 3,
+		triFirstIndex = #mesh.triIndexes / 3,
 		triCount = #tris,
 		Kd = vec4f(
 			tonumber(x - mini.x) / tonumber(maxi.x - mini.x),
@@ -227,15 +227,15 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		local tris = table.keys(trisForBox[x][y][z]):sort()
 		for _,i in ipairs(tris) do
 			for j=0,2 do
-				m.triIndexes:push_back(m.vtxs.size)
+				m.triIndexes:push_back(#m.vtxs)
 				m.vtxs:push_back(mesh.vtxs.v[i+j])
 				local v = m.vtxs:back()
 				v.pos = v.pos - vec3f(x,y,z)
 			end
 		end
-		assert(m.triIndexes.size == m.vtxs.size)
-		for i=0,m.triIndexes.size-1 do
-			assert(m.triIndexes.v[i] >= 0 and m.triIndexes.v[i] < m.vtxs.size)
+		assert(#m.triIndexes == #m.vtxs)
+		for i=0,#m.triIndexes-1 do
+			assert(m.triIndexes.v[i] >= 0 and m.triIndexes.v[i] < #m.vtxs)
 		end
 		m:rebuildTris()
 
@@ -247,7 +247,7 @@ for tboxIndex,tbox in ipairs(tboxes) do
 		--m:mergeMatchingVertexes()
 
 		--[==[ this isn't help anthing
-		assert(#m.tris*3 == m.triIndexes.size)
+		assert(#m.tris*3 == #m.triIndexes)
 		local prec = 1e-5
 		local function makekey(i)
 			return vec3i(range(0,2):mapi(function(k) return m.triIndexes.v[i+k] end):sort():unpack())
@@ -270,7 +270,7 @@ for tboxIndex,tbox in ipairs(tboxes) do
 			end):concat' '
 			--]=]
 		end
-		for i=m.triIndexes.size-3,3,-3 do
+		for i=#m.triIndexes-3,3,-3 do
 			local ki = makekey(i)
 print(ki)
 			for j=i-3,0,-3 do
@@ -308,7 +308,7 @@ print('edges total', totalEdges, 'border', #border)
 		print('bbox', m.bbox)
 		for side=0,2 do
 			for pm=0,1 do
-				local vs = range(0,m.vtxs.size-1):filter(function(i)
+				local vs = range(0,#m.vtxs-1):filter(function(i)
 					return m.vtxs.v[i].pos.s[side] == m.bbox.s[pm].s[side]
 				end)
 
@@ -331,7 +331,7 @@ print('edges total', totalEdges, 'border', #border)
 			{
 				name = 'm',
 				triFirstIndex = 0,
-				triCount = m.triIndexes.size/3,
+				triCount = #m.triIndexes/3,
 			},
 		}
 		--]]

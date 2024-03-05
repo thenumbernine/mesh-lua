@@ -65,10 +65,10 @@ for i=math.floor(mesh.bbox.min.x),math.ceil(mesh.bbox.max.x)-1 do
 			block:fillHoles()
 			block:clip(plane3f(vec3f(0,0,-1), k+1))
 			block:fillHoles()
-			if block.triIndexes.size > 0 then
+			if #block.triIndexes > 0 then
 				block:translate(-i, -j, -k)
 				print('generating', i, j, k)
-				--print(i,j,k,block.triIndexes.size)
+				--print(i,j,k,#block.triIndexes)
 				loader:save('blocks-v2/'..table{i,j,k}:concat'_'..'.obj', block)
 			end
 			--]=]
