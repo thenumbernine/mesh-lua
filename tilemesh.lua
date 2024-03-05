@@ -17,7 +17,7 @@ local plane3f = require 'vec-ffi.plane3f'
 local box3f = require 'vec-ffi.box3f'
 local quatf = require 'vec-ffi.quatf'
 local json = require 'dkjson'
-local vector = require 'ffi.cpp.vector'
+local vector = require 'ffi.cpp.vector-lua'
 local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
@@ -144,7 +144,7 @@ local function tileMesh(mesh, placeFn)
 --[[ assert bcc works
 -- TODO it's not cuz incredibly small tris are sneaking in there
 	local bccEpsilon = 1e-6
-	for ti=0,#mesh.triIndexes-3,3 do
+	for ti=0,mesh.triIndexes.size-3,3 do
 		local t = assert(mesh.tris[ti/3+1])
 		local tp = mesh.triIndexes.v + ti
 		local a,b,c = t:vtxPos(mesh)
@@ -298,7 +298,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				-- place mesh
 				local placementBBox = box2f.empty()
 				for j=0,2 do
-					assert(tp[j] >= 0 and tp[j] < #mesh.vtxs)
+					assert(tp[j] >= 0 and tp[j] < mesh.vtxs.size)
 					local v = mesh.vtxs.v[tp[j]]
 					--local tc = v.texcoord
 					-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = ∂/∂u)
@@ -558,12 +558,12 @@ print('#tilePlaces total', #mesh.tilePlaces)
 
 	timer('merging placed meshes', function()
 		-- place instances
-		local nvtxs = vector'MeshVertex_t'()
+		local nvtxs = vector'MeshVertex_t'
 		local indexesPerGroup = {}
 		for _,place in ipairs(mesh.tilePlaces) do
 			local omesh = assert(omeshForFn[place.filename])
-			local firstVtx = #nvtxs
-			for i=0,#omesh.vtxs-1 do
+			local firstVtx = nvtxs.size
+			for i=0,omesh.vtxs.size-1 do
 				local srcv = omesh.vtxs.v[i]
 				local dstv = nvtxs:emplace_back()
 				dstv.texcoord = srcv.texcoord
@@ -577,13 +577,13 @@ print('#tilePlaces total', #mesh.tilePlaces)
 				local p4 = place.xform * matrix_ffi{p.x, p.y, p.z, 1}
 				dstv.pos = vec3f(p4.ptr[0], p4.ptr[1], p4.ptr[2])
 			end
-			local lastVtx = #nvtxs
+			local lastVtx = nvtxs.size
 			indexesPerGroup[place.filename] = indexesPerGroup[place.filename] or table()
 			for _,g in ipairs(omesh.groups) do
 				indexesPerGroup[place.filename][g.name] = indexesPerGroup[place.filename][g.name] or table()
 				for i=3*g.triFirstIndex,3*(g.triFirstIndex+g.triCount)-1 do
 					local srci = omesh.triIndexes.v[i]
-					assert(srci >= 0 and srci < #omesh.vtxs)
+					assert(srci >= 0 and srci < omesh.vtxs.size)
 					local dsti = srci + firstVtx
 					assert(dsti >= firstVtx and dsti < lastVtx)
 					indexesPerGroup[place.filename][g.name]:insert(dsti)
@@ -591,23 +591,23 @@ print('#tilePlaces total', #mesh.tilePlaces)
 			end
 		end
 
-		local ntris = vector'uint32_t'()
+		local ntris = vector'uint32_t'
 		for fn, omesh in pairs(omeshForFn) do
 			if indexesPerGroup[fn] then
 				for _,g in ipairs(omesh.groups) do
-					g.triFirstIndex = #ntris
+					g.triFirstIndex = ntris.size
 					for _,i in ipairs(indexesPerGroup[fn][g.name] or {}) do
 						ntris:emplace_back()[0] = i
 					end
-					g.triCount = #ntris - g.triFirstIndex
+					g.triCount = ntris.size - g.triFirstIndex
 				end
 			end
 		end
 
-		--assert(#nvtxs == #omesh.vtxs * #mesh.tilePlaces)
-		--assert(#ntris == #omesh.triIndexes * #mesh.tilePlaces)
-print('#nvtxs', #nvtxs)
-print('#ntris', #ntris)
+		--assert(nvtxs.size == omesh.vtxs.size * #mesh.tilePlaces)
+		--assert(ntris.size == omesh.triIndexes.size * #mesh.tilePlaces)
+print('nvtxs.size', nvtxs.size)
+print('ntris.size', ntris.size)
 
 		path'placement.json':write(json.encode(
 		{
@@ -647,7 +647,7 @@ print('#ntris', #ntris)
 	mesh.mtlFilenames = select(2, next(omeshForFn)).mtlFilenames
 	local g = mesh.groups[1]
 	g.triFirstIndex = 0
-	g.triCount = #mesh.triIndexes/3
+	g.triCount = mesh.triIndexes.size/3
 
 	--[[ adds another 40 seconds for the cube->bricks simple example
 	timer('merging after shellmapping', function()
