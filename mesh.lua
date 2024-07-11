@@ -189,10 +189,8 @@ uniform vec3 objCOM;
 uniform vec3 groupCOM;
 uniform float groupExplodeDist;
 uniform float triExplodeDist;
-// why separate these?
-uniform mat4 modelMatrix;
-uniform mat4 viewMatrix;
-uniform mat4 projectionMatrix;
+uniform mat4 mvMat;
+uniform mat4 projMat;
 
 out vec3 viewPosv;	// position in view space
 out vec3 texcoordv;
@@ -205,8 +203,7 @@ out float Nsv;
 void main() {
 	texcoordv = texcoord;
 	if (useFlipTexture) texcoordv.y = 1. - texcoordv.y;
-	mat4 modelViewMatrix = viewMatrix * modelMatrix;
-	normalv = (modelViewMatrix * vec4(normal, 0.)).xyz;
+	normalv = (mvMat * vec4(normal, 0.)).xyz;
 	Kav = Ka;
 	Kdv = Kd;
 	Ksv = Ks;
@@ -214,9 +211,9 @@ void main() {
 	vec3 vertex = pos;
 	vertex = mix(vertex, com, triExplodeDist);
 	vertex = mix(vertex, groupCOM, groupExplodeDist);
-	vec4 viewPos = modelViewMatrix * vec4(vertex, 1.);
+	vec4 viewPos = mvMat * vec4(vertex, 1.);
 	viewPosv = viewPos.xyz;
-	gl_Position = projectionMatrix * viewPos;
+	gl_Position = projMat * viewPos;
 }
 ]],
 		fragmentCode = header..'\n'
@@ -269,9 +266,8 @@ void main() {
 			Kd = {1,1,1,1},
 			Ks = {1,1,1,1},
 			Ns = 100,
-			--modelMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
-			--viewMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
-			--projectionMatrix = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
+			--mvMat = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
+			--projMat = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1},
 		},
 	}:useNone()
 end

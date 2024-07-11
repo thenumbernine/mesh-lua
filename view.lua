@@ -222,9 +222,8 @@ end
 	mesh:loadGL(self.shader)
 end
 
-App.modelMatrix = matrix_ffi{{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}}
-App.viewMatrix = matrix_ffi.zeros{4,4}
-App.projectionMatrix = matrix_ffi.zeros{4,4}
+App.mvMat = matrix_ffi.zeros{4,4}
+App.projMat = matrix_ffi.zeros{4,4}
 
 function App:update()
 	local mesh = self.mesh
@@ -277,8 +276,8 @@ function App:update()
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
 
-	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.viewMatrix.ptr)
-	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projectionMatrix.ptr)
+	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.mvMat.ptr)
+	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projMat.ptr)
 
 	mesh:loadGL(self.shader)
 
@@ -297,9 +296,8 @@ function App:update()
 			useFlipTexture = self.useFlipTexture,
 			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
-			modelMatrix = self.modelMatrix.ptr,
-			viewMatrix = self.viewMatrix.ptr,
-			projectionMatrix = self.projectionMatrix.ptr,
+			mvMat = self.mvMat.ptr,
+			projMat = self.projMat.ptr,
 		}
 		if self.useDrawPolys then
 			self:drawMesh(mesh)
