@@ -1,6 +1,5 @@
 #!/usr/bin/env luajit
 local ffi = require 'ffi'
-local class = require 'ext.class'
 local path = require 'ext.path'
 local table = require 'ext.table'
 local math = require 'ext.math'
@@ -25,13 +24,14 @@ local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
 local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
 local translateMat4x4 = require 'mesh.common'.translateMat4x4
+require 'glapp.view'.useBuiltinMatrixMath = true
 matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = cmdline.file
 if not fn then fn = ... end
 if not fn then error("can't figure out what your file is from the cmdline") end
 
-local App = class(require 'imguiapp.withorbit'())
+local App = require 'imguiapp.withorbit'()
 
 App.title = 'WavefrontOBJ preview'
 
@@ -219,11 +219,35 @@ end
 
 	self.shader = Mesh:makeShader()
 
+	local GLProgram = require 'gl.program'
+	self.basisShader = GLProgram{
+		vertexCode = GLProgram.getVersionPragma()..'\n'
+..[[
+in vec4 pos;
+in vec4 color;
+out vec4 colorv;
+uniform mat4 mvMat, projMat;
+void main() {
+	colorv = color;
+	gl_Position = projMat * (mvMat * pos);
+}
+]],
+		fragmentCode = GLProgram.getVersionPragma()..'\n'
+..[[
+in vec4 colorv;
+out vec4 fragColor;
+void main() {
+	fragColor = colorv;
+}
+]],
+	}:useNone()
+
+	self.basisView = require 'glapp.view'{
+		pos = {0, 0, 2},
+	}
+
 	mesh:loadGL(self.shader)
 end
-
-App.mvMat = matrix_ffi.zeros{4,4}
-App.projMat = matrix_ffi.zeros{4,4}
 
 function App:update()
 	local mesh = self.mesh
@@ -234,26 +258,31 @@ function App:update()
 	gl.glDepthFunc(gl.GL_LEQUAL)
 	gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
 
-	gl.glDepthMask(gl.GL_FALSE)
-	local axisw = math.ceil(math.min(self.width, self.height) / 4)
-	gl.glViewport(self.width-1-axisw, self.height-1-axisw, axisw, axisw)
-	local pushOrtho = self.view.ortho
-	self.view.ortho = false
-	self.view:setup(1)
-	local aa = self.view.angle:conjugate():toAngleAxis()
-	gl.glLoadIdentity()
-	gl.glTranslatef(0,0,-2)
-	gl.glRotatef(aa.w, aa.x, aa.y, aa.z)
-	gl.glBegin(gl.GL_LINES)
-	gl.glColor3f(1,0,0) gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
-	gl.glColor3f(0,1,0) gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
-	gl.glColor3f(0,0,1) gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
-	gl.glEnd()
-	gl.glDepthMask(gl.GL_TRUE)
+	do
+		gl.glDepthMask(gl.GL_FALSE)
+		local axisw = math.ceil(math.min(self.width, self.height) / 4)
+		gl.glViewport(self.width-1-axisw, self.height-1-axisw, axisw, axisw)
+		self.basisView.angle:set(self.view.angle:unpack())
+		self.basisView.pos:set((self.basisView.angle:zAxis() * 2):unpack())
+		self.basisView:setup(1)
+		self.basisShader:use()
+		self.basisShader:setUniforms{
+			mvMat = self.basisView.mvMat.ptr,
+			projMat = self.basisView.projMat.ptr,
+		}
+		gl.glBegin(gl.GL_LINES)
+		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 1, 0, 0)
+		gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
+		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 0, 1, 0)
+		gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
+		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 0, 0, 1)
+		gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
+		gl.glEnd()
+		self.basisShader:useNone()
+		gl.glDepthMask(gl.GL_TRUE)
 
-	gl.glViewport(0, 0, self.width, self.height)
-	self.view.ortho = pushOrtho
-	self.view:setup(self.width / self.height)
+		gl.glViewport(0, 0, self.width, self.height)
+	end
 
 	if self.useDepthTest then
 		gl.glEnable(gl.GL_DEPTH_TEST)
@@ -276,9 +305,6 @@ function App:update()
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
 
-	gl.glGetFloatv(gl.GL_MODELVIEW_MATRIX, self.mvMat.ptr)
-	gl.glGetFloatv(gl.GL_PROJECTION_MATRIX, self.projMat.ptr)
-
 	mesh:loadGL(self.shader)
 
 	if self.drawVertexNormals then
@@ -296,8 +322,8 @@ function App:update()
 			useFlipTexture = self.useFlipTexture,
 			useLighting = self.useLighting,
 			lightDir = self.lightDir:normalize().s,
-			mvMat = self.mvMat.ptr,
-			projMat = self.projMat.ptr,
+			mvMat = self.view.mvMat.ptr,
+			projMat = self.view.projMat.ptr,
 		}
 		if self.useDrawPolys then
 			self:drawMesh(mesh)
