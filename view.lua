@@ -4,6 +4,7 @@ local path = require 'ext.path'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local timer = require 'ext.timer'
+local op = require 'ext.op'
 local sdl = require 'ffi.req' 'sdl'
 local gl = require 'gl'
 local GLSceneObject = require 'gl.sceneobject'
@@ -316,8 +317,10 @@ function App:update()
 		gl.glDisable(gl.GL_DEPTH_TEST)
 	end
 	if self.useAlphaTest then
-		gl.glEnable(gl.GL_ALPHA_TEST)
-		gl.glAlphaFunc(gl.GL_GEQUAL, 0.5)
+		if op.safeindex(gl, 'GL_ALPHA_TEST') then
+			gl.glEnable(gl.GL_ALPHA_TEST) 
+			gl.glAlphaFunc(gl.GL_GEQUAL, 0.5)
+		end
 	end
 	if self.useBlend then
 		gl.glEnable(gl.GL_BLEND)
@@ -327,7 +330,9 @@ function App:update()
 		--gl.glCullFace(gl.GL_BACK)
 		gl.glEnable(gl.GL_CULL_FACE)
 	end
-	if self.useWireframe then
+	if self.useWireframe 
+	and op.safeindex(gl, 'glPolygonMode')
+	then
 		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_LINE)
 	end
 
@@ -372,7 +377,7 @@ function App:update()
 		gl.glDisable(gl.GL_BLEND)
 	end
 	if self.useAlphaTest then
-		gl.glDisable(gl.GL_ALPHA_TEST)
+		if op.safeindex(gl, 'GL_ALPHA_TEST') then gl.glDisable(gl.GL_ALPHA_TEST) end
 	end
 
 	if self.drawUnwrapUVGraph then
@@ -462,7 +467,9 @@ function App:update()
 		end
 	end
 
-	gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+	if op.safeindex(gl, 'glPolygonMode') then
+		gl.glPolygonMode(gl.GL_FRONT_AND_BACK, gl.GL_FILL)
+	end
 	gl.glDisable(gl.GL_BLEND)
 	gl.glDisable(gl.GL_CULL_FACE)
 
