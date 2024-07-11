@@ -189,6 +189,7 @@ uniform vec3 objCOM;
 uniform vec3 groupCOM;
 uniform float groupExplodeDist;
 uniform float triExplodeDist;
+// why separate these?
 uniform mat4 modelMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 projectionMatrix;
