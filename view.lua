@@ -13,7 +13,6 @@ local vec3d = require 'vec-ffi.vec3d'
 local vec4f = require 'vec-ffi.vec4f'
 local plane3f = require 'vec-ffi.plane3f'
 local quatd = require 'vec-ffi.quatd'
-local matrix_ffi = require 'matrix.ffi'
 local cmdline = require 'ext.cmdline'(...)
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
@@ -24,14 +23,14 @@ local tileMesh = require 'mesh.tilemesh'.tileMesh
 local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
 local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
 local translateMat4x4 = require 'mesh.common'.translateMat4x4
-require 'glapp.view'.useBuiltinMatrixMath = true
-matrix_ffi.real = 'float'	-- default matrix_ffi type
 
 local fn = cmdline.file
 if not fn then fn = ... end
 if not fn then error("can't figure out what your file is from the cmdline") end
 
-local App = require 'imguiapp.withorbit'()
+local App = require 'imguiapp.withorbit'{
+	viewUseBuiltinMatrixMath = true,
+}
 
 App.title = 'WavefrontOBJ preview'
 
@@ -69,6 +68,8 @@ end
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
+
+	assert(self.view.useBuiltinMatrixMath)
 
 	self.view.znear = .1
 	self.view.zfar = 40000
@@ -220,6 +221,7 @@ end
 	self.shader = Mesh:makeShader()
 
 	self.basisView = require 'glapp.view'{
+		useBuiltinMatrixMath = true,
 		pos = {0, 0, 2},
 	}
 

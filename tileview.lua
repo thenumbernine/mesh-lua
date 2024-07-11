@@ -8,10 +8,7 @@ local json = require 'dkjson'
 local gl = require 'gl'
 local glCall = require 'gl.call'
 local ig = require 'imgui'
-
 local matrix_ffi = require 'matrix.ffi'
-matrix_ffi.real = 'float'	-- default matrix_ffi type
-
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 
@@ -45,7 +42,7 @@ end
 
 for _,inst in ipairs(d.instances) do
 	inst.mesh = assert(meshesForFns[inst.filename], "failed to find file "..inst.filename)
-	inst.transformMat = matrix_ffi{4,4}:lambda(function(i,j)
+	inst.transformMat = matrix_ffi({4,4}, 'float'):lambda(function(i,j)
 		return inst.transform[1 + (i-1) + 4 * (j-1)]
 	end)
 end
@@ -63,9 +60,9 @@ function App:initGL(...)
 	gl.glEnable(gl.GL_CULL_FACE)
 end
 
-App.mvMat = matrix_ffi.zeros{4,4}
-App.instMVMat = matrix_ffi.zeros{4,4}
-App.projMat = matrix_ffi.zeros{4,4}
+App.mvMat = matrix_ffi({4,4}, 'float'):zeros()
+App.instMVMat = matrix_ffi({4,4}, 'float'):zeros()
+App.projMat = matrix_ffi({4,4}, 'float'):zeros()
 
 App.showPoints = false
 App.showPointSize = 3
