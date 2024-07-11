@@ -169,10 +169,12 @@ args:
 function Mesh:makeShader(args)
 	args = args or {}
 	local GLProgram = require 'gl.program'
-	local version = args.glslVersion or '460'
-	local header = args.glslHeader or '#version '..version..'\n'
+	local header = args.glslHeader
+		or (args.glslVersion and '#version '..args.glslVersion)
+		or GLProgram.getVersionPragma()
 	return GLProgram{
-		vertexCode = header..[[
+		vertexCode = header..'\n'
+..[[
 in vec3 pos;
 in vec3 texcoord;
 in vec3 normal;
@@ -216,8 +218,8 @@ void main() {
 	gl_Position = projectionMatrix * viewPos;
 }
 ]],
-		fragmentCode = header..[[
-
+		fragmentCode = header..'\n'
+..[[
 uniform sampler2D map_Kd;
 uniform bool useLighting;
 uniform vec3 lightDir;
