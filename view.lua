@@ -6,7 +6,7 @@ local math = require 'ext.math'
 local timer = require 'ext.timer'
 local sdl = require 'ffi.req' 'sdl'
 local gl = require 'gl'
-local glCallOrRun = require 'gl.call'
+local GLSceneObject = require 'gl.sceneobject'
 local ig = require 'imgui'
 local vec3f = require 'vec-ffi.vec3f'
 local vec3d = require 'vec-ffi.vec3d'
@@ -219,31 +219,63 @@ end
 
 	self.shader = Mesh:makeShader()
 
-	local GLProgram = require 'gl.program'
-	self.basisShader = GLProgram{
-		vertexCode = GLProgram.getVersionPragma()..'\n'
-..[[
-in vec4 pos;
-in vec4 color;
-out vec4 colorv;
+	self.basisView = require 'glapp.view'{
+		pos = {0, 0, 2},
+	}
+
+	self.basisObj = GLSceneObject{
+		program = {
+			version = 'latest',
+			vertexCode = [[
+in vec3 vtx;
+in vec3 color;
+out vec3 colorv;
 uniform mat4 mvMat, projMat;
 void main() {
 	colorv = color;
-	gl_Position = projMat * (mvMat * pos);
+	gl_Position = projMat * (mvMat * vec4(vtx, 1.));
 }
 ]],
-		fragmentCode = GLProgram.getVersionPragma()..'\n'
-..[[
-in vec4 colorv;
+			fragmentCode = [[
+in vec3 colorv;
 out vec4 fragColor;
 void main() {
-	fragColor = colorv;
+	fragColor = vec4(colorv, 1.);
 }
 ]],
-	}:useNone()
-
-	self.basisView = require 'glapp.view'{
-		pos = {0, 0, 2},
+		},
+		geometry = {
+			mode = gl.GL_LINES,
+			-- TODO infer this from attr buffer size / dim ... ?
+			-- though gl don't care about a buffer's element count or dimension, so gl.buffer doesn't store it
+			count = 6,
+		},
+		attrs = {
+			vtx = {	-- GLAttribue
+				buffer = {	-- GLArrayBuffer
+					data = {
+						0, 0, 0,
+						1, 0, 0,
+						0, 0, 0,
+						0, 1, 0,
+						0, 0, 0,
+						0, 0, 1,
+					},
+				},
+			},
+			color = {	-- GLAttribue
+				buffer = {	-- GLArrayBuffer
+					data = {
+						1, 0, 0,
+						1, 0, 0,
+						0, 1, 0,
+						0, 1, 0,
+						0, 0, 1,
+						0, 0, 1,
+					},
+				},
+			},
+		},
 	}
 
 	mesh:loadGL(self.shader)
@@ -265,20 +297,12 @@ function App:update()
 		self.basisView.angle:set(self.view.angle:unpack())
 		self.basisView.pos:set((self.basisView.angle:zAxis() * 2):unpack())
 		self.basisView:setup(1)
-		self.basisShader:use()
-		self.basisShader:setUniforms{
-			mvMat = self.basisView.mvMat.ptr,
-			projMat = self.basisView.projMat.ptr,
+		self.basisObj:draw{
+			uniforms = {
+				mvMat = self.basisView.mvMat.ptr,
+				projMat = self.basisView.projMat.ptr,
+			},
 		}
-		gl.glBegin(gl.GL_LINES)
-		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 1, 0, 0)
-		gl.glVertex3f(0,0,0) gl.glVertex3f(1,0,0)
-		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 0, 1, 0)
-		gl.glVertex3f(0,0,0) gl.glVertex3f(0,1,0)
-		gl.glVertexAttrib3f(self.basisShader.attrs.color.loc, 0, 0, 1)
-		gl.glVertex3f(0,0,0) gl.glVertex3f(0,0,1)
-		gl.glEnd()
-		self.basisShader:useNone()
 		gl.glDepthMask(gl.GL_TRUE)
 
 		gl.glViewport(0, 0, self.width, self.height)
