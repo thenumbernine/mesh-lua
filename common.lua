@@ -2,6 +2,7 @@ local matrix_ffi = require 'matrix.ffi'
 -- some functions that maybe should go to matrix_ffi
 
 local function translateMat4x4(t)
+	-- TODO this is transpose the initialization of matrix_ffi.setTranslate ... sooo which is right?
 	return matrix_ffi({
 		{1,0,0,t.x},
 		{0,1,0,t.y},
