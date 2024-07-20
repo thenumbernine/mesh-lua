@@ -86,7 +86,7 @@ function OBJLoader:load(filename)
 			for _,vertexIndexString in ipairs(words) do
 				local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
 				local vertexIndices = vertexIndexStringParts:mapi(function(x) return tonumber(x) end)	-- may be nil
-				local vi, vti, vni = unpack(vertexIndices, 1, 3)
+				local vi, vti, vni = table.unpack(vertexIndices, 1, 3)
 				if vti then foundVT = true end
 				vis:insert{v=vi, vt=vti, vn=vni}
 			end
