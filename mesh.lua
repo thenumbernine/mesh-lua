@@ -2927,38 +2927,48 @@ function Mesh:loadGL(shader)
 	end
 
 --print('creating array buffer of size', self.vtxs.size)
-	if shader and not self.vtxBuf then
-		self.vtxBuf = GLArrayBuffer{
-			size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
-			data = self.vtxs.v,
-			usage = gl.GL_STATIC_DRAW,
-		}:unbind()
+	if shader then
+		if not self.vtxBuf then
+			self.vtxBuf = GLArrayBuffer{
+				size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
+				data = self.vtxs.v,
+				usage = gl.GL_STATIC_DRAW,
+			}:unbind()
 glreport'here'
 
-		self.vtxAttrs = table{
-			{name='pos', size=3},
-			{name='texcoord', size=3},
-			{name='normal', size=3},
-			{name='com', size=3},
-		}:mapi(function(info)
-			if not shader.attrs[info.name] then return end
-			return GLAttribute{
-				buffer = self.vtxBuf,
-				size = info.size,
-				type = gl.GL_FLOAT,
-				stride = ffi.sizeof'MeshVertex_t',
-				offset = ffi.offsetof('MeshVertex_t', info.name),
-			}, info.name
-		end)
-		shader:use()
+			self.vtxAttrs = table{
+				{name='pos', size=3},
+				{name='texcoord', size=3},
+				{name='normal', size=3},
+				{name='com', size=3},
+			}:mapi(function(info)
+				if not shader.attrs[info.name] then return end
+				return GLAttribute{
+					buffer = self.vtxBuf,
+					size = info.size,
+					type = gl.GL_FLOAT,
+					stride = ffi.sizeof'MeshVertex_t',
+					offset = ffi.offsetof('MeshVertex_t', info.name),
+				}, info.name
+			end)
+			shader:use()
 glreport'here'
-		self.vao = GLVertexArray{
-			program = shader,
-			attrs = self.vtxAttrs,
-		}
-		shader:setAttrs(self.vtxAttrs)
-		shader:useNone()
+			self.vao = GLVertexArray{
+				program = shader,
+				attrs = self.vtxAttrs,
+			}
+			shader:setAttrs(self.vtxAttrs)
+			shader:useNone()
 glreport'here'
+		end
+		if not self.indexBuf then
+			local GLElementArrayBuffer = require 'gl.elementarraybuffer'
+			self.indexBuf = GLElementArrayBuffer{
+				data = self.triIndexes.v,
+				size = #self.triIndexes * ffi.sizeof(self.triIndexes.type),
+				usage = gl.GL_STATIC_DRAW,
+			}:unbind()
+		end
 	end
 end
 
@@ -2971,6 +2981,7 @@ function Mesh:unloadGL()
 
 	self.vao = nil
 	self.vtxBuf = nil
+	self.indexBuf = nil
 	self.vtxAttrs = nil
 end
 
@@ -2990,9 +3001,16 @@ function Mesh:draw(args)
 		self.vao:bind()
 		for _,g in ipairs(self.groups) do
 			if args.beginGroup then args.beginGroup(g) end
-			-- TODO use GLElementArrayBuffer?
 			if g.triCount > 0 then
+				--[[ cpu ptrs
 				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
+				--]]
+				-- [[ gpu ptr
+				assert(self.indexBuf)
+				self.indexBuf:bind()
+				gl.glDrawRangeElements(gl.GL_TRIANGLES, 0, self.vtxs.size-1, g.triCount * 3, gl.GL_UNSIGNED_INT, ffi.cast('void*', ffi.sizeof(self.triIndexes.type) * g.triFirstIndex * 3))
+				self.indexBuf:unbind()
+				--]]
 			end
 			if args.endGroup then args.endGroup(g) end
 		end
