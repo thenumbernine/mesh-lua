@@ -229,6 +229,7 @@ end
 	self.basisObj = GLSceneObject{
 		program = {
 			version = 'latest',
+			header = 'precision highp float;',
 			vertexCode = [[
 in vec3 vtx;
 in vec3 color;
