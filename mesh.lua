@@ -171,7 +171,7 @@ function Mesh:makeShader(args)
 	return GLProgram{
 		header = args.glslHeader,
 		version = args.glslVersion or 'latest',
-		header = 'precision highp float;',
+		precision = args.glslPrecision or 'best',
 		vertexCode = [[
 in vec3 pos;
 in vec3 texcoord;
