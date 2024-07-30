@@ -2937,15 +2937,15 @@ function Mesh:loadGL(shader)
 glreport'here'
 
 			self.vtxAttrs = table{
-				{name='pos', size=3},
-				{name='texcoord', size=3},
-				{name='normal', size=3},
-				{name='com', size=3},
+				{name='pos', dim=3},
+				{name='texcoord', dim=3},
+				{name='normal', dim=3},
+				{name='com', dim=3},
 			}:mapi(function(info)
 				if not shader.attrs[info.name] then return end
 				return GLAttribute{
 					buffer = self.vtxBuf,
-					size = info.size,
+					dim = info.dim,
 					type = gl.GL_FLOAT,
 					stride = ffi.sizeof'MeshVertex_t',
 					offset = ffi.offsetof('MeshVertex_t', info.name),
