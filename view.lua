@@ -29,9 +29,7 @@ local fn = cmdline.file
 if not fn then fn = ... end
 if not fn then error("can't figure out what your file is from the cmdline") end
 
-local App = require 'imguiapp.withorbit'{
-	viewUseBuiltinMatrixMath = true,
-}
+local App = require 'imguiapp.withorbit'()
 
 App.title = 'WavefrontOBJ preview'
 
@@ -69,8 +67,6 @@ end
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
-
-	assert(self.view.useBuiltinMatrixMath)
 
 	self.view.znear = .1
 	self.view.zfar = 40000
@@ -222,7 +218,6 @@ end
 	self.shader = Mesh:makeShader()
 
 	self.basisView = require 'glapp.view'{
-		useBuiltinMatrixMath = true,
 		pos = {0, 0, 2},
 	}
 
