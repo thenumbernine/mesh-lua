@@ -1,6 +1,5 @@
 #!/usr/bin/env luajit
 local path = require 'ext.path'
-local class = require 'ext.class'
 local timer = require 'ext.timer'
 local table = require 'ext.table'
 local tolua = require 'ext.tolua'
@@ -12,8 +11,8 @@ local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 
-local App = class(require 'imguiapp.withorbit'())
-
+local App = require 'imguiapp.withorbit'():subclass()
+App.viewUseGLMatrixMode = true
 
 local placefn = assert((...), "expected placement filename")
 local d = json.decode(path(placefn):read())
