@@ -179,10 +179,6 @@ in vec3 normal;
 in vec3 com;
 
 uniform bool useFlipTexture;
-uniform vec4 Ka;
-uniform vec4 Kd;
-uniform vec4 Ks;
-uniform float Ns;
 uniform vec3 objCOM;
 uniform vec3 groupCOM;
 uniform float groupExplodeDist;
@@ -193,19 +189,11 @@ uniform mat4 projMat;
 out vec3 viewPosv;	// position in view space
 out vec3 texcoordv;
 out vec3 normalv;
-out vec4 Kav;
-out vec4 Kdv;
-out vec4 Ksv;
-out float Nsv;
 
 void main() {
 	texcoordv = texcoord;
 	if (useFlipTexture) texcoordv.y = 1. - texcoordv.y;
 	normalv = (mvMat * vec4(normal, 0.)).xyz;
-	Kav = Ka;
-	Kdv = Kd;
-	Ksv = Ks;
-	Nsv = Ns;
 	vec3 vertex = pos;
 	vertex = mix(vertex, com, triExplodeDist);
 	vertex = mix(vertex, groupCOM, groupExplodeDist);
@@ -223,17 +211,17 @@ uniform bool useTextures;
 in vec3 viewPosv;
 in vec3 texcoordv;
 in vec3 normalv;
-in vec4 Kav;
-in vec4 Kdv;
-in vec4 Ksv;
-in float Nsv;
+uniform vec4 Ka;
+uniform vec4 Kd;
+uniform vec4 Ks;
+uniform float Ns;
 
 out vec4 fragColor;
 
 void main() {
 	vec3 normal = normalize(normalv);
-	fragColor = Kav;
-	vec4 diffuseColor = Kdv;
+	fragColor = Ka;
+	vec4 diffuseColor = Kd;
 	if (useTextures) {
 		diffuseColor *= texture(map_Kd, texcoordv.xy);
 	}
@@ -244,8 +232,8 @@ void main() {
 	if (useLighting) {
 		vec3 viewDir = normalize(-viewPosv);
 		vec3 reflectDir = reflect(-lightDir, normal);
-		float spec = pow(max(dot(viewDir, reflectDir), 0.), Nsv);
-		fragColor += Ksv * spec;
+		float spec = pow(max(dot(viewDir, reflectDir), 0.), Ns);
+		fragColor += Ks * spec;
 	}
 }
 ]],
@@ -2932,6 +2920,7 @@ function Mesh:loadGL(shader)
 			self.vtxBuf = GLArrayBuffer{
 				size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
 				data = self.vtxs.v,
+				count = self.vtxs.size,
 				usage = gl.GL_STATIC_DRAW,
 			}:unbind()
 glreport'here'
@@ -2950,7 +2939,7 @@ glreport'here'
 					stride = ffi.sizeof'MeshVertex_t',
 					offset = ffi.offsetof('MeshVertex_t', info.name),
 				}, info.name
-			end)
+			end):setmetatable(nil)
 			shader:use()
 glreport'here'
 			self.vao = GLVertexArray{
