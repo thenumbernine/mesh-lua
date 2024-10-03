@@ -10,7 +10,7 @@ timer('loading', function()
 	mesh = loader:load(infn)
 end)
 
--- [[ temp - output each group into a structure 
+-- [[ temp - output each group into a structure
 local posBox = require 'vec-ffi.box3f'()
 local texcoordBox = require 'vec-ffi.box3f'()
 for i=0,mesh.vtxs.size-1 do
@@ -34,35 +34,37 @@ print('max abs texcoord', texcoordExtent)
 
 
 for _,g in ipairs(mesh.groups) do
-	print(g.name)
-	for i=0,g.triCount-1 do
-		local j = mesh.triIndexes.v[g.triFirstIndex * 3 + i]
-		local v = mesh.vtxs.v[j]
-		--print('{'..pos
-			--..', '..texcoord
-		--	..', '..normal
-		--	..'},')
-		-- [[
-		local function toshort(x) return bit.band(0xffff, math.floor(x)) end
-		local pos = (v.pos / posExtent * 32767):map(toshort)
-		--local texcoord = v.texcoord / texcoordExtent
-		local normal = (v.normal * 32767):map(toshort)
-		io.write(
-			('%04x%04x%04x'):format(pos.x, pos.y, pos.z)
-			--..('%04x%04x%04x'):format(normal.x, normal.y, normal.z)
-		)
-		--]]
-		--[[
-		local function tobyte(x) return bit.band(0xff, math.floor(x)) end
-		local pos = (v.pos / posExtent * 127):map(tobyte)
-		--local texcoord = v.texcoord / texcoordExtent
-		local normal = (v.normal * 127):map(tobyte)
-		print(
-			('%02x%02x%02x'):format(pos.x, pos.y, pos.z)
-			..('%02x%02x%02x'):format(normal.x, normal.y, normal.z)
-		)	
-		--]]
+	io.write(g.name,"='")
+	for ti=g.triFirstIndex,g.triFirstIndex+g.triCount-1 do
+		local tp = mesh.triIndexes.v + 3*ti
+		for j=0,2 do
+			local v = mesh.vtxs.v[tp[j]]
+			--print('{'..pos
+				--..', '..texcoord
+			--	..', '..normal
+			--	..'},')
+			-- [[
+			local function toshort(x) return bit.band(0xffff, math.floor(x)) end
+			local pos = (v.pos / posExtent * 32767):map(toshort)
+			--local texcoord = v.texcoord / texcoordExtent
+			local normal = (v.normal * 32767):map(toshort)
+			io.write(
+				('%04x%04x%04x'):format(pos.x, pos.y, pos.z)
+				--..('%04x%04x%04x'):format(normal.x, normal.y, normal.z)
+			)
+			--]]
+			--[[
+			local function tobyte(x) return bit.band(0xff, math.floor(x)) end
+			local pos = (v.pos / posExtent * 127):map(tobyte)
+			--local texcoord = v.texcoord / texcoordExtent
+			local normal = (v.normal * 127):map(tobyte)
+			print(
+				('%02x%02x%02x'):format(pos.x, pos.y, pos.z)
+				..('%02x%02x%02x'):format(normal.x, normal.y, normal.z)
+			)
+			--]]
+		end
 	end
-	print()
+	print("',")
 end
 --]]
