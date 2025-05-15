@@ -29,7 +29,7 @@ local fn = cmdline.file
 if not fn then fn = ... end
 if not fn then error("can't figure out what your file is from the cmdline") end
 
-local App = require 'imguiapp.withorbit'()
+local App = require 'imgui.appwithorbit'()
 
 App.title = 'WavefrontOBJ preview'
 

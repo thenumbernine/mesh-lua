@@ -11,7 +11,7 @@ local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 
-local App = require 'imguiapp.withorbit'():subclass()
+local App = require 'imgui.appwithorbit'():subclass()
 App.viewUseGLMatrixMode = true
 
 local placefn = assert((...), "expected placement filename")
