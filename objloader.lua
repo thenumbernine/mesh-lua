@@ -3,6 +3,7 @@ local path = require 'ext.path'
 local class = require 'ext.class'
 local table = require 'ext.table'
 local string = require 'ext.string'
+local assert = require 'ext.assert'
 local math = require 'ext.math'
 local vector = require 'ffi.cpp.vector-lua'
 local vec3f = require 'vec-ffi.vec3f'
@@ -71,13 +72,13 @@ function OBJLoader:load(filename)
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = words:remove(1):lower()
 		if lineType == 'v' then
-			assert(#words >= 2)
+			assert.ge(#words, 2)
 			vs:insert(wordsToVec3(words))
 		elseif lineType == 'vt' then
-			assert(#words >= 2)
+			assert.ge(#words, 2)
 			vts:insert(wordsToVec3(words))
 		elseif lineType == 'vn' then
-			assert(#words >= 2)
+			assert.ge(#words, 2)
 			vns:insert(wordsToVec3(words))
 		-- TODO lineType == 'vp'
 		elseif lineType == 'f' then
@@ -91,8 +92,8 @@ function OBJLoader:load(filename)
 				vis:insert{v=vi, vt=vti, vn=vni}
 			end
 			ensureGroup()
-			assert(#words == #vis)
-			assert(#vis >= 3, "got a bad polygon ... does .obj support lines or points?")
+			assert.eq(#words, #vis)
+			assert.ge(#vis, 3, "got a bad polygon ... does .obj support lines or points?")
 			self:loadFace(vis, mesh, group)
 		elseif lineType == 's' then
 			-- TODO then smooth is on

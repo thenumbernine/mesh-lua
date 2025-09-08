@@ -6,6 +6,7 @@ mesh is modified
 --]]
 local ffi = require 'ffi'
 local range = require 'ext.range'
+local assert = require 'ext.assert'
 local path = require 'ext.path'
 local table = require 'ext.table'
 local math = require 'ext.math'
@@ -77,7 +78,7 @@ local function tileMesh(mesh, placeFn)
 	end
 	local triGroupForTri = mesh.triGroupForTri
 	-- this will calc edges2 also
-	assert(mesh.edges2)
+	assert.index(mesh, 'edges2')
 
 	-- TOOD here with the group info
 
@@ -93,7 +94,7 @@ local function tileMesh(mesh, placeFn)
 		"failed to decode json file "..tostring(placeFn)
 	)
 
-	-- assert mesh ==  OBJLoader():load(assert(placeInfo.geometryFilename))
+	-- assert mesh ==  OBJLoader():load(assert.index(placeInfo, 'geometryFilename'))
 
 	-- TODO here maybe
 	-- optimize omesh
@@ -154,11 +155,11 @@ local function tileMesh(mesh, placeFn)
 		print(t:calcBCC(b, mesh))
 		print(t:calcBCC(c, mesh))
 		-- assert each point is at its respective basis element (1,0,0) (0,1,0) (0,0,1)
-		assert((t:calcBCC(a, mesh) - vec3f(1,0,0)):norm() < bccEpsilon)
-		assert((t:calcBCC(b, mesh) - vec3f(0,1,0)):norm() < bccEpsilon)
-		assert((t:calcBCC(c, mesh) - vec3f(0,0,1)):norm() < bccEpsilon)
+		assert.lt((t:calcBCC(a, mesh) - vec3f(1,0,0)):norm(), bccEpsilon)
+		assert.lt((t:calcBCC(b, mesh) - vec3f(0,1,0)):norm(), bccEpsilon)
+		assert.lt((t:calcBCC(c, mesh) - vec3f(0,0,1)):norm(), bccEpsilon)
 		-- assert that the COM is at (1/3, 1/3, 1/3)
-		assert((t:calcBCC(t.com, mesh) - vec3f(1,1,1)/3):norm() < bccEpsilon)
+		assert.lt((t:calcBCC(t.com, mesh) - vec3f(1,1,1)/3):norm(), bccEpsilon)
 	end
 --]]
 
@@ -235,7 +236,7 @@ local function tileMesh(mesh, placeFn)
 
 		-- TODO pick at random based on 'bias' sums
 		local geomInst = table.pickRandom(surfInst.geometryArray)
-		local omesh = assert(omeshForFn[geomInst.filename])
+		local omesh = assert.index(omeshForFn, geomInst.filename)
 
 		-- list of column-vectors
 		-- transform from uv-space to placement-space
@@ -248,9 +249,9 @@ local function tileMesh(mesh, placeFn)
 		}, 'float')
 
 		local placementCoordXFormInv = placementCoordXForm:inv()
---print('placementXForm', placementCoordXForm)
---print('placementXFormInv', placementCoordXFormInv)
---assert((placementCoordXForm * placementCoordXFormInv - matrix_ffi({{1,0},{0,1}}, 'float')):normSq() < 1e-7)
+--DEBUG:print('placementXForm', placementCoordXForm)
+--DEBUG:print('placementXFormInv', placementCoordXFormInv)
+--DEBUG:assert.lt((placementCoordXForm * placementCoordXFormInv - matrix_ffi({{1,0},{0,1}}, 'float')):normSq(), 1e-7)
 
 		for groupIndex,tg in ipairs(mesh.triGroups) do
 			local placementsForThisGroup = {}
@@ -270,7 +271,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					-- add a small epsilon to make sure placement of the first meshes isn't right on a triangle edge, such that subsequent folds around edges might incur floating point error and cause a row of meshes to pass some epsilon and stop abruptly (as we saw happening on the target_complex curved wall model).
 					+ vec2f(.01, .01)
 				local uvorigin3D = vec3f():set(tvtxs[1].pos:unpack())
---print('uv origin', ti, uvorigin2D, uvorigin3D)
+--DEBUG:print('uv origin', ti, uvorigin2D, uvorigin3D)
 
 				-- [[ also store the bbox of the omesh under this transform?
 				-- this might help some edges, but it causes overlaps on planar edges
@@ -288,7 +289,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					-- convert to placement space
 					return placementCoordXFormInv * ctc
 				end)
---print('tri has placement bbox\n', cornersPlacement:mapi(tostring):concat'\n\t')
+--DEBUG:print('tri has placement bbox\n', cornersPlacement:mapi(tostring):concat'\n\t')
 				--]]
 
 				-- find uv min max
@@ -298,7 +299,8 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 				-- place mesh
 				local placementBBox = box2f.empty()
 				for j=0,2 do
-					assert(tp[j] >= 0 and tp[j] < mesh.vtxs.size)
+					assert.ge(tp[j], 0)
+					assert.lt(tp[j], mesh.vtxs.size)
 					local v = mesh.vtxs.v[tp[j]]
 					--local tc = v.texcoord
 					-- for the sake of scale, we have to remap the texcoords using the orthornormalized basis (which was derived from the texcoords so e_x = ∂/∂u)
@@ -319,12 +321,12 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						placementBBox:stretch(vec2f((placementCoord + cpl):unpack()))
 					end
 					--]]
---print('stretching', placementCoord)
+--DEBUG:print('stretching', placementCoord)
 				end
---local from = box2f(placementBBox)
+--DEBUG:local from = box2f(placementBBox)
 				placementBBox.min = placementBBox.min:map(math.floor) - 2
 				placementBBox.max = placementBBox.max:map(math.ceil) + 2
---print('placementBBox', from, 'to' , placementBBox)
+--DEBUG:print('placementBBox', from, 'to' , placementBBox)
 				local placementSize = placementBBox:size() + 1
 				for pu=placementBBox.min.x,placementBBox.max.x+.01 do
 					for pv=placementBBox.min.y,placementBBox.max.y+.01 do
@@ -424,7 +426,7 @@ print('edge group has '..#eg.srcEdges..' srcEdges')
 		for _,es in ipairs(eg.srcEdges) do
 			local e = es.edge
 			local s0, s1 = table.unpack(e.interval)
-			assert(s0 <= s1)
+			assert.le(s0, s1)
 			edgeGroupLength = edgeGroupLength + (s1 - s0)
 print('interval', s0, s1, 'running total', edgeGroupLength)
 		end
@@ -451,7 +453,7 @@ print('placing at arclength', s)
 						local e = es.edge
 						local s0, s1 = table.unpack(e.interval)
 						local slen = s1 - s0
-						assert(slen >= 0)
+						assert.ge(slen, 0)
 						-- TODO here , pythagorean theorem / curve arclength
 						-- if our next edge has turned a bit then we don't want to subtract off the full interval from our arclength parameter
 						-- instead subtract off the arclength amount associated with the outer edge of this (based on some mesh or something)
@@ -519,7 +521,7 @@ print('placing at interval param', s, 'pos', pos)
 					if i > 1 then
 						local pprev = places[i-1]
 						-- failing for non-manifold meshes
-						--assert(p.edge.plane.n:dot(pprev.edge.plane.n) > 0)
+						--assert.gt(p.edge.plane.n:dot(pprev.edge.plane.n), 0)
 						if p.edge.plane.n:dot(pprev.edge.plane.n) <= 0 then
 							print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
 						end
@@ -532,7 +534,7 @@ print('placing at interval param', s, 'pos', pos)
 					if i < #places then
 						local pnext = places[i+1]
 						-- fails on non-manifold meshes
-						--assert(p.edge.plane.n:dot(pnext.edge.plane.n) > 0)
+						--assert.gt(p.edge.plane.n:dot(pnext.edge.plane.n), 0)
 						if p.edge.plane.n:dot(pnext.edge.plane.n) <= 0 then
 							print('!!! WARNING !!! group edge to next edge not aligned.  is the mesh non-manifold?')
 						end
@@ -561,7 +563,7 @@ print('#tilePlaces total', #mesh.tilePlaces)
 		local nvtxs = vector'MeshVertex_t'
 		local indexesPerGroup = {}
 		for _,place in ipairs(mesh.tilePlaces) do
-			local omesh = assert(omeshForFn[place.filename])
+			local omesh = assert.index(omeshForFn, place.filename)
 			local firstVtx = nvtxs.size
 			for i=0,omesh.vtxs.size-1 do
 				local srcv = omesh.vtxs.v[i]
@@ -583,9 +585,11 @@ print('#tilePlaces total', #mesh.tilePlaces)
 				indexesPerGroup[place.filename][g.name] = indexesPerGroup[place.filename][g.name] or table()
 				for i=3*g.triFirstIndex,3*(g.triFirstIndex+g.triCount)-1 do
 					local srci = omesh.triIndexes.v[i]
-					assert(srci >= 0 and srci < omesh.vtxs.size)
+					assert.ge(srci, 0)
+					assert.lt(srci, omesh.vtxs.size)
 					local dsti = srci + firstVtx
-					assert(dsti >= firstVtx and dsti < lastVtx)
+					assert.ge(dsti, firstVtx)
+					assert.lt(dsti, lastVtx)
 					indexesPerGroup[place.filename][g.name]:insert(dsti)
 				end
 			end
@@ -604,8 +608,8 @@ print('#tilePlaces total', #mesh.tilePlaces)
 			end
 		end
 
-		--assert(nvtxs.size == omesh.vtxs.size * #mesh.tilePlaces)
-		--assert(ntris.size == omesh.triIndexes.size * #mesh.tilePlaces)
+		--assert.eq(nvtxs.size, omesh.vtxs.size * #mesh.tilePlaces)
+		--assert.eq(ntris.size, omesh.triIndexes.size * #mesh.tilePlaces)
 print('nvtxs.size', nvtxs.size)
 print('ntris.size', ntris.size)
 
@@ -613,7 +617,7 @@ print('ntris.size', ntris.size)
 		{
 			instances = mesh.tilePlaces:mapi(function(p)
 				return {
-					filename = assert(p.filename),
+					filename = assert.index(p, 'filename'),
 					-- matrix_ffi is stored column-major
 					transform = range(16):mapi(function(i)
 						return p.xform.ptr[i-1]

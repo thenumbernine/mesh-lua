@@ -1,5 +1,6 @@
 local ffi = require 'ffi'
 local class = require 'ext.class'
+local assert = require 'ext.assert'
 local table = require 'ext.table'
 local math = require 'ext.math'
 local range = require 'ext.range'
@@ -92,12 +93,16 @@ end
 
 function Triangle:indexes(mesh)
 	local ti = 3 * (self.index - 1)
-	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	assert.ge(ti, 0)
+	assert.le(ti + 3, mesh.triIndexes.size)
 	local tp = mesh.triIndexes.v + ti
 	local i,j,k = tp[0], tp[1], tp[2]
-	assert(i >= 0 and i < mesh.vtxs.size)
-	assert(j >= 0 and j < mesh.vtxs.size)
-	assert(k >= 0 and k < mesh.vtxs.size)
+	assert.ge(i, 0)
+	assert.lt(i, mesh.vtxs.size)
+	assert.ge(j, 0)
+	assert.lt(j, mesh.vtxs.size)
+	assert.ge(k, 0)
+	assert.lt(k, mesh.vtxs.size)
 	return i,j,k
 end
 
@@ -124,11 +129,15 @@ end
 -- calculate the barycentric coordinates of point 'p'
 function Triangle:calcBCC(p, mesh)
 	local ti = 3 * (self.index - 1)
-	assert(ti >= 0 and ti + 3 <= mesh.triIndexes.size)
+	assert.ge(ti, 0)
+	assert.le(ti + 3, mesh.triIndexes.size)
 	local tp = mesh.triIndexes.v + ti
-	assert(tp[0] >= 0 and tp[0] < mesh.vtxs.size)
-	assert(tp[1] >= 0 and tp[1] < mesh.vtxs.size)
-	assert(tp[2] >= 0 and tp[2] < mesh.vtxs.size)
+	assert.ge(tp[0], 0)
+	assert.lt(tp[0], mesh.vtxs.size)
+	assert.ge(tp[1], 0)
+	assert.lt(tp[1], mesh.vtxs.size)
+	assert.ge(tp[2], 0)
+	assert.lt(tp[2], mesh.vtxs.size)
 
 	local bcc = vec3f()
 	for j=0,2 do
@@ -311,9 +320,9 @@ end
 
 -- get the endpoints of the edge
 function Edge:getPts()
-	assert(#self.interval == 2)
+	assert.len(self.interval, 2)
 	local s0, s1 = table.unpack(self.interval)
-	assert(s0 <= s1)
+	assert.le(s0, s1)
 	local v0 = self.planePos + self.plane.n * s0
 	local v1 = self.planePos + self.plane.n * s1
 	return v0, v1
@@ -332,14 +341,14 @@ and that the triangles are 1:1 with the indexes
 --]]
 function Mesh:assertGroups()
 	-- assert tris x 3 == indexes
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 	-- assert sum of all group tri counts == total tri counts
-	assert(self.groups:mapi(function(g) return g.triCount end):sum() == #self.tris)
+	assert.eq(self.groups:mapi(function(g) return g.triCount end):sum(), #self.tris)
 	-- assert all group tri ranges are within total tri range
 	for _,g in ipairs(self.groups) do
-		assert(g.triFirstIndex >= 0)
-		assert(g.triCount >= 0)
-		assert(g.triFirstIndex + g.triCount <= #self.tris)
+		assert.ge(g.triFirstIndex, 0)
+		assert.ge(g.triCount, 0)
+		assert.le(g.triFirstIndex + g.triCount, #self.tris)
 	end
 	-- assert no gruops overlap
 	for i=1,#self.groups-1 do
@@ -614,30 +623,30 @@ function Mesh:getUniqueVtxs(posPrec, texCoordPrec, normalPrec, usedVertexes)
 				end
 			end
 			if foundj then
---print(i..' => '..foundj..' => '..tostring(indexToUniqueV[foundj]))
-				indexToUniqueV[i] = assert(indexToUniqueV[foundj])
+--DEBUG:print(i..' => '..foundj..' => '..tostring(indexToUniqueV[foundj]))
+				indexToUniqueV[i] = assert.index(indexToUniqueV, foundj)
 			else
 				uniquevs:insert(i)
---print(i..' => '..#uniquevs..' => '..i)
+--DEBUG:print(i..' => '..#uniquevs..' => '..i)
 				indexToUniqueV[i] = #uniquevs
 			end
 		else
---print(i.." skipping")
+--DEBUG:print(i.." skipping")
 		end
 	end
 	return uniquevs, indexToUniqueV
 end
 
 function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 	if not self.bbox then self:calcBBox() end
 	-- ok the bbox hyp is 28, the smallest maybe valid dist is .077, and everything smalelr is 1e-6 ...
 	-- that's a jump from 1/371 to 1/20,000,000
 	-- so what's the smallest ratio I should allow?  maybe 1/1million?
---	local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
---	local vtxMergeThreshold = bboxCornerDist * 1e-6
---print('vtxMergeThreshold', vtxMergeThreshold)
---print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
+--DEBUG:local bboxCornerDist = (self.bbox.max - self.bbox.min):norm()
+--DEBUG:local vtxMergeThreshold = bboxCornerDist * 1e-6
+--DEBUG:print('vtxMergeThreshold', vtxMergeThreshold)
+--DEBUG:print('before merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
 	local vtxMergeThreshold = 1e-5
 	local uniquevs, indexToUniqueV = self:getUniqueVtxs(
 		vtxMergeThreshold,
@@ -646,13 +655,13 @@ function Mesh:mergeMatchingVertexes(skipTexCoords, skipNormals)
 	)
 	for i=self.vtxs.size-1,1,-1 do
 		local j = uniquevs[indexToUniqueV[i]]
-		assert(j <= i)
+		assert.le(j, i)
 		if j < i then
 			self:mergeVertex(i,j)
 		end
 	end
---print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
-	assert(#self.tris*3 == self.triIndexes.size)
+--DEBUG:print('after merge vtx count', self.vtxs.size, 'tri count', self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 
 	-- invalidate
 	self:unloadGL()
@@ -672,45 +681,45 @@ function Mesh:splitVtxsTouchingEdges()
 ::tryagain::
 		for _,g in ipairs(self.groups) do
 			for ti=g.triFirstIndex+g.triCount-1,g.triFirstIndex,-1 do
-	--local debug = ({[6]=1,[8]=1,[9]=1,[17]=1})[ti]	-- these re the bad edges on target_basic bricks that need to be correctly split
-	--local dprint = debug and print or function() end
+--DEBUG:local debug = ({[6]=1,[8]=1,[9]=1,[17]=1})[ti]	-- these re the bad edges on target_basic bricks that need to be correctly split
+--DEBUG:local dprint = debug and print or function() end
 				local tp = self.triIndexes.v + 3*ti
-	--dprint('TRI', ti, 'with indexes', tp[0], tp[1], tp[2])
+--DEBUG:dprint('TRI', ti, 'with indexes', tp[0], tp[1], tp[2])
 				for j=0,2 do
 					local iv0 = tp[j]
 					local iv1 = tp[(j+1)%3]
 					local iv2 = tp[(j+2)%3]
-	--dprint('EDGE', iv0, iv1)
+--DEBUG:dprint('EDGE', iv0, iv1)
 					local v0 = ffi.new('MeshVertex_t', self.vtxs.v[iv0])
 					local v1 = ffi.new('MeshVertex_t', self.vtxs.v[iv1])
 					local edgeDir = v1.pos - v0.pos
 					local edgePlanePos = .5 * (v1.pos + v0.pos)
 					local edgeDirLen = edgeDir:norm()
-	--dprint('...with len', edgeDirLen)
+--DEBUG:dprint('...with len', edgeDirLen)
 					if edgeDirLen > edgeLenEpsilon then
 						edgeDir = edgeDir / edgeDirLen
 						local edgePlane = plane3f():fromDirPt(edgeDir, edgePlanePos)
 						local s0 = edgePlane:dist(v0.pos)	-- dist along the edge of v0
 						local s1 = edgePlane:dist(v1.pos)	-- dist along the edge of v1
-	--dprint('... and edge interval '..s0..' to '..s1)
-						assert(s1 >= s0) -- because edgeDir points from v0 to v1
+--DEBUG:dprint('... and edge interval '..s0..' to '..s1)
+						assert.ge(s1, s0) -- because edgeDir points from v0 to v1
 						for i=0,self.vtxs.size-1 do
 							local vi = ffi.new('MeshVertex_t', self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
 							if iv0 ~= i and iv1 ~= i and iv2 ~= i then
 								local edgeDist = edgePlane:projectVec(vi.pos - edgePlanePos):norm()	-- how far from the edge is vi
-								--print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
+--DEBUG:print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
 								-- if this vtx is close to the dge
-	--dprint('testing against vertex', i, 'with edge dist', edgeDist)
+--DEBUG:dprint('testing against vertex', i, 'with edge dist', edgeDist)
 								if edgeDist < edgeDistEpsilon then
 									local s = edgePlane:dist(vi.pos)	-- dist along the edge of vi
-	--dprint('vertex '..i..' has dist '..edgeDist..' and edge param '..s)
+--DEBUG:dprint('vertex '..i..' has dist '..edgeDist..' and edge param '..s)
 									-- and it is far from either endpoint of the edge
 									if math.abs(s - s0) > intervalEpsilon
 									and math.abs(s - s1) > intervalEpsilon
 									and s0 < s and s < s1
 									then
 										-- then we have to split this triangle at this point in the interval
-	--print("SPLITTING EDGE", v0.pos, v1.pos, 'at', vi.pos)
+--DEBUG:print("SPLITTING EDGE", v0.pos, v1.pos, 'at', vi.pos)
 										local f = (s - s0) / (s1 - s0)
 										local iv01 = self.vtxs.size
 										local nvtx = self.vtxs:emplace_back()
@@ -726,8 +735,8 @@ function Mesh:splitVtxsTouchingEdges()
 										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv2)
 										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv1)
 										self.triIndexes:insert(self.triIndexes:begin() + 3*ti + 3, iv01)
-	--dprint("mod'd", self.triIndexes.v[3*ti+0], self.triIndexes.v[3*ti+1], self.triIndexes.v[3*ti+2])
-	--dprint('made', self.triIndexes.v[3*ti+3], self.triIndexes.v[3*ti+4], self.triIndexes.v[3*ti+5])
+--DEBUG:dprint("mod'd", self.triIndexes.v[3*ti+0], self.triIndexes.v[3*ti+1], self.triIndexes.v[3*ti+2])
+--DEBUG:dprint('made', self.triIndexes.v[3*ti+3], self.triIndexes.v[3*ti+4], self.triIndexes.v[3*ti+5])
 										self.tris:insert(ti+1, Triangle{
 											index = nti+1,	-- 1-based
 										})
@@ -756,11 +765,15 @@ end
 
 -- 0-based, index-array so 3x from unique tri
 function Mesh:triVtxs(ti)
-	assert(ti >= 0 and ti + 3 <= self.triIndexes.size)
+	assert.ge(ti, 0)
+	assert.le(ti + 3, self.triIndexes.size)
 	local t = self.triIndexes.v + ti
-	assert(t[0] >= 0 and t[0] < self.vtxs.size)
-	assert(t[1] >= 0 and t[1] < self.vtxs.size)
-	assert(t[2] >= 0 and t[2] < self.vtxs.size)
+	assert.ge(t[0], 0)
+	assert.lt(t[0], self.vtxs.size)
+	assert.ge(t[1], 0)
+	assert.lt(t[1], self.vtxs.size)
+	assert.ge(t[2], 0)
+	assert.lt(t[2], self.vtxs.size)
 	return self.vtxs.v[t[0]],
 			self.vtxs.v[t[1]],
 			self.vtxs.v[t[2]]
@@ -774,13 +787,13 @@ end
 
 function Mesh:removeEmptyTris()
 print('removeEmptyTris from '..#self.tris)
-	assert(#self.tris * 3 == self.triIndexes.size)
+	assert.eq(#self.tris * 3, self.triIndexes.size)
 	for i=#self.tris,1,-1 do
 		if self.tris[i].area < 1e-7 then
 			self:removeTri(3*(i-1))
 		end
 	end
-	assert(#self.tris * 3 == self.triIndexes.size)
+	assert.eq(#self.tris * 3, self.triIndexes.size)
 print('removeEmptyTris to '..#self.tris)
 end
 
@@ -791,7 +804,7 @@ function Mesh:rebuildTris(from,to)
 		to = self.triIndexes.size/3
 	end
 	for i,t in ipairs(self.tris) do
-		assert(Triangle:isa(t))
+		assert.is(t, Triangle)
 	end
 	for i=to+1,#self.tris do
 		self.tris[i] = nil
@@ -807,7 +820,7 @@ function Mesh:rebuildTris(from,to)
 		error("expected "..(#self.tris*3).." but found "..self.triIndexes.size)
 	end
 	for i,t in ipairs(self.tris) do
-		assert(Triangle:isa(t))
+		assert.is(t, Triangle)
 	end
 end
 
@@ -842,11 +855,15 @@ function Mesh:generateTriBasis()
 	for i,t in ipairs(self.tris) do
 		if not t.basis then
 			local ti = 3*(i-1)
-			assert(ti >= 0 and ti < self.triIndexes.size)
+			assert.ge(ti, 0)
+			assert.lt(ti, self.triIndexes.size)
 			local tp = self.triIndexes.v + ti
-			assert(tp[0] >= 0 and tp[0] < self.vtxs.size)
-			assert(tp[1] >= 0 and tp[1] < self.vtxs.size)
-			assert(tp[2] >= 0 and tp[2] < self.vtxs.size)
+			assert.ge(tp[0], 0)
+			assert.lt(tp[0], self.vtxs.size)
+			assert.ge(tp[1], 0)
+			assert.lt(tp[1], self.vtxs.size)
+			assert.ge(tp[2], 0)
+			assert.lt(tp[2], self.vtxs.size)
 			local va = self.vtxs.v[tp[0]]
 			local vb = self.vtxs.v[tp[1]]
 			local vc = self.vtxs.v[tp[2]]
@@ -888,7 +905,7 @@ function Mesh:generateTriBasis()
 			local ey = n:cross(ex):normalize()
 			--]]
 			t.basis = table{ex, ey, n}
---print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
+--DEBUG:print(i, table.unpack(t.basis), n:dot(ex), n:dot(ey))
 		end
 	end
 --[[
@@ -928,7 +945,7 @@ function Mesh:calcEdges2()
 	--local edgeAngleThreshold = math.rad(1e-1)
 	--local cosEdgeAngleThreshold = math.cos(edgeAngleThreshold)
 
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 
 	-- new edge structure
 	-- it only represents entire tri edges, like .edges (no subintervals)
@@ -940,9 +957,9 @@ function Mesh:calcEdges2()
 	for _,t in ipairs(self.tris) do
 		t.edges2 = table()
 	end
---for _,t in ipairs(self.tris) do
---	print('n = '..t.normal)
---end
+--DEBUG:for _,t in ipairs(self.tris) do
+--DEBUG:	print('n = '..t.normal)
+--DEBUG:end
 	local goodTris = 0
 	local badTris = 0
 	-- if I lower this to 1e-7 then it runs into cases of clipPlanes that don't separate their two triangle COMs ...
@@ -955,7 +972,7 @@ function Mesh:calcEdges2()
 				-- t1's j1'th edge
 				local v11 = self.vtxs.v[tp1[j1-1]].pos
 				local v12 = self.vtxs.v[tp1[j1%3]].pos
-	--print('tri', ti1, 'pos', j1, '=', v11)
+--DEBUG:print('tri', ti1, 'pos', j1, '=', v11)
 				local edgeDir1 = v12 - v11
 				local edgeDir1Norm = edgeDir1:norm()
 				if edgeDir1Norm > normEpsilon then
@@ -972,7 +989,7 @@ function Mesh:calcEdges2()
 								if edgeDir2Norm  > normEpsilon then
 									edgeDir2 = edgeDir2 / edgeDir2Norm
 									do --if math.abs(edgeDir1:dot(edgeDir2)) > cosEdgeAngleThreshold then
-		--print('edges2 normals align:', ti1-1, j1-1, ti2-1, j2-1)
+--DEBUG:print('edges2 normals align:', ti1-1, j1-1, ti2-1, j2-1)
 										-- normals align, calculate distance
 										--local planePos = v11
 
@@ -1011,7 +1028,7 @@ function Mesh:calcEdges2()
 												or (dist_12_21 < edgeDistEpsilon and dist_11_22 < edgeDistEpsilon)
 											)
 											then
-												assert(ti2 < ti1)
+												assert.lt(ti2, ti1)
 												local s1, s2
 												if dist_11_21 < edgeDistEpsilon
 												and dist_12_22 < edgeDistEpsilon
@@ -1091,7 +1108,7 @@ function Mesh:findEdges(getIndex)
 	end
 	self.edgeIndexBuf:resize(0)
 
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 	for i=1,self.triIndexes.size/3 do
 		local t = self.tris[i]
 		if not Triangle:isa(t) then
@@ -1181,13 +1198,13 @@ function Mesh:delaunayTriangulate()
 			-- pick 1 of the 2 triangles as the 2D basis
 			local a, c
 			if i10 ~= i21 then
-				assert((v10 - v21):norm() < 1e-5)
+				assert.lt((v10 - v21):norm(), 1e-5)
 				c = .5 * (v10 + v21) - t1.uvorigin3D
 			else
 				c = v10
 			end
 			if i11 ~= i20 then
-				assert((v11 - v20):norm() < 1e-5)
+				assert.lt((v11 - v20):norm(), 1e-5)
 				a = .5 * (v11 + v20) - t1.uvorigin3D
 			else
 				a = v11
@@ -1293,11 +1310,11 @@ end
 		g.borderEdges = table()
 	end
 
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 	for ti=0,#self.tris-1 do
 		local t = self.tris[ti+1]
 		local tp = self.triIndexes.v + 3*ti
-		local g = assert(triGroupForTri[t])
+		local g = assert.index(triGroupForTri, t)
 		for j=0,2 do
 			-- find any overlapping edges at this vtx of this tri
 			local foundAnyEdge
@@ -1307,7 +1324,7 @@ end
 					if e.tris[k] == t and e.triVtxIndexes[k] == j+1 then
 						foundAnyEdge = true
 						local ot = e.tris[3-k]
-						local g2 = assert(triGroupForTri[ot])
+						local g2 = assert.index(triGroupForTri, ot)
 						if g ~= g2 then
 							local tside = e.clipPlane:test(t.com)
 							e.isGroupBorderEdge = true
@@ -1339,7 +1356,7 @@ end
 					local plane = plane3f():fromDirPt(edgeDir, planePos)
 					local s1 = plane:dist(v1)
 					local s2 = plane:dist(v2)
-					assert(s1 <= s2)
+					assert.le(s1, s2)
 print('interval', s1, s2)
 					local clipNormal = t.normal:cross(edgeDir):normalize()
 					local clipPlane = plane3f():fromDirPt(clipNormal, com)
@@ -1396,7 +1413,7 @@ function Mesh:calcTriEdgeGroups()
 
 	self.edgeClipGroups = table() 	-- key is the edge
 	local function makeEdgeClipGroups(e)
---print('makeEdgeClipGroup', e)
+--DEBUG:print('makeEdgeClipGroup', e)
 		local _, eg = self.edgeClipGroups:find(nil, function(eg)
 			return eg.srcEdges:find(nil, function(es)
 				return es.edge == e
@@ -1414,7 +1431,7 @@ function Mesh:calcTriEdgeGroups()
 		end
 		-- insertUnique ...
 		if not eg.srcEdges:find(nil, function(es) return es.edge == e end) then
-			assert(#eg.srcEdges == 0)	-- hmmmmmmm how to insert and maintain srcEdges' order ...
+			assert.len(eg.srcEdges, 0)	-- hmmmmmmm how to insert and maintain srcEdges' order ...
 			eg.srcEdges:insert{
 				edge = e,
 				intervalIndex = 1,
@@ -1452,7 +1469,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 			--]]
 			--[[ based on edge intervals
 			local com = e.com
---print('FINDING PLANES FOR EDGE WITH COM', com)
+--DEBUG:print('FINDING PLANES FOR EDGE WITH COM', com)
 			--]]
 
 			-- find the next tri with vtx at edge 'vi' and touches edge 'prevt'
@@ -1466,7 +1483,7 @@ print('starting on edge pos', e.planePos, 'normal', e.plane.n)
 
 -- convention : assert that our edgeDir points towards the COM
 local edgeDot = (com - self.vtxs.v[vi].pos):dot(edgeDir)
-assert(edgeDot >= 0)
+assert.ge(edgeDot, 0)
 --if edgeDot < 0 then edgeDir = -edgeDir end
 
 print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edgeDot)
@@ -1503,7 +1520,8 @@ print('#tristack', #tristack, 'totalAngle', math.deg(totalAngle), 'edgeDot', edg
 											print("!!! WARNING !!! couldn't find vertex in triangle associated with edge.  is the mesh non-manifold?")
 										else
 											k=k-1	-- from index to offset
-											assert(k >= 0 and k < 3)
+											assert.ge(k, 0)
+											assert.lt(k, 3)
 											local angle = math.acos(math.clamp(
 												(self.vtxs.v[tp[(k+1)%3]].pos - self.vtxs.v[tp[k]].pos)
 												:normalize():dot(
@@ -1656,7 +1674,8 @@ print('...adding clip plane '..clipPlane)
 		local normAvg = info.normAvg
 		-- hmm, some have 1
 		-- I.g. those are outer-edges with no inner-edges connecting to them, esp if they are sequences-of-edges
-		--assert(#outerEdges >= 0 and #outerEdges <= 2, "got bad # outer edges: "..#outerEdges)
+		--assert.ge(#outerEdges, 0, "got bad # outer edges")
+		--assert.le(#outerEdges, 2, "got bad # outer edges")
 print('at vertex '..self.vtxs.v[vi].pos..' #outerEdges', #outerEdges)
 -- [=[
 		if #outerEdges == 2 then
@@ -1839,7 +1858,7 @@ print('total before', totalSrcEdgesBeforeMerging)
 	end
 	local totalSrcEdgesAfterMerging = self.edgeClipGroups:mapi(function(eg) return #eg.srcEdges end):sum()
 print('total after', totalSrcEdgesAfterMerging)
-	assert(totalSrcEdgesBeforeMerging == totalSrcEdgesAfterMerging)
+	assert.eq(totalSrcEdgesBeforeMerging, totalSrcEdgesAfterMerging)
 
 --]=]
 	-- ok now if any edge's groups of fake clipplanes only has a single clipplane per vertex,
@@ -1850,7 +1869,7 @@ print('total after', totalSrcEdgesAfterMerging)
 	-- for each vtx
 	--   make sure the real-edges and fake-edges intersperse
 	--   if any fake-edges are missing then insert them.
---print('for edge+vtx made '..(#eg.borderEdges - oldNumBorderEdges)..' clip edges')
+--DEBUG:print('for edge+vtx made '..(#eg.borderEdges - oldNumBorderEdges)..' clip edges')
 	-- THIS WOULD WORK PERFECTLY IF WE COULD GUARANTEE OUR MESH WAS A PROPR N-MANIFOLD EVERYWHERE ... WITH NO DANGLING EDGES OR TRIANGLES
 	-- but because we could have weird T intersections ... AND WE DO ... on that stupid target_basic-bricks model which is screwed up ... this won't work there.
 end
@@ -1899,7 +1918,7 @@ function Mesh:clipToClipGroup(g)
 
 	-- clip a mesh against a polygon
 	local function clipMeshAgainstEdges(edgeInfos, clipped)
-		assert(#edgeInfos > 0)
+		assert.gt(#edgeInfos, 0)
 		local info = edgeInfos:remove()
 		-- clone and clip against the -plane -> backMesh
 		local backMesh = clipped:clone()
@@ -2000,10 +2019,12 @@ end
 
 -- replace all instances of one vertex index with another
 function Mesh:replaceVertex(from,to)
---print('replacing vertex ' ..from..' with '..to)
-	assert(from > to)
-	assert(from >= 0 and from < self.vtxs.size)
-	assert(to >= 0 and to < self.vtxs.size)
+--DEBUG:print('replacing vertex ' ..from..' with '..to)
+	assert.gt(from, to)
+	assert.ge(from, 0)
+	assert.lt(from, self.vtxs.size)
+	assert.ge(to, 0)
+	assert.lt(to, self.vtxs.size)
 	-- replace in .tris
 	for j=self.triIndexes.size-3,0,-3 do
 		local tp = self.triIndexes.v + j
@@ -2018,7 +2039,7 @@ function Mesh:removeDegenerateTriangles()
 		local tp = self.triIndexes.v + i
 		for j=2,1,-1 do
 			if tp[j] == tp[j-1] then
---print('removing degenerate tri '..i..' with duplicate vertices')
+--DEBUG:print('removing degenerate tri '..i..' with duplicate vertices')
 				self:removeTri(i)
 				break
 			end
@@ -2049,7 +2070,8 @@ end
 -- remove the vertex from the elf.vs[] list
 -- decrement the indexes greater
 function Mesh:removeVertex(vi)
-	assert(vi >= 0 and vi < self.vtxs.size)
+	assert.ge(vi, 0)
+	assert.lt(vi, self.vtxs.size)
 	self.vtxs:erase(self.vtxs.v + vi, self.vtxs.v + vi + 1)
 	-- remove in .tris
 	-- if you did :replaceVertex and :removeDegenerateFaces first then the rest shouldn't be necessary at all (except for error checking)
@@ -2079,7 +2101,7 @@ end
 -- TODO same for .vts and .vns ?
 --]]
 function Mesh:mergeVertex(from,to)
-	assert(from > to)
+	assert.gt(from, to)
 	self:replaceVertex(from,to)
 	self:removeDegenerateTriangles()
 	self:removeVertex(from)
@@ -2312,7 +2334,8 @@ end
 -- used for traversing loops
 function Mesh:getIndexForLoopChain(l)
 	local i = l.e[l.v]-1
-	assert(i >= 0 and i < self.vtxs.size)
+	assert.ge(i, 0)
+	assert.lt(i, self.vtxs.size)
 	return i
 end
 function Mesh:getVtxForLoopChain(l)
@@ -2352,8 +2375,8 @@ function Mesh:findBadEdges()
 	end
 
 print('edges total', totalEdges, 'border', #border)
-assert(#self.tris*3 == self.triIndexes.size)
-for i,t in ipairs(self.tris) do assert(t.index == i) end
+assert.eq(#self.tris*3, self.triIndexes.size)
+for i,t in ipairs(self.tris) do assert.eq(t.index, i) end
 
 	-- now put in loops
 	local all = table(border)
@@ -2362,13 +2385,13 @@ for i,t in ipairs(self.tris) do assert(t.index == i) end
 	while #all > 0 do
 		local loop = table()
 		local last = all:remove(1)
---print('first edge', last[1], last[2])
+--DEBUG:print('first edge', last[1], last[2])
 		-- loop traversal / first edge vtx should be based on edge/tri orientation
 		-- the loop should go opposite the triangle orientation
 		-- for our single tri touching the edge ...
 		-- find vtx j on the tri such that tri[j], tri[j+1] == e[1], e[2] , order-independent
 		-- then for whatever j+1 is on e, start with that one
-		assert(#last.tris == 1, "found an edge which isn't really an edge...")
+		assert.len(last.tris, 1, "found an edge which isn't really an edge...")
 		local lastvi
 		for j=0,2 do
 			local ti = last.tris[1].index-1
@@ -2390,7 +2413,7 @@ for i,t in ipairs(self.tris) do assert(t.index == i) end
 			local found
 			for i=1,#all do
 				local o = all[i]
---print('checking edge', o[1], o[2])
+--DEBUG:print('checking edge', o[1], o[2])
 				for j=1,2 do
 					if o[j] == last[lastvi] then
 						last = o
@@ -2398,19 +2421,19 @@ for i,t in ipairs(self.tris) do assert(t.index == i) end
 						loop:insert{v=3-lastvi, e=o}
 						all:remove(i)
 						found = true
---print('adding edge', last[1], last[2])
+--DEBUG:print('adding edge', last[1], last[2])
 						break
 					end
 				end
 				if found then break end
 			end
 			if not found then
---print('found no more edges, adding to lines')
+--DEBUG:print('found no more edges, adding to lines')
 				lines:insert(loop)
 				break
 			else
 				if last[lastvi] == loop[1].e[loop[1].v] then
---print('reached beginning, adding to loops')
+--DEBUG:print('reached beginning, adding to loops')
 					loops:insert(loop)
 					break
 				end
@@ -2449,7 +2472,7 @@ end
 			self.triIndexes:push_back(self:getIndexForLoopChain(loop[j+1]))
 		end
 		--]]
-		--assert(#loop >= 3)
+		--assert.ge(#loop, 3)
 	end
 
 	-- here ... optional?
@@ -2471,11 +2494,11 @@ end
 				if not n then
 					n = x / xlen
 					area = .5 * xlen
---print('normal', n)
+--DEBUG:print('normal', n)
 				else
 					area = .5 * ab:cross(ac):dot(n)
 				end
---print('adding', area)
+--DEBUG:print('adding', area)
 				totalArea = totalArea + area
 			end
 		end
@@ -2535,7 +2558,7 @@ function Mesh:removeInternalTris()
 	-- 2) per-edge, the other two tris planes must have this tri behind them
 	-- this won't skip floating edge tris ... those need to be removed separately.
 	-- this also won't remove 'internal' tris if there's a hole on the bounding region.
-	assert(#self.tris*3 == self.triIndexes.size)
+	assert.eq(#self.tris*3, self.triIndexes.size)
 	for i,t in ipairs(self.tris) do
 		-- if the triangle intersects another then it needs to break
 	end
@@ -2550,11 +2573,11 @@ end
 function Mesh:generateVertexNormals()
 	-- calculate vertex normals
 	-- TODO store this?  in its own self.vn2s[] or something?
---print('zeroing vertex normals')
+--DEBUG:print('zeroing vertex normals')
 	for i=0,self.vtxs.size-1 do
 		self.vtxs.v[i].normal:set(0,0,0)
 	end
---print('accumulating triangle normals into vertex normals')
+--DEBUG:print('accumulating triangle normals into vertex normals')
 	for i=0,self.triIndexes.size-1,3 do
 		local ia = self.triIndexes.v[i]
 		local ib = self.triIndexes.v[i+1]
@@ -2578,7 +2601,7 @@ function Mesh:generateVertexNormals()
 		vb.normal = vb.normal + normal * thetaB
 		vc.normal = vc.normal + normal * thetaC
 	end
---print('normals vertex normals')
+--DEBUG:print('normals vertex normals')
 	for i=0,self.vtxs.size-1 do
 		local v = self.vtxs.v[i]
 		local len = v.normal:norm()
@@ -2587,7 +2610,7 @@ function Mesh:generateVertexNormals()
 		else
 			v.normal:set(0,0,0)
 		end
---print(k, vtxnormals[i])
+--DEBUG:print(k, vtxnormals[i])
 	end
 
 	if self.vtxBuf then
@@ -2618,13 +2641,13 @@ end
 			local planeDists = vs:mapi(function(v) return plane:dist(v.pos) end)
 			local sides = planeDists:mapi(function(d) return d >= 0 end)
 			local frontCount = sides:mapi(function(s) return s and 1 or 0 end):sum()
---print('frontCount', frontCount)
+--DEBUG:print('frontCount', frontCount)
 			if frontCount == 3 then
---print('...keep')
+--DEBUG:print('...keep')
 				-- keep
 			elseif frontCount == 0 then
 				modified = true
---print('...remove')
+--DEBUG:print('...remove')
 if #self.tris*3 ~= self.triIndexes.size then
 	error("3*#tris is "..(3*#self.tris).." while triIndexes is "..self.triIndexes.size)
 end
@@ -2640,7 +2663,7 @@ end
 					if (frontCount == 1 and sides[j+1])
 					or (frontCount == 2 and not sides[j+1])
 					then
---print('splitting on '..j..'th side')
+--DEBUG:print('splitting on '..j..'th side')
 						local j1 = (j+1)%3
 						local j2 = (j1+1)%3
 						-- separate off this triangle
@@ -2808,7 +2831,7 @@ print'adding indices'
 print('indata', require 'ext.tolua'(indata))
 		local outdata = require 'mesh.earcut'(indata, {})
 print('outdata', require 'ext.tolua'(outdata))
-		assert(#outdata % 3 == 0)
+		assert.eq(#outdata % 3, 0)
 		-- TODO when to reverse ...
 		for ti=0,#outdata/3-1 do
 			for k=0,2 do
@@ -2821,7 +2844,7 @@ print('adding to loop-index', o, 'vtx index', self:getIndexForLoopChain(loop[o])
 		g.triCount = g.triCount + #outdata/3
 		--]=]
 		--]]
-		assert(#loop >= 3)
+		assert.ge(#loop, 3)
 	end
 
 	self:unloadGL()
@@ -2859,7 +2882,7 @@ function Mesh:findClosestTriToMouseRay(pos, dir, fwd, cosEpsAngle)
 	--dir = dir:normalize()
 	local dirlen = dir:norm()
 	local besti, bestdist
-	assert(#self.tris * 3 == self.triIndexes.size)
+	assert.eq(#self.tris * 3, self.triIndexes.size)
 	for ti,t in ipairs(self.tris) do
 		local i = 3*(ti-1)
 		local tnormal, area = t.normal, t.area
@@ -2914,7 +2937,7 @@ function Mesh:loadGL(shader)
 		end
 	end
 
---print('creating array buffer of size', self.vtxs.size)
+--DEBUG:print('creating array buffer of size', self.vtxs.size)
 	if shader then
 		if not self.vtxBuf then
 			self.vtxBuf = GLArrayBuffer{
@@ -2986,7 +3009,7 @@ function Mesh:draw(args)
 
 	-- [[ vao ... getting pretty tightly coupled with the view.lua file ...
 	if method == 'vao' then
-		assert(self.vao)
+		assert.index(self, 'vao')
 		self.vao:bind()
 		for _,g in ipairs(self.groups) do
 			if args.beginGroup then args.beginGroup(g) end
@@ -2995,7 +3018,7 @@ function Mesh:draw(args)
 				gl.glDrawElements(gl.GL_TRIANGLES, g.triCount * 3, gl.GL_UNSIGNED_INT, self.triIndexes.v + g.triFirstIndex * 3)
 				--]]
 				-- [[ gpu ptr
-				assert(self.indexBuf)
+				assert.index(self, 'indexBuf')
 				self.indexBuf:bind()
 				gl.glDrawRangeElements(gl.GL_TRIANGLES, 0, self.vtxs.size-1, g.triCount * 3, gl.GL_UNSIGNED_INT, ffi.cast('void*', ffi.sizeof(self.triIndexes.type) * g.triFirstIndex * 3))
 				self.indexBuf:unbind()
@@ -3007,7 +3030,7 @@ function Mesh:draw(args)
 	--]]
 	-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
 	elseif method == 'attribarray' then
-		assert(args.shader)
+		assert.index(args, 'shader')
 		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
 		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
 		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)

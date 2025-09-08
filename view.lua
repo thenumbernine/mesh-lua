@@ -167,7 +167,7 @@ end
 		mesh.com1 = mesh:calcCOM1()
 	end
 
---print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():reverse():concat'\narea '..'\n')
+--DEBUG:print('area '..table(mesh.tris):mapi(function(t) return t.area end):sort():reverse():concat'\narea '..'\n')
 
 	-- TODO give every vtx a TNB, use it instead of uvbasis3D, and don't have tilemesh require unwrapuv
 	if cmdline.unwrapuv then
@@ -565,13 +565,13 @@ function App:update()
 		else
 			if not self.insertMeshToSurfaceClipGroupBase then
 				if self.insertMeshFilename ~= '' then
---print('loading', self.insertMeshFilename)
+--DEBUG:print('loading', self.insertMeshFilename)
 					xpcall(function()
---print('self.insertMeshToSurfaceClipGroupBase')
+--DEBUG:print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase = OBJLoader():load(self.insertMeshFilename)
---print('self.insertMeshToSurfaceClipGroupBase')
+--DEBUG:print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase:findEdges()
---print('self.insertMeshToSurfaceClipGroupBase')
+--DEBUG:print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToSurfaceClipGroupBase:calcCOMs()
 					end, function(err)
 						print(err..'\n'..debug.traceback())
@@ -599,82 +599,82 @@ function App:update()
 			end
 		end
 	elseif self.editMode == editModeForName.insertMeshToEdgeClipGroup then
---print('finding closest edge to mouseray...')
+--DEBUG:print('finding closest edge to mouseray...')
 		local insertMeshEdge
 		insertMeshEdge, self.insertMeshPt = self:findClosestTriGroupEdgeToMouse()
---print('insertMeshEdge', insertMeshEdge)
---print('self.insertMeshPt', self.insertMeshPt)
+--DEBUG:print('insertMeshEdge', insertMeshEdge)
+--DEBUG:print('self.insertMeshPt', self.insertMeshPt)
 		if not insertMeshEdge then
---print('insertMeshEdge exists - clearing all edge placement vars')
+--DEBUG:print('insertMeshEdge exists - clearing all edge placement vars')
 			self.insertMeshPt = nil
 			self.insertMeshToEdgeClipGroupBase = nil
 			self.insertMeshToEdgeClipGroup = nil
 		else
---print('insertMeshEdge exists...')
---print('self.insertMeshToEdgeClipGroupBase', self.insertMeshToEdgeClipGroupBase)
+--DEBUG:print('insertMeshEdge exists...')
+--DEBUG:print('self.insertMeshToEdgeClipGroupBase', self.insertMeshToEdgeClipGroupBase)
 			if not self.insertMeshToEdgeClipGroupBase then
---print("self.insertMeshToEdgeClipGroupBase doesn't exist - loading")
---print('self.insertMeshFilename', self.insertMeshFilename)
+--DEBUG:print("self.insertMeshToEdgeClipGroupBase doesn't exist - loading")
+--DEBUG:print('self.insertMeshFilename', self.insertMeshFilename)
 				if self.insertMeshFilename ~= '' then
---print('loading...')
+--DEBUG:print('loading...')
 					xpcall(function()
---print('self.insertMeshToSurfaceClipGroupBase')
+--DEBUG:print('self.insertMeshToSurfaceClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase = OBJLoader():load(self.insertMeshFilename)
---print('self.insertMeshToEdgeClipGroupBase')
+--DEBUG:print('self.insertMeshToEdgeClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase:findEdges()
---print('self.insertMeshToEdgeClipGroupBase')
+--DEBUG:print('self.insertMeshToEdgeClipGroupBase')
 						self.insertMeshToEdgeClipGroupBase:calcCOMs()
 					end, function(err)
 						print(tostring(err)..'\n'..debug.traceback())
 					end)
 				end
 			else
---print("self.insertMeshToEdgeClipGroupBase does exist...")
---print("self.insertMeshToEdgeClipGroup", self.insertMeshToEdgeClipGroup)
+--DEBUG:print("self.insertMeshToEdgeClipGroupBase does exist...")
+--DEBUG:print("self.insertMeshToEdgeClipGroup", self.insertMeshToEdgeClipGroup)
 				if self.insertMeshToEdgeClipGroup then
---print("self.insertMeshToEdgeClipGroup exists ... unloading associated GL objects")
+--DEBUG:print("self.insertMeshToEdgeClipGroup exists ... unloading associated GL objects")
 					self.insertMeshToEdgeClipGroup:unloadGL()
---print("self.insertMeshToEdgeClipGroup exists ... done unloading associated GL objects")
+--DEBUG:print("self.insertMeshToEdgeClipGroup exists ... done unloading associated GL objects")
 				end
 
---print('calculating basis of insertMeshEdge')
+--DEBUG:print('calculating basis of insertMeshEdge')
 				local ey = insertMeshEdge.normAvg
 				local ez = -insertMeshEdge.plane.n
 				local ex = ey:cross(ez)
---print('got', ex, ey, ez)
+--DEBUG:print('got', ex, ey, ez)
 
---print('cloning and transforming...')
+--DEBUG:print('cloning and transforming...')
 				self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroupBase:clone()
 				self.insertMeshToEdgeClipGroup:transform(
 					translateMat4x4(self.insertMeshPt)
 					* matrix3x3To4x4{ex, ey, ez}
 				)
---print('done cloning and transforming...')
+--DEBUG:print('done cloning and transforming...')
 
---print('mesh.edgeClipGroups', mesh.edgeClipGroups)
+--DEBUG:print('mesh.edgeClipGroups', mesh.edgeClipGroups)
 				if not mesh.edgeClipGroups then
 					mesh:calcTriEdgeGroups()
 				end
 				assert(mesh.edgeClipGroups)
---print("... doesn't exist - can't clip anything")
---print("looking for closest edge to mouse")
+--DEBUG:print("... doesn't exist - can't clip anything")
+--DEBUG:print("looking for closest edge to mouse")
 				local _, eg = mesh.edgeClipGroups:find(nil, function(eg)
 					return eg.srcEdges:find(nil, function(es)
 						return es.edge == insertMeshEdge
 					end)
 				end)
---print("found", eg)
+--DEBUG:print("found", eg)
 				if eg then
 					self.insertMeshToEdgeClipGroup = self.insertMeshToEdgeClipGroup:clipToClipGroup(eg)
 				end
 				if self.insertMeshToEdgeClipGroup
 				and #self.insertMeshToEdgeClipGroup.tris == 0
 				then
---print("no tris after clip - clearing model")
+--DEBUG:print("no tris after clip - clearing model")
 					self.insertMeshToEdgeClipGroup = nil
 				end
 				if self.insertMeshToEdgeClipGroup then
---print("loading GL stuff...")
+--DEBUG:print("loading GL stuff...")
 					self.insertMeshToEdgeClipGroup:loadGL(self.shader)
 				end
 			end
@@ -805,27 +805,27 @@ s = d.(b (c-a).d - d (c-a).b) / det
 t = b.(b (c-a).d - d (c-a).b) / det
 --]]
 function rayRayIntersect(a,b,c,d)
---print('e', e, 's', s0, s1)
+--DEBUG:print('e', e, 's', s0, s1)
 	local ac = c - a
 	local b_dot_d = b:dot(d)
 	local b_dot_b = b:lenSq()
 	local d_dot_d = d:lenSq()
 	local detA = b_dot_d*b_dot_d - b_dot_b*d_dot_d
---print('detA', detA)
+--DEBUG:print('detA', detA)
 	if math.abs(detA) < 1e-7 then
 		return nil, "rays are parallel"
 	end
 	local invDetA = 1/detA
 	local s = (-d_dot_d * ac:dot(b) + b_dot_d * ac:dot(d)) * invDetA
 	local t = (-b_dot_d * ac:dot(b) + b_dot_b * ac:dot(d)) * invDetA
---print('s', s, 't', t)
+--DEBUG:print('s', s, 't', t)
 	return s, t
 end
 
 function App:findClosestTriGroupEdgeToMouse()
---print('App:findClosestTriGroupEdgeToMouse()')
+--DEBUG:print('App:findClosestTriGroupEdgeToMouse()')
 	local mousePos, mouseDir = self:mouseRay()
---print('mousePos', mousePos, 'mouseDir', mouseDir)
+--DEBUG:print('mousePos', mousePos, 'mouseDir', mouseDir)
 	local bestDistSq = math.huge
 	local bestEdge, bestPt1, bestPt2
 	local mesh = self.mesh
@@ -923,10 +923,10 @@ function App:resetAngle(fwd)
 	local right = up:cross(back)
 	-- vec-ffi's quat's fromMatrix uses col-major Lua-table-of-vec3s (just like 'toMatrix')
 	self.view.angle:fromMatrix{right, up, back}
---print('matrix', right, up, back)
---print('quat', self.view.angle)
+--DEBUG:print('matrix', right, up, back)
+--DEBUG:print('quat', self.view.angle)
 	self:setCenter(self.mesh.com2)
---print('qmatrix', table.unpack(self.view.angle:toMatrix()))
+--DEBUG:print('qmatrix', table.unpack(self.view.angle:toMatrix()))
 -- qmatrix should match matrix if fromMatrix worked
 end
 

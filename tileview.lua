@@ -1,6 +1,7 @@
 #!/usr/bin/env luajit
 local path = require 'ext.path'
 local timer = require 'ext.timer'
+local assert = require 'ext.assert'
 local table = require 'ext.table'
 local tolua = require 'ext.tolua'
 local json = require 'dkjson'
@@ -19,7 +20,7 @@ local d = json.decode(path(placefn):read())
 print('# placed', #d.instances)
 
 local instfns = table.mapi(d.instances, function(inst)
-	return true, assert(inst.filename, "expected filename")
+	return true, assert.index(inst, 'filename')
 end):keys():sort()
 print('unique files:', tolua(instfns))
 
@@ -40,7 +41,7 @@ for _,fn in ipairs(instfns) do
 end
 
 for _,inst in ipairs(d.instances) do
-	inst.mesh = assert(meshesForFns[inst.filename], "failed to find file "..inst.filename)
+	inst.mesh = assert.index(meshesForFns, inst.filename, "failed to find file")
 	inst.transformMat = matrix_ffi({4,4}, 'float'):lambda(function(i,j)
 		return inst.transform[1 + (i-1) + 4 * (j-1)]
 	end)
