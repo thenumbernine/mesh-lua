@@ -29,18 +29,8 @@ end
 
 local OBJLoader = class()
 
-OBJLoader.verbose = false
-
-function OBJLoader:init(args)
-	if args then
-		self.verbose = args.verbose
-	end
-end
-
 function OBJLoader:load(filename)
-	if self.verbose then
-		print('OBJLoader:load begin', filename)
-	end
+--DEBUG:print('OBJLoader:load begin', filename)
 	local mesh = Mesh()
 
 	local vs = table()
@@ -111,13 +101,9 @@ function OBJLoader:load(filename)
 		end
 	end
 
-	if self.verbose then
-		print('read '..#vs..' v '..#vts..' vt '..#vns..' vn '..#mesh.tris..' tris from fs')
-	end
+--DEBUG:print('read '..#vs..' v '..#vts..' vt '..#vns..' vn '..#mesh.tris..' tris from fs')
 
-	if self.verbose then
-		print('removing unused materials...')
-	end
+--DEBUG:print('removing unused materials...')
 	for i=#mesh.groups,1,-1 do
 		local g = mesh.groups[i]
 		if not g.triCount or g.triCount == 0 then
@@ -128,17 +114,13 @@ function OBJLoader:load(filename)
 	-- TODO move whats below into here:
 	self:buildTris(vs, vts, vns)
 
-	if self.verbose then
-		print'allocating vertex and index buffers...'
-	end
+--DEBUG:print'allocating vertex and index buffers...'
 	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
 	local triIndexes = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
 	triIndexes:resize(0)
-	if self.verbose then
-		print'calculating vertex and index buffers...'
-	end
+--DEBUG:print'calculating vertex and index buffers...'
 
 	-- [=[ optimize?
 	local indexForVtx = {}	-- from 'v,vt,vn'
@@ -184,26 +166,20 @@ function OBJLoader:load(filename)
 			t[j] = nil
 		end
 	end
-	if self.verbose then
-		print('#unique vertexes', vtxs.size)
-		print('#unique triangles', triIndexes.size)
-	end
+--DEBUG:print('#unique vertexes', vtxs.size)
+--DEBUG:print('#unique triangles', triIndexes.size)
 	--]=]
 
 	mesh.vtxs = vtxs
 	mesh.triIndexes = triIndexes
 
 
-	if self.verbose then
-		print('calculating triangle properties')
-	end
+--DEBUG:print('calculating triangle properties')
 	for _,t in ipairs(mesh.tris) do
 		t:calcAux(mesh)
 	end
 
-	if self.verbose then
-		print('OBJLoader:load end', filename)
-	end
+--DEBUG:print('OBJLoader:load end', filename)
 	return mesh
 end
 
@@ -227,9 +203,7 @@ function OBJLoader:buildTris(vs, vts, vns)
 	-- TODO move the code here
 end
 function OBJLoader:loadMtl(filename, mesh, relpath)
-	if self.verbose then
-		print('OBJLoader:loadMtl begin', filename)
-	end
+--DEBUG:print('OBJLoader:loadMtl begin', filename)
 	-- TODO don't store mtlFilenames
 	mesh.mtlFilenames:insert(filename)
 
@@ -341,10 +315,8 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 				-- what if the caller isn't using GL?
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
-				group.image_Kd = Image(group.map_Kd)
-				if self.verbose then
-					print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
-				end
+				group.image_Kd = Image(group.map_Kd):rgb()
+print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
 				-- manually?  upon first draw?  both?
@@ -357,9 +329,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 		-- and don't forget textre map options
 		end
 	end
-	if self.verbose then
-		print('OBJLoader:loadMtl end', filename)
-	end
+--DEBUG:print('OBJLoader:loadMtl end', filename)
 end
 
 function OBJLoader:makeOrFindGroup(name, mesh, inUseMtl)
@@ -404,9 +374,7 @@ end
 
 -- only saves the .obj, not the .mtl
 function OBJLoader:save(filename, mesh)
-	if self.verbose then
-		print('OBJLoader:save begin', filename)
-	end
+--DEBUG:print('OBJLoader:save begin', filename)
 	local o = assert(path(filename):open'w')
 	-- TODO write smooth flag, groups, etc
 	if mesh.mtlFilenames then
@@ -415,9 +383,7 @@ function OBJLoader:save(filename, mesh)
 		end
 	end
 
-	if self.verbose then
-		print('rebuilding tri aux info')
-	end
+--DEBUG:print('rebuilding tri aux info')
 	mesh:rebuildTris()
 
 	-- keep track of all used indexes by tris
@@ -450,9 +416,7 @@ for i=0,mesh.vtxs.size-1 do
 	end
 end
 --]]	
-		if self.verbose then
-			print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
-		end
+--DEBUG:print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		for _,i in ipairs(uniquevs) do
 			local v = mesh.vtxs.v[i][field]
 			o:write(symbol, ' ',v.x,' ',v.y,' ',v.z,'\n')
@@ -533,10 +497,8 @@ end
 		writeFaceSoFar()
 	end
 	o:close()
-	if self.verbose then
-		print('tri indexes reduced from '..mesh.triIndexes.size..' to '..numTriIndexes)
-		print('OBJLoader:save end', filename)
-	end
+--DEBUG:print('tri indexes reduced from '..mesh.triIndexes.size..' to '..numTriIndexes)
+--DEBUG:print('OBJLoader:save end', filename)
 end
 
 -- TODO
@@ -546,9 +508,7 @@ end
 -- and if store, why not store the .obj filename too?
 -- or why not combine :saveMtl and :save like i do :loadMtl and :load
 function OBJLoader:saveMtl(filename, mesh)
-	if self.verbose then
-		print('OBJLoader:saveMtl begin', filename)
-	end
+--DEBUG:print('OBJLoader:saveMtl begin', filename)
 	local o = assert(path(filename):open'w')
 	for i,group in ipairs(mesh.groups) do
 		if group.name ~= '' then
@@ -569,9 +529,7 @@ function OBJLoader:saveMtl(filename, mesh)
 		end
 	end
 	o:close()
-	if self.verbose then
-		print('OBJLoader:saveMtl end', filename)
-	end
+--DEBUG:print('OBJLoader:saveMtl end', filename)
 end
 
 return OBJLoader

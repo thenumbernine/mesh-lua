@@ -2,7 +2,7 @@
 local Mesh = require 'mesh'
 local timer = require 'ext.timer'
 local quatf = require 'vec-ffi.quatf'
-local loader = require 'mesh.objloader'{verbose=true}
+local loader = require 'mesh.objloader'()
 
 local cube
 timer('loading', function()

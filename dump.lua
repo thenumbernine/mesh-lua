@@ -3,7 +3,7 @@ local timer = require 'ext.timer'
 
 local infn = ...
 assert(infn , "expected "..arg[0].." input-filename")
-local loader = require 'mesh.objloader'{verbose=true}
+local loader = require 'mesh.objloader'()
 
 local mesh
 timer('loading', function()
