@@ -57,6 +57,8 @@ function OBJLoader:load(filename)
 		mesh.groups:insert(group)
 	end
 
+	local foundVT = false
+	local foundVN = false
 	assert(path(filename):exists(), "failed to find WavefrontObj file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
@@ -65,20 +67,33 @@ function OBJLoader:load(filename)
 			assert.ge(#words, 2)
 			vs:insert(wordsToVec3(words))
 		elseif lineType == 'vt' then
+			foundVT = true
 			assert.ge(#words, 2)
 			vts:insert(wordsToVec3(words))
 		elseif lineType == 'vn' then
+			foundVN = true
 			assert.ge(#words, 2)
 			vns:insert(wordsToVec3(words))
 		-- TODO lineType == 'vp'
 		elseif lineType == 'f' then
 			local vis = table()
-			local foundVT = false
 			for _,vertexIndexString in ipairs(words) do
 				local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
 				local vertexIndices = vertexIndexStringParts:mapi(function(x) return tonumber(x) end)	-- may be nil
 				local vi, vti, vni = table.unpack(vertexIndices, 1, 3)
-				if vti then foundVT = true end
+				if vti then
+					-- vertex texcoord index specified for a face
+					foundVT = true
+				else
+					vti = vi
+				end
+				if vni then
+					-- vertex normal index specified for a face
+					foundVN = true
+				else
+					vni = vi
+				end
+				-- always insert for now, strip later
 				vis:insert{v=vi, vt=vti, vn=vni}
 			end
 			ensureGroup()
@@ -98,6 +113,20 @@ function OBJLoader:load(filename)
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
 			self:loadMtl(words:concat' ', mesh, relpath)
+		end
+	end
+	if not foundVT then
+		for _,t in ipairs(mesh.tris) do
+			for j=1,3 do
+				t[j].vt = nil
+			end
+		end
+	end
+	if not foundVN then
+		for _,t in ipairs(mesh.tris) do
+			for j=1,3 do
+				t[j].vn = nil
+			end
 		end
 	end
 
@@ -316,7 +345,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
 				group.image_Kd = Image(group.map_Kd):rgb()
-print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
+--DEBUG:print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
 				-- manually?  upon first draw?  both?
