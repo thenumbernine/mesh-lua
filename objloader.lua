@@ -344,7 +344,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 				-- what if the caller isn't using GL?
 				-- load images instead?
 				-- just store filename and let the caller deal with it?
-				group.image_Kd = Image(group.map_Kd):rgb()
+				group.image_Kd = Image(group.map_Kd):rgba()
 --DEBUG:print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
 				-- in which case ... when should the .obj class load the gl textures?
