@@ -112,6 +112,10 @@ function App:initGL(...)
 	sdl.SDL_SetWindowTitle(self.window, self.title..': '..curname)
 	local mesh = OBJLoader():load(self.curfn)
 
+	if cmdline.uvofs then
+		mesh:translateUV(table.unpack(cmdline.uvofs))
+	end
+
 	-- TODO how to request this?  dirty bits?
 	mesh:prepare()
 

@@ -502,6 +502,28 @@ function Mesh:recenter(newOrigin)
 	--self:calcCOMs()
 end
 
+function Mesh:scaleUV(...)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].texcoord
+		for j=0,2 do
+			v.s[j] = v.s[j] * select(j+1, ...)
+		end
+	end
+	self:refreshVtxs()
+	return self
+end
+
+function Mesh:translateUV(...)
+	for i=0,self.vtxs.size-1 do
+		local v = self.vtxs.v[i].texcoord
+		for j=0,2 do
+			v.s[j] = v.s[j] + select(j+1, ...)
+		end
+	end
+	self:refreshVtxs()
+	return self
+end
+
 function Mesh:refreshVtxs()
 	if self.loadedGL then
 		self.vtxBuf
