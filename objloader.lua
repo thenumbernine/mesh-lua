@@ -76,6 +76,10 @@ function OBJLoader:load(filename)
 			vns:insert(wordsToVec3(words))
 		-- TODO lineType == 'vp'
 		elseif lineType == 'f' then
+
+			-- TODO support for negative face indexes that you'd add the current vertex count onto so that vertexes and faces can be interspersed
+			--  https://www.fileformat.info/format/wavefrontobj/egff.htm
+
 			local vis = table()
 			for _,vertexIndexString in ipairs(words) do
 				local vertexIndexStringParts = string.split(vertexIndexString, '/')	-- may be empty string
@@ -175,12 +179,22 @@ function OBJLoader:load(filename)
 				local dst = vtxs:emplace_back()
 				dst.pos:set(assert(vs[tj.v]):unpack())
 				if tj.vt then
-					dst.texcoord:set(assert(vts[tj.vt]):unpack())
+					--dst.texcoord:set(assert.index(vts, tj.vt, 'failed to find vt'):unpack())
+					if vts[tj.vt] then
+						dst.texcoord:set(vts[tj.vt])
+					else
+						dst.texcoord:set(0,0,0)
+					end
 				else
 					dst.texcoord:set(0,0,0)
 				end
 				if tj.vn then
-					dst.normal:set(assert(vns[tj.vn]):unpack())
+					--dst.normal:set(assert.index(vns, tj.vn, 'failed to find vn'):unpack())
+					if vns[tj.vn] then
+						dst.normal:set(vns[tj.vn])
+					else
+						dst.normal:set(0,0,0)
+					end
 				else
 					dst.normal:set(0,0,0)
 				end
@@ -444,7 +458,7 @@ for i=0,mesh.vtxs.size-1 do
 		assert(indexToUniqueV[i])
 	end
 end
---]]	
+--]]
 --DEBUG:print(symbol..' reduced from '..mesh.vtxs.size..' to '..#uniquevs)
 		for _,i in ipairs(uniquevs) do
 			local v = mesh.vtxs.v[i][field]
@@ -484,7 +498,7 @@ end
 					io.stderr:write('this vtx should be flagged as used ... was it? ',tostring(usedVertexes[i]),'\n')
 					error'here'
 				end
-				-- TODO special case?  if there's only one unique vertex normal and it is 0,0,0 then just omit it? 
+				-- TODO special case?  if there's only one unique vertex normal and it is 0,0,0 then just omit it?
 				local vni = indexToUniqueVn[i]
 				if not vni then
 					io.stderr:write("failed to find unique normal for vertex ",i,'\n')
