@@ -105,6 +105,7 @@ function App:initGL(...)
 	--self.bgcolor = vec4f(.2, .3, .5, 1)
 	self.bgcolor = vec4f(0,0,0,1)
 
+	self.unwrapScale = 1
 
 	self.curfn = fn
 	local curname
@@ -1096,11 +1097,18 @@ function App:updateGUI()
 			ig.igEndMenu()
 		end
 		if ig.igBeginMenu'UV' then
+			ig.luatableInputFloat('unwrap scale', self, 'unwrapScale')
 			ig.luatableInputFloat('unwrap angle threshold', mesh, 'angleThresholdInDeg')
 
 			if ig.igButton'unwrap uvs' then
 				timer('unwrapping uvs', function()
 					unwrapUVs(mesh)
+					local unwrapScale = tonumber(self.unwrapScale)
+					if unwrapScale then
+						for i=0,#mesh.vtxs-1 do
+							mesh.vtxs.v[i].texcoord = mesh.vtxs.v[i].texcoord * unwrapScale
+						end
+					end
 				end)
 				if mesh.loadedGL then
 					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * #mesh.vtxs, mesh.vtxs.v)
