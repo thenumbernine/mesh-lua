@@ -22,16 +22,16 @@ for pm=0,1 do
 		v.texcoord:set(
 			-- top gets [0,1/16]^2
 			-- bottom gets [0,1/16] x [2/16,3/16]
-			tw * (math.cos(th) * 2 - 1),
-			(1-pm) * 2 * th + th * (math.sin(th) * 2 - 1),
+			tw * (math.cos(th) * .5 + .5),
+			(1-pm) * 2 * th + th * (math.sin(th) * .5 + .5),
 			0
 		)
 		v.normal:set(0, 0, pm * 2 - 1)
 		if i >= 2 then
 			if pm == 0 then
-				m.triIndexes:push_back(vbase + i)
-				m.triIndexes:push_back(vbase + i-1)
-				m.triIndexes:push_back(vbase + 0)
+				m.triIndexes:push_back(vbase + r-1 - 0)
+				m.triIndexes:push_back(vbase + r-1 - (i-1))
+				m.triIndexes:push_back(vbase + r-1 - (i))
 			else
 				m.triIndexes:push_back(vbase + 0)
 				m.triIndexes:push_back(vbase + i-1)
@@ -48,7 +48,7 @@ for i=0,r do
 	for pm=0,1 do
 		local v = m.vtxs:emplace_back()
 		v.pos:set(math.cos(th), math.sin(th), pm * 2 - 1)
-		v.texcoord:set(i/r, pm, 0)
+		v.texcoord:set(tw * i/r, th + th * pm, 0)
 		v.normal:set(math.cos(th), math.sin(th), 0)
 	end
 	if i < r then
