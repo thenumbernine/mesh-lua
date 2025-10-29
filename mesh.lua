@@ -1,3 +1,4 @@
+require 'ext.gc'	-- for ffi gc
 local ffi = require 'ffi'
 local class = require 'ext.class'
 local assert = require 'ext.assert'
@@ -3010,14 +3011,16 @@ function Mesh:unloadGL()
 	self.loadedGL = nil
 
 	-- when loading/unloading/calling glGenBuffers too many times (even with subsequent glDeleteBuffers) I'm getting sporatic GL_INVALID_OPERATIONS upon glGenBuffers ... even if it's just the 10th or so call.  wtf.
-	if self.vao then self.vao:release() end
-	if self.vtxBuf then self.vtxBuf:release() end
+	if self.vao then self.vao:delete() end
+	if self.vtxBuf then self.vtxBuf:delete() end
 
 	self.vao = nil
 	self.vtxBuf = nil
 	self.indexBuf = nil
 	self.vtxAttrs = nil
 end
+
+Mesh.__gc = Mesh.unloadGL
 
 function Mesh:draw(args)
 	local gl = require 'gl'
