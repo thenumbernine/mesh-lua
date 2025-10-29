@@ -1,5 +1,5 @@
 #!/usr/bin/env rua
--- create a cube, writes it to fn
+-- create a [-1,1] cube, writes it to fn
 local vec3f = require 'vec-ffi.vec3f'
 local Mesh = require 'mesh'
 local fn = ...
@@ -15,7 +15,7 @@ for side=0,2 do
 		local n = vec3f()
 		n.s[side] = pm * 2 - 1
 		local basevtx = #m.vtxs
-		for _,triIndex in ipairs(pm == 0 and tris or oppotris) do
+		for _,triIndex in ipairs(pm == 1 and tris or oppotris) do
 			m.triIndexes:push_back(basevtx + triIndex)
 		end	
 		for _,uv in ipairs(uvs) do
@@ -24,10 +24,12 @@ for side=0,2 do
 				| (uv[2] << side3)
 			local v = m.vtxs:emplace_back()
 			v.pos:set(
-				corner & 1,
-				(corner >> 1) & 1,
-				(corner >> 2) & 1
+				(corner & 1) * 2 - 1,
+				((corner >> 1) & 1) * 2 - 1,
+				((corner >> 2) & 1) * 2 - 1
 			)
+			-- texcoords?
+			-- request / designate per side?
 			v.texcoord:set(uv[1], uv[2], 0)
 			v.normal:set(n)
 		end

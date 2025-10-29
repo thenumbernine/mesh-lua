@@ -1,0 +1,71 @@
+#!/usr/bin/env rua
+-- create a cylinder with 'r' sides, writes it to fn
+local vec3f = require 'vec-ffi.vec3f'
+local Mesh = require 'mesh'
+local fn, r = ...
+assert(fn, "expected filename")
+r = tonumber(r) or 8
+local uvs = {{0,0}, {1,0}, {1,1}, {0,1}}
+local tris = {0, 1, 2, 2, 3, 0}
+local oppotris = table(tris):reverse()
+local m = Mesh()
+local tw, th = 1/16, 1/16
+-- top and bottom
+for pm=0,1 do
+	local vbase = #m.vtxs
+	for i=0,r-1 do
+		local th = 2 * math.pi * i / r
+		local v = m.vtxs:emplace_back()
+		v.pos:set(math.cos(th), math.sin(th), pm * 2 - 1)
+		-- do we want top and bottom same texcoords or different?
+		-- probably different
+		v.texcoord:set(
+			-- top gets [0,1/16]^2
+			-- bottom gets [0,1/16] x [2/16,3/16]
+			tw * (math.cos(th) * 2 - 1),
+			(1-pm) * 2 * th + th * (math.sin(th) * 2 - 1),
+			0
+		)
+		v.normal:set(0, 0, pm * 2 - 1)
+		if i >= 2 then
+			if pm == 0 then
+				m.triIndexes:push_back(vbase + i)
+				m.triIndexes:push_back(vbase + i-1)
+				m.triIndexes:push_back(vbase + 0)
+			else
+				m.triIndexes:push_back(vbase + 0)
+				m.triIndexes:push_back(vbase + i-1)
+				m.triIndexes:push_back(vbase + i)
+			end
+		end
+	end
+end
+-- sides
+-- new vtxs for different texcoords?
+local vbase = #m.vtxs
+for i=0,r do
+	local th = 2 * math.pi * i / r
+	for pm=0,1 do
+		local v = m.vtxs:emplace_back()
+		v.pos:set(math.cos(th), math.sin(th), pm * 2 - 1)
+		v.texcoord:set(i/r, pm, 0)
+		v.normal:set(math.cos(th), math.sin(th), 0)
+	end
+	if i < r then
+		m.triIndexes:push_back(vbase + 2 * i + 1)
+		m.triIndexes:push_back(vbase + 2 * i)
+		m.triIndexes:push_back(vbase + 2 * (i + 1) + 1)
+		m.triIndexes:push_back(vbase + 2 * (i + 1) + 1)
+		m.triIndexes:push_back(vbase + 2 * i)
+		m.triIndexes:push_back(vbase + 2 * (i + 1))
+	end
+end
+m:rebuildTris()
+m.groups:insert{
+	name = 'm',
+	triFirstIndex = 0,
+	triCount = #m.tris,
+}
+m:assertGroups()
+require 'mesh.objloader'():save(fn, m)
+
