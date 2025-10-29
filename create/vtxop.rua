@@ -10,6 +10,8 @@ local infile, outfile, vtxcode = ...
 assert(infile and outfile and vtxcode, [[expected "infile" "outfile" "vertex code"]])
 
 local e = {}	-- _ENV but luajit plz ...
+e.math = math
+e.table = table
 local vtxfunc = load(vtxcode, nil, 't', e)
 
 local m = loader:load(infile)
