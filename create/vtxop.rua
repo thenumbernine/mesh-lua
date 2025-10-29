@@ -14,11 +14,14 @@ local vtxfunc = load(vtxcode, nil, 't', e)
 
 local m = loader:load(infile)
 for i=0,#m.vtxs-1 do
-	local vtx = m.vtxs + v
+	local vtx = m.vtxs.v + i
 	e.x, e.y, e.z = vtx.pos:unpack()
 	e.u, e.v, e.w = vtx.texcoord:unpack()
-	e.nx, e.ny, e.nz = vtx.texcoord:unpack()
-	f()
+	e.nx, e.ny, e.nz = vtx.normal:unpack()
+	vtxfunc()
+	vtx.pos:set(e.x, e.y, e.z)
+	vtx.texcoord:set(e.u, e.v, e.w)
+	vtx.normal:set(e.nx, e.ny, e.nz)
 end
 
 -- rebuild normals?
