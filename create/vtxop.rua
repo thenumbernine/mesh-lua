@@ -1,0 +1,25 @@
+#!/usr/bin/env rua
+-- perform some transform operations
+-- args: ./op.lua "infile" "outfile" "vertex-modifying code" ["mesh-modifying code"] 
+-- maybe to the mesh-modiyfing, I was thikning final pass like renormalize normals, maybe I'll do that anyways, idk.
+-- maybe somethign for tris or nah?
+local loader = require 'mesh.objloader'()
+local infile, outfile, vtxcode = ...
+-- TODO would be nice if objloader could read/write to stdin ...
+-- ofc that doesn't work well with the mesh files being separate, meh.
+assert(infile and outfile and vtxcode, [[expected "infile" "outfile" "vertex code"]])
+
+local e = {}	-- _ENV but luajit plz ...
+local vtxfunc = load(vtxcode, nil, 't', e)
+
+local m = loader:load(infile)
+for i=0,#m.vtxs-1 do
+	local vtx = m.vtxs + v
+	e.x, e.y, e.z = vtx.pos:unpack()
+	e.u, e.v, e.w = vtx.texcoord:unpack()
+	e.nx, e.ny, e.nz = vtx.texcoord:unpack()
+	f()
+end
+
+-- rebuild normals?
+loader:save(outfile, m)
