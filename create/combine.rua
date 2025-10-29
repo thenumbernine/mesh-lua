@@ -1,4 +1,5 @@
 #!/usr/bin/env rua
+local Mesh = require 'mesh'
 local loader = require 'mesh.objloader'()
 local infiles = table{...}
 local outfile = infiles:remove(1)
