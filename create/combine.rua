@@ -3,5 +3,5 @@ local loader = require 'mesh.objloader'()
 local infiles = table{...}
 local outfile = infiles:remove(1)
 assert.gt(#infiles, 0, "expected outfile, one or more infiles")
-local ms = infiles:mapi(|f| ((loader:load(f)))
-loader:save(outfile, Mesh():combine(ms:unpack())
+local ms = infiles:mapi(|f| ((loader:load(f))))
+loader:save(outfile, (Mesh():combine(ms:unpack())))
