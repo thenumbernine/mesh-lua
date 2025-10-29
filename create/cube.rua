@@ -36,6 +36,7 @@ for side=0,2 do
 	end
 end
 m:rebuildTris()
+m.mtlFilenames = table{'hue.mtl'}
 m.groups:insert{
 	name = 'm',
 	triFirstIndex = 0,
