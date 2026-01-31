@@ -41,7 +41,6 @@ deps = {
 	"glapp",
 	"image",
 	"imgui",
-	"matrix",
 	"sdl",
 	"vec-ffi",
 }

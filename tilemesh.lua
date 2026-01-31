@@ -13,13 +13,14 @@ local math = require 'ext.math'
 local timer = require 'ext.timer'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
+local vec4f = require 'vec-ffi.vec4f'
+local vec2x2f = require 'vec-ffi.vec2x2f'
 local box2f = require 'vec-ffi.box2f'
 local plane3f = require 'vec-ffi.plane3f'
 local box3f = require 'vec-ffi.box3f'
 local quatf = require 'vec-ffi.quatf'
 local json = require 'dkjson'
 local vector = require 'ffi.cpp.vector-lua'
-local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
@@ -38,7 +39,6 @@ local function scaleVec(a, b)
 end
 
 -- a and b are tables of columns of vec3f's
--- TODO matrix_ffi
 local function matrixMul3x3(a, b)
 	-- c_ij = a_ik b_kj
 	local c = range(3):mapi(function() return vec3f() end)
@@ -55,12 +55,7 @@ local function matrixMul3x3(a, b)
 end
 
 local function scaleMat4x4(s)
-	return matrix_ffi({
-		{s.x,0,0,0},
-		{0,s.y,0,0},
-		{0,0,s.z,0},
-		{0,0,0,1},
-	}, 'float')
+	return vec4x4s():setScale(s.x, s.y, s.z)
 end
 
 --[[
@@ -227,7 +222,7 @@ local function tileMesh(mesh, placeFn)
 		local stack = surfInst.stacked
 		-- how much to randomize placement
 		-- TODO jitterOrientation
-		local jitter = matrix_ffi(surfInst.jitterUV)
+		local jitter = vec2f(surfInst.jitterUV)
 
 		local allPossibleSurfBBox = box3f.empty()
 		for _,geomInst in ipairs(surfInst.geometryArray) do
@@ -243,15 +238,15 @@ local function tileMesh(mesh, placeFn)
 		-- columns are [v-ofs | u-ofs] in the placement lattice
 		-- hmm the config file says 'u offset' is the short offset and 'v offset' is long for bricks
 		-- but right now i have 'u offset' go left and 'v offset' go down
-		local placementCoordXForm = matrix_ffi({
+		local placementCoordXForm = vec2x2f{
 			{offsetU, stack and 0 or offsetU/2},
 			{0, offsetV},
-		}, 'float')
+		}
 
 		local placementCoordXFormInv = placementCoordXForm:inv()
 --DEBUG:print('placementXForm', placementCoordXForm)
 --DEBUG:print('placementXFormInv', placementCoordXFormInv)
---DEBUG:assert.lt((placementCoordXForm * placementCoordXFormInv - matrix_ffi({{1,0},{0,1}}, 'float')):normSq(), 1e-7)
+--DEBUG:assert.lt((placementCoordXForm * placementCoordXFormInv - vec2x2f():setIdent()):normSq(), 1e-7)
 
 		for groupIndex,tg in ipairs(mesh.triGroups) do
 			local placementsForThisGroup = {}
@@ -281,9 +276,9 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 					local c = allPossibleSurfBBox:corner(corner)
 					-- convert to texcoord space
 					local ctc = matrix3x3To4x4(spatialConvention)
-						* matrix_ffi({c.s[0], c.s[1], c.s[2], 1}, 'float')
+						* vec4f(c.s[0], c.s[1], c.s[2], 1)
 					-- convert to texcoord space
-					return matrix_ffi({ctc[1], ctc[2]}, 'float')
+					return vec2f(ctc[1], ctc[2])
 				end)
 				local cornersPlacement = cornersTC:mapi(function(ctc)
 					-- convert to placement space
@@ -310,7 +305,7 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						dvpos:dot(t.basis[1]),
 						dvpos:dot(t.basis[2])
 					) + uvorigin2D
-					local placementCoord = placementCoordXFormInv * matrix_ffi({tc.x, tc.y}, 'float')
+					local placementCoord = placementCoordXFormInv * tc
 
 					--[[ stretch in placement space to the placement coord
 					placementBBox:stretch(vec2f(placementCoord:unpack()))
@@ -335,10 +330,10 @@ print('...with '..#tg.borderEdges..' clip planes '..tg.borderEdges:mapi(function
 						-- testing bbox for inside will cause double-occurrences in the lattice at edges on planar neighboring tris.  this is bad.
 						-- but adding jitter before the test will cause some points to go outside and fail the test.  this is bad too.
 						-- so I have to test without jitter, then later introduce jitter.
-						local jitterUV = placementCoordXForm * matrix_ffi({
-							pu + (math.random() * 2 - 1) * jitter[1],
-							pv + (math.random() * 2 - 1) * jitter[2],
-						}, 'float')
+						local jitterUV = placementCoordXForm * vec2f(
+							pu + (math.random() * 2 - 1) * jitter.x,
+							pv + (math.random() * 2 - 1) * jitter.y
+						)
 
 						--[[
 						texcoord = uvbasis^-1 * (placePos - uvorigin3D) + uvorigin2D
@@ -571,12 +566,12 @@ print('#tilePlaces total', #mesh.tilePlaces)
 				dstv.texcoord = srcv.texcoord
 				-- scale, rotate, normalize the normals
 				local n = srcv.normal
-				local n4 = place.xform * matrix_ffi({n.x, n.y, n.z, 0}, 'float')
+				local n4 = place.xform * vec4f(n.x, n.y, n.z, 0)
 				dstv.normal = vec3f(n4.ptr[0], n4.ptr[1], n4.ptr[2])
 				-- scale, rotate, translate the positions
 				-- TODO switch to y-up, because someone was a n00b when learning OpenGL a long time ago, and so now we all have to suffer.
 				local p = srcv.pos
-				local p4 = place.xform * matrix_ffi({p.x, p.y, p.z, 1}, 'float')
+				local p4 = place.xform * vec4f(p.x, p.y, p.z, 1)
 				dstv.pos = vec3f(p4.ptr[0], p4.ptr[1], p4.ptr[2])
 			end
 			local lastVtx = nvtxs.size
@@ -618,7 +613,6 @@ print('ntris.size', ntris.size)
 			instances = mesh.tilePlaces:mapi(function(p)
 				return {
 					filename = assert.index(p, 'filename'),
-					-- matrix_ffi is stored column-major
 					transform = range(16):mapi(function(i)
 						return p.xform.ptr[i-1]
 					end),
@@ -667,18 +661,13 @@ local function drawTileMeshPlaces(mesh)
 	gl.glColor3f(1,1,0)
 	gl.glBegin(gl.GL_POINTS)
 	for _,p in ipairs(mesh.tilePlaces) do
-		-- matrix_ffi stores col-major
-		gl.glVertex3f(
-			p.xform.ptr[12],
-			p.xform.ptr[13],
-			p.xform.ptr[14])
+		gl.glVertex3fv(p.xform.w.s)
 	end
 	gl.glEnd()
 	gl.glPointSize(1)
 	gl.glLineWidth(3)
 	gl.glBegin(gl.GL_LINES)
 	for _,p in ipairs(mesh.tilePlaces) do
-		-- matrix_ffi stores col-major
 		local ex = vec3f():map(function(x,i) return p.xform.ptr[i] end)
 		local ey = vec3f():map(function(x,i) return p.xform.ptr[4+i] end)
 		local ez = vec3f():map(function(x,i) return p.xform.ptr[8+i] end)

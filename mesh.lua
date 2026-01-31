@@ -9,9 +9,12 @@ local timer = require 'ext.timer'
 local vector = require 'ffi.cpp.vector-lua'
 local vec2f = require 'vec-ffi.vec2f'
 local vec3f = require 'vec-ffi.vec3f'
+local vec4f = require 'vec-ffi.vec4f'
+local vec2x2f = require 'vec-ffi.vec2x2f'
+local vec3x3f = require 'vec-ffi.vec3x3f'
+local vec4x4f = require 'vec-ffi.vec4x4f'
 local box3f = require 'vec-ffi.box3f'
 local plane3f = require 'vec-ffi.plane3f'
-local matrix_ffi = require 'matrix.ffi'
 
 ffi.cdef[[
 typedef struct MeshVertex_t {
@@ -480,9 +483,9 @@ end
 function Mesh:transform(xform)
 	for i=0,self.vtxs.size-1 do
 		local v = self.vtxs.v[i]
-		local npos = xform * matrix_ffi({v.pos.x, v.pos.y, v.pos.z, 1}, 'float')
+		local npos = xform * vec4f(v.pos.x, v.pos.y, v.pos.z, 1)
 		v.pos:set(npos:unpack())
-		local nnormal = xform * matrix_ffi({v.normal.x, v.normal.y, v.normal.z, 0}, 'float')
+		local nnormal = xform * vec4f(v.normal.x, v.normal.y, v.normal.z, 0)
 		v.normal = vec3f():set(nnormal:unpack()):normalize()
 	end
 	self:refreshVtxs()
@@ -895,13 +898,13 @@ function Mesh:generateTriBasis()
 			local dtc1 = vb.texcoord - va.texcoord	-- only considering 2D of it
 			local dtc2 = vc.texcoord - va.texcoord
 			-- dtc is matrix with columns of dtc[i]
-			local dtc = matrix_ffi({
+			local dtc = vec2x2f{
 				{dtc1.x, dtc2.x},
 				{dtc1.y, dtc2.y},
-			}, 'float')
+			}
 			-- now 2x2 invert
 			local dtcInv = dtc:inv()
-			--assert((dtc * dtcInv - matrix_ffi({{1,0},{0,1}}, 'float')):normSq() < 1e-7)
+			--assert((dtc * dtcInv - vec2x2f():setIdent()):normSq() < 1e-7)
 
 			-- get the cols
 			local dtcInv1 = vec2f(dtcInv[1][1], dtcInv[2][1])
@@ -1242,11 +1245,11 @@ function Mesh:delaunayTriangulate()
 			a = a - d
 			b = b - d
 			c = c - d
-			local cond = matrix_ffi({
+			local cond = vec3x3f{
 				{a.x, a.y, a:normSq()},
 				{b.x, b.y, b:normSq()},
 				{c.x, c.y, c:normSq()},
-			}, 'float'):det()
+			}:det()
 			if cond <= 0 then
 				flipped = true
 				-- flip ...

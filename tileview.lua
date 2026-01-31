@@ -5,10 +5,10 @@ local assert = require 'ext.assert'
 local table = require 'ext.table'
 local tolua = require 'ext.tolua'
 local json = require 'dkjson'
+local vec4x4f = require 'vec-ffi.vec4x4f'
 local gl = require 'gl'
 local glCall = require 'gl.call'
 local ig = require 'imgui'
-local matrix_ffi = require 'matrix.ffi'
 local Mesh = require 'mesh'
 local OBJLoader = require 'mesh.objloader'
 
@@ -42,9 +42,19 @@ end
 
 for _,inst in ipairs(d.instances) do
 	inst.mesh = assert.index(meshesForFns, inst.filename, "failed to find file")
+	--[[ with matrix.ffi
 	inst.transformMat = matrix_ffi({4,4}, 'float'):lambda(function(i,j)
-		return inst.transform[1 + (i-1) + 4 * (j-1)]
+		inst.transform[1 + (i-1) + 4 * (j-1)]
 	end)
+	--]]
+	-- [[ with vec4x4f
+	inst.transformMat = vec4x4f()
+	for i=1,4 do
+		for j=1,4 do
+			inst.transformMat.ptr[j + 4 * i] = inst.transform[1 + (i-1) + 4 * (j-1)]
+		end
+	end
+	--]]
 end
 
 function App:initGL(...)
@@ -60,9 +70,9 @@ function App:initGL(...)
 	gl.glEnable(gl.GL_CULL_FACE)
 end
 
-App.mvMat = matrix_ffi({4,4}, 'float'):zeros()
-App.instMVMat = matrix_ffi({4,4}, 'float'):zeros()
-App.projMat = matrix_ffi({4,4}, 'float'):zeros()
+App.mvMat = vec4x4f()
+App.instMVMat = vec4x4f()
+App.projMat = vec4x4f()
 
 App.showPoints = false
 App.showPointSize = 3
