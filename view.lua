@@ -891,7 +891,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 		end
 		-- update in the cpu buffer if it's been generated
 		if mesh.loadedGL then
-			mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof'vec3f_t', vtx.pos.s)
+			mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof(vec3f), vtx.pos.s)
 		end
 	end
 	if self.editMode == editModeForName.rotate then

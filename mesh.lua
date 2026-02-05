@@ -18,13 +18,13 @@ local plane3f = require 'vec-ffi.plane3f'
 
 ffi.cdef[[
 typedef struct MeshVertex_t {
-	vec3f_t pos;
-	vec3f_t texcoord;
-	vec3f_t normal;
+	vec3f pos;
+	vec3f texcoord;
+	vec3f normal;
 
 	// per-triangle stats (duplicated 3x per-vertex)
 	// TODO move this to a separate buffer
-	vec3f_t com;		//com of tri containing this vertex.  only good for un-indexed drawing.
+	vec3f com;		//com of tri containing this vertex.  only good for un-indexed drawing.
 } MeshVertex_t;
 ]]
 
