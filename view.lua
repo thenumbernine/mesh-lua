@@ -685,8 +685,6 @@ function App:update()
 			end
 		end
 	end
-
-	require 'gl.report''here'
 end
 
 function App:drawMesh(mesh)

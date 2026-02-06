@@ -2944,7 +2944,6 @@ function Mesh:loadGL(shader)
 	self.loadedGL = true
 
 	local gl = require 'gl'
-	local glreport = require 'gl.report'
 	local GLTex2D = require 'gl.tex2d'
 	local GLArrayBuffer = require 'gl.arraybuffer'
 	local GLAttribute = require 'gl.attribute'
@@ -2972,7 +2971,6 @@ function Mesh:loadGL(shader)
 				count = self.vtxs.size,
 				usage = gl.GL_STATIC_DRAW,
 			}:unbind()
-glreport'here'
 
 			self.vtxAttrs = table{
 				{name='pos', dim=3},
@@ -2990,14 +2988,12 @@ glreport'here'
 				}, info.name
 			end):setmetatable(nil)
 			shader:use()
-glreport'here'
 			self.vao = GLVertexArray{
 				program = shader,
 				attrs = self.vtxAttrs,
 			}
 			shader:setAttrs(self.vtxAttrs)
 			shader:useNone()
-glreport'here'
 		end
 		if not self.indexBuf then
 			local GLElementArrayBuffer = require 'gl.elementarraybuffer'
@@ -3142,7 +3138,6 @@ function Mesh:draw(args)
 		end
 		--]]
 	end
-	require 'gl.report''here'
 end
 
 -- make sure my edges match my faces
