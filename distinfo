@@ -36,11 +36,12 @@ files = {
 }
 deps = {
 	"ext",
-	"ffi",
 	"gl",
 	"glapp",
 	"image",
 	"imgui",
+	"matrix",
 	"sdl",
+	"stl",
 	"vec-ffi",
 }
