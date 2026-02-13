@@ -35,9 +35,9 @@ files = {
 	"view.lua",
 }
 deps = {
+	"app3d",
 	"ext",
 	"gl",
-	"glapp",
 	"image",
 	"imgui",
 	"matrix",

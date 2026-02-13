@@ -222,7 +222,7 @@ end
 
 	self.shader = Mesh:makeShader()
 
-	self.basisView = require 'glapp.view'{
+	self.basisView = require 'app3d.view'{
 		pos = {0, 0, 2},
 	}
 
