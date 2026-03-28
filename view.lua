@@ -32,6 +32,10 @@ if not fn then error("can't figure out what your file is from the cmdline") end
 local App = require 'imgui.appwithorbit'()
 
 App.title = 'WavefrontOBJ preview'
+App.sdlInitFlags = bit.bor(
+	App.sdlInitFlags,
+	sdl.SDL_INIT_SENSOR
+)
 
 local editModeNames = table{
 	'rotate',
@@ -67,6 +71,29 @@ end
 
 function App:initGL(...)
 	App.super.initGL(self, ...)
+
+	-- [[ gyroscope sensor init
+	do
+		local count = ffi.new'int[1]'
+		local sensors = sdl.SDL_GetSensors(count)
+		if sensors ~= nil then
+			for i=0,tonumber(count[0])-1 do
+				local sensorType = sdl.SDL_GetSensorTypeForID(sensors[i])
+				local sensorAndroidType = sdl.SDL_GetSensorNonPortableTypeForID(sensors[i])
+				local sensorName = ffi.string(sdl.SDL_GetSensorNameForID(sensors[i]))
+print('found sensor id='..tonumber(sensors[i])..' type='..tonumber(sensorType)..' androidType='..tonumber(sensorAndroidType)..' name='..sensorName)
+				if sensorName == 'ORIENTATION' then
+print'opening orientation sensor'
+					self.orientationSensor = sdl.SDL_OpenSensor(sensors[i])
+				else
+					sdl.SDL_OpenSensor(sensors[i])
+				end
+			end
+			sdl.SDL_free(sensors)
+		end
+print('self.sdlGyro', self.sdlGyro)
+	end
+	--]]
 
 	self.view.znear = .1
 	self.view.zfar = 40000
@@ -283,6 +310,12 @@ void main() {
 	}
 
 	mesh:loadGL(self.shader)
+end
+
+-- only works if done *before* SDL_Init (which is at the start of SDLApp:run() ...
+function App:run(...)
+	sdl.SDL_SetHint('SDL_ORIENTATIONS', 'LandscapeLeft')
+	App.super.run(self, ...)
 end
 
 function App:update()
@@ -1218,6 +1251,23 @@ function App:updateGUI()
 		local prec = 1e-4
 		ig.igText(''..self.bestTriPt:map(function(x) return math.round(x/prec)*prec end))
 		ig.igEndTooltip()
+	end
+end
+
+function App:event(e)
+	App.super.event(self, e)
+
+	if e[0].type == sdl.SDL_EVENT_SENSOR_UPDATE then
+		-- hmm, orientation always 0's ... did I forget permission or something?
+		print(
+			'sensor',
+			e[0].sensor.which,
+			e[0].sensor.data[0],
+			e[0].sensor.data[1],
+			e[0].sensor.data[2],
+			e[0].sensor.data[3],
+			e[0].sensor.data[4],
+			e[0].sensor.data[5])
 	end
 end
 
