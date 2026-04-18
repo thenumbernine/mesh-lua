@@ -25,6 +25,10 @@ local drawTileMeshPlaces = require 'mesh.tilemesh'.drawTileMeshPlaces
 local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
 local translateMat4x4 = require 'mesh.common'.translateMat4x4
 
+
+local int_1 = ffi.typeof'int[1]'
+
+
 local fn = cmdline.file
 if not fn then fn = ... end
 if not fn then error("can't figure out what your file is from the cmdline") end
@@ -74,7 +78,7 @@ function App:initGL(...)
 
 	-- [[ gyroscope sensor init
 	do
-		local count = ffi.new'int[1]'
+		local count = int_1()
 		local sensors = sdl.SDL_GetSensors(count)
 		if sensors ~= nil then
 			for i=0,tonumber(count[0])-1 do
@@ -922,7 +926,7 @@ function App:mouseDownEvent(dx, dy, shiftDown, guiDown, altDown)
 		end
 		-- update in the cpu buffer if it's been generated
 		if mesh.loadedGL then
-			mesh.vtxBuf:updateData(ffi.sizeof'MeshVertex_t' * i + ffi.offsetof('MeshVertex_t', 'pos'), ffi.sizeof(vec3f), vtx.pos.s)
+			mesh.vtxBuf:updateData(ffi.sizeof(Mesh.MeshVertex) * i + ffi.offsetof(Mesh.MeshVertex, 'pos'), ffi.sizeof(vec3f), vtx.pos.s)
 		end
 	end
 	if self.editMode == editModeForName.rotate then
@@ -1142,7 +1146,7 @@ function App:updateGUI()
 					end
 				end)
 				if mesh.loadedGL then
-					mesh.vtxBuf:updateData(0, ffi.sizeof'MeshVertex_t' * #mesh.vtxs, mesh.vtxs.v)
+					mesh.vtxBuf:updateData(0, mesh.vtxs:getNumBytes(), mesh.vtxs.v)
 				end
 			end
 

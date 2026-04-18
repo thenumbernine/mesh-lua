@@ -1,4 +1,5 @@
 --  https://en.wikipedia.org/wiki/Wavefront_.obj_file
+local ffi = require 'ffi'
 local path = require 'ext.path'
 local class = require 'ext.class'
 local table = require 'ext.table'
@@ -10,6 +11,10 @@ local vec3f = require 'vec-ffi.vec3f'
 local vec4f = require 'vec-ffi.vec4f'
 local Image = require 'image'
 local Mesh = require 'mesh'
+
+
+local int32_t = ffi.typeof'int32_t'
+
 
 local function wordsToVec3(w)
 	return vec3f(
@@ -148,8 +153,8 @@ function OBJLoader:load(filename)
 	self:buildTris(vs, vts, vns)
 
 --DEBUG:print'allocating vertex and index buffers...'
-	local vtxs = vector('MeshVertex_t', 3*#mesh.tris)	-- vertex structure
-	local triIndexes = vector('int32_t', 3*#mesh.tris)		-- triangle indexes
+	local vtxs = vector(Mesh.MeshVertex, 3*#mesh.tris)	-- vertex structure
+	local triIndexes = vector(int32_t, 3*#mesh.tris)		-- triangle indexes
 	-- hmm init capacity arg?
 	vtxs:resize(0)
 	triIndexes:resize(0)

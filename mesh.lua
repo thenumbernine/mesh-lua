@@ -16,8 +16,14 @@ local vec4x4f = require 'vec-ffi.vec4x4f'
 local box3f = require 'vec-ffi.box3f'
 local plane3f = require 'vec-ffi.plane3f'
 
-ffi.cdef[[
-typedef struct MeshVertex_t {
+
+local int32_t = ffi.typeof'int32_t'
+local uint32_t = ffi.typeof'uint32_t'
+local void_p = ffi.typeof'void*'
+
+
+local MeshVertexCode = [[
+struct {
 	vec3f pos;
 	vec3f texcoord;
 	vec3f normal;
@@ -25,10 +31,14 @@ typedef struct MeshVertex_t {
 	// per-triangle stats (duplicated 3x per-vertex)
 	// TODO move this to a separate buffer
 	vec3f com;		//com of tri containing this vertex.  only good for un-indexed drawing.
-} MeshVertex_t;
+}
 ]]
+local MeshVertex = ffi.typeof(MeshVertexCode)
 
 local Mesh = class()
+
+Mesh.MeshVertex = MeshVertex
+Mesh.MeshVertexCode = MeshVertexCode
 
 -- the threshold for determining if two neighboring tris are in the same plane or not.
 -- using a value as high as 5 degrees lets uv-unwrapping wrap around curves
@@ -274,8 +284,8 @@ function Mesh:init(o)
 	-- TODO replace my lua-ization of cpp-vectors
 	-- ...with a cdef-ization of lua-tables
 	-- because everyone knows the stl api is way too longwinded compared to equiv commands in other languages/apis, and is only that way to accomodate functional programming and templates.
-	self.vtxs = vector'MeshVertex_t'
-	self.triIndexes = vector'int32_t'
+	self.vtxs = vector(MeshVertex)
+	self.triIndexes = vector(int32_t)
 
 	-- array of Triangle's
 	self.tris = table()
@@ -376,7 +386,7 @@ function Mesh:combine(...)
 
 		local firstVtx = self.vtxs.size
 		self.vtxs:resize(self.vtxs.size + o.vtxs.size)
-		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffi.sizeof(o.vtxs.type) * o.vtxs.size)
+		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffio.vtxs:getNumBytes())
 
 		local firstIndex = self.triIndexes.size
 		self.triIndexes:resize(self.triIndexes.size + o.triIndexes.size)
@@ -499,7 +509,7 @@ function Mesh:recenter(newOrigin)
 	if self.vtxBuf then
 		self.vtxBuf
 			:bind()
-			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:updateData(0, self.vtxs:getNumBytes(), self.vtxs.v)
 			:unbind()
 	end
 	-- recalculate coms?  up to you...
@@ -532,7 +542,7 @@ function Mesh:refreshVtxs()
 	if self.loadedGL then
 		self.vtxBuf
 			:bind()
-			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:updateData(0, self.vtxs:getNumBytes(), self.vtxs.v)
 			:unbind()
 	end
 	self.bbox = nil
@@ -716,8 +726,8 @@ function Mesh:splitVtxsTouchingEdges()
 					local iv1 = tp[(j+1)%3]
 					local iv2 = tp[(j+2)%3]
 --DEBUG:dprint('EDGE', iv0, iv1)
-					local v0 = ffi.new('MeshVertex_t', self.vtxs.v[iv0])
-					local v1 = ffi.new('MeshVertex_t', self.vtxs.v[iv1])
+					local v0 = MeshVertex(self.vtxs.v[iv0])
+					local v1 = MeshVertex(self.vtxs.v[iv1])
 					local edgeDir = v1.pos - v0.pos
 					local edgePlanePos = .5 * (v1.pos + v0.pos)
 					local edgeDirLen = edgeDir:norm()
@@ -730,7 +740,7 @@ function Mesh:splitVtxsTouchingEdges()
 --DEBUG:dprint('... and edge interval '..s0..' to '..s1)
 						assert.ge(s1, s0) -- because edgeDir points from v0 to v1
 						for i=0,self.vtxs.size-1 do
-							local vi = ffi.new('MeshVertex_t', self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
+							local vi = MeshVertex(self.vtxs.v[i])	-- copy so resizing the vec doesn't invalidate this
 							if iv0 ~= i and iv1 ~= i and iv2 ~= i then
 								local edgeDist = edgePlane:projectVec(vi.pos - edgePlanePos):norm()	-- how far from the edge is vi
 --DEBUG:print(edgeDist) --, math.abs(s - s0), math.abs(s - s1))
@@ -1130,7 +1140,7 @@ function Mesh:findEdges(getIndex)
 	if not getIndex then getIndex = function(a) return a end end
 	-- and just for kicks, track all edges
 	if not self.edgeIndexBuf then
-		self.edgeIndexBuf = vector('int32_t', 6 * #self.tris)
+		self.edgeIndexBuf = vector(int32_t, 6 * #self.tris)
 	end
 	self.edgeIndexBuf:resize(0)
 
@@ -2320,8 +2330,8 @@ end
 -- split all indexes so index<->vertex is 1:1
 function Mesh:breakAllVertexes()
 print('before breakAllVertexes, #vtxs '..self.vtxs.size..' #triindexes '..self.triIndexes.size)
-	local nvtxs = vector('MeshVertex_t', self.triIndexes.size)
-	local ntris = vector('uint32_t', self.triIndexes.size)
+	local nvtxs = vector(MeshVertex, self.triIndexes.size)
+	local ntris = vector(uint32_t, self.triIndexes.size)
 	for i=0,self.triIndexes.size-1 do
 		nvtxs.v[i] = self.vtxs.v[self.triIndexes.v[i]]
 		ntris.v[i] = i
@@ -2642,7 +2652,7 @@ function Mesh:generateVertexNormals()
 	if self.vtxBuf then
 		self.vtxBuf
 			:bind()
-			:updateData(0, ffi.sizeof'MeshVertex_t' * self.vtxs.size, self.vtxs.v)
+			:updateData(0, self.vtxs:getNumBytes(), self.vtxs.v)
 			:unbind()
 	end
 end
@@ -2966,7 +2976,7 @@ function Mesh:loadGL(shader)
 	if shader then
 		if not self.vtxBuf then
 			self.vtxBuf = GLArrayBuffer{
-				size = self.vtxs.size * ffi.sizeof'MeshVertex_t',
+				size = self.vtxs:getNumBytes(),
 				data = self.vtxs.v,
 				count = self.vtxs.size,
 				usage = gl.GL_STATIC_DRAW,
@@ -2983,8 +2993,8 @@ function Mesh:loadGL(shader)
 					buffer = self.vtxBuf,
 					dim = info.dim,
 					type = gl.GL_FLOAT,
-					stride = ffi.sizeof'MeshVertex_t',
-					offset = ffi.offsetof('MeshVertex_t', info.name),
+					stride = ffi.sizeof(MeshVertex),
+					offset = ffi.offsetof(MeshVertex, info.name),
 				}, info.name
 			end):setmetatable(nil)
 			shader:use()
@@ -2999,7 +3009,7 @@ function Mesh:loadGL(shader)
 			local GLElementArrayBuffer = require 'gl.elementarraybuffer'
 			self.indexBuf = GLElementArrayBuffer{
 				data = self.triIndexes.v,
-				size = #self.triIndexes * ffi.sizeof(self.triIndexes.type),
+				size = self.triIndexes:getNumBytes(),
 				usage = gl.GL_STATIC_DRAW,
 			}:unbind()
 		end
@@ -3044,7 +3054,7 @@ function Mesh:draw(args)
 				-- [[ gpu ptr
 				assert.index(self, 'indexBuf')
 				self.indexBuf:bind()
-				gl.glDrawRangeElements(gl.GL_TRIANGLES, 0, self.vtxs.size-1, g.triCount * 3, gl.GL_UNSIGNED_INT, ffi.cast('void*', ffi.sizeof(self.triIndexes.type) * g.triFirstIndex * 3))
+				gl.glDrawRangeElements(gl.GL_TRIANGLES, 0, self.vtxs.size-1, g.triCount * 3, gl.GL_UNSIGNED_INT, ffi.cast(void_p, ffi.sizeof(self.triIndexes.type) * g.triFirstIndex * 3))
 				self.indexBuf:unbind()
 				--]]
 			end
@@ -3055,9 +3065,9 @@ function Mesh:draw(args)
 	-- [[ vertex attrib pointers ... requires specifically-named attrs in the shader
 	elseif method == 'attribarray' then
 		assert.index(args, 'shader')
-		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
-		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
-		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
+		gl.glVertexAttribPointer(args.shader.attrs.pos.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof(MeshVertex), self.vtxs.v[0].pos.s)
+		gl.glVertexAttribPointer(args.shader.attrs.texcoord.loc, 3, gl.GL_FLOAT, gl.GL_FALSE, ffi.sizeof(MeshVertex), self.vtxs.v[0].texcoord.s)
+		gl.glVertexAttribPointer(args.shader.attrs.normal.loc, 3, gl.GL_FLOAT, gl.GL_TRUE, ffi.sizeof(MeshVertex), self.vtxs.v[0].normal.s)
 		gl.glEnableVertexAttribArray(args.shader.attrs.pos.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.texcoord.loc)
 		gl.glEnableVertexAttribArray(args.shader.attrs.normal.loc)
@@ -3106,9 +3116,9 @@ function Mesh:draw(args)
 
 			if g.triCount > 0 then
 				-- [[ vertex client arrays
-				gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
-				gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].texcoord.s)
-				gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].normal.s)
+				gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof(MeshVertex), self.vtxs.v[0].pos.s)
+				gl.glTexCoordPointer(3, gl.GL_FLOAT, ffi.sizeof(MeshVertex), self.vtxs.v[0].texcoord.s)
+				gl.glNormalPointer(gl.GL_FLOAT, ffi.sizeof(MeshVertex), self.vtxs.v[0].normal.s)
 				gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 				gl.glEnableClientState(gl.GL_TEXTURE_COORD_ARRAY)
 				gl.glEnableClientState(gl.GL_NORMAL_ARRAY)
@@ -3154,7 +3164,7 @@ function Mesh:drawEdges(triExplodeDist, groupExplodeDist)
 	gl.glColor3f(1,1,0)
 
 	-- TODO shader that does the explode stuff
-	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof(MeshVertex), self.vtxs.v[0].pos.s)
 	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 	gl.glDrawElements(gl.GL_LINES, self.edgeIndexBuf.size, gl.GL_UNSIGNED_INT, self.edgeIndexBuf.v)
 	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
@@ -3168,7 +3178,7 @@ function Mesh:drawVertexes(triExplodeDist, groupExplodeDist)
 	gl.glPointSize(3)
 
 	-- TODO shader that does the explode stuff
-	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof'MeshVertex_t', self.vtxs.v[0].pos.s)
+	gl.glVertexPointer(3, gl.GL_FLOAT, ffi.sizeof(MeshVertex), self.vtxs.v[0].pos.s)
 	gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
 	gl.glDrawArrays(gl.GL_POINTS, 0, self.vtxs.size)
 	gl.glDisableClientState(gl.GL_VERTEX_ARRAY)

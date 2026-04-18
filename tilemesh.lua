@@ -26,6 +26,10 @@ local OBJLoader = require 'mesh.objloader'
 local matrix3x3To4x4 = require 'mesh.common'.matrix3x3To4x4
 local translateMat4x4 = require 'mesh.common'.translateMat4x4
 
+
+local uint32_t = ffi.typeof'uint32_t'
+
+
 -- R is a table of column vec3f's, v is a vec3f
 local function rotateVec(R, v)
 	return R[1] * v.x + R[2] * v.y + R[3] * v.z
@@ -555,7 +559,7 @@ print('#tilePlaces total', #mesh.tilePlaces)
 
 	timer('merging placed meshes', function()
 		-- place instances
-		local nvtxs = vector'MeshVertex_t'
+		local nvtxs = vector(Mesh.MeshVertex)
 		local indexesPerGroup = {}
 		for _,place in ipairs(mesh.tilePlaces) do
 			local omesh = assert.index(omeshForFn, place.filename)
@@ -590,7 +594,7 @@ print('#tilePlaces total', #mesh.tilePlaces)
 			end
 		end
 
-		local ntris = vector'uint32_t'
+		local ntris = vector(uint32_t)
 		for fn, omesh in pairs(omeshForFn) do
 			if indexesPerGroup[fn] then
 				for _,g in ipairs(omesh.groups) do
