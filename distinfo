@@ -36,6 +36,7 @@ files = {
 }
 deps = {
 	"app3d",
+	"dkjson",
 	"ext",
 	"gl",
 	"image",
