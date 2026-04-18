@@ -130,7 +130,7 @@ print('self.sdlGyro', self.sdlGyro)
 	self.useCullFace = default(cmdline.cull, true)
 	self.useDepthTest = true
 	self.useBlend = true
-	self.useAlphaTest = true
+	self.useAlphaTest = not not op.safeindex(gl, 'glAlphaFunc')
 	self.groupExplodeDist = 0
 	self.triExplodeDist = 0
 	--self.bgcolor = vec4f(.2, .3, .5, 1)
