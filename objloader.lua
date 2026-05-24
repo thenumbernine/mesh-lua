@@ -67,7 +67,7 @@ function OBJLoader:load(filename)
 	assert(path(filename):exists(), "failed to find WavefrontObj file "..filename)
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
-		local lineType = words:remove(1):lower()
+		local lineType = (words:remove(1) or ''):lower()
 		if lineType == 'v' then
 			assert.ge(#words, 2)
 			vs:insert(wordsToVec3(words))
@@ -264,7 +264,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 	end
 	for line in io.lines(filename) do
 		local words = string.split(string.trim(line), '%s+')
-		local lineType = words:remove(1):lower()
+		local lineType = (words:remove(1) or ''):lower()
 		if lineType == 'newmtl' then
 			local mtlname = assert(words[1])
 			group = self:makeOrFindGroup(mtlname, mesh, true)
