@@ -308,7 +308,7 @@ print('edges total', totalEdges, 'border', #border)
 		print('bbox', m.bbox)
 		for side=0,2 do
 			for pm=0,1 do
-				local vs = range(0,#m.vtxs-1):filter(function(i)
+				local vs = range(0,#m.vtxs-1):filteri(function(i)
 					return m.vtxs.v[i].pos.s[side] == m.bbox.s[pm].s[side]
 				end)
 

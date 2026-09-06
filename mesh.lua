@@ -1939,7 +1939,7 @@ function Mesh:clipToClipGroup(g)
 	-- and those with line segments touchign the back fo the plane
 	-- a line segment can appear in both lists.
 	local function getEdgesInFront(edgeInfos, plane)
-		return edgeInfos:filter(function(info)
+		return edgeInfos:filteri(function(info)
 			local e = info.edge
 			local v1 = e.planePos + e.plane.n * e.interval[1]
 			local v2 = e.planePos + e.plane.n * e.interval[2]

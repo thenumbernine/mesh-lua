@@ -752,7 +752,7 @@ tsrc.v1*-------*
 		end
 	end
 
-	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filter(function(u) return u.floodFill end))
+	print('flood-fill-normals touched '..#mesh.unwrapUVEdges:filteri(function(u) return u.floodFill end))
 --]]
 end
 
