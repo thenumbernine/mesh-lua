@@ -386,7 +386,7 @@ function Mesh:combine(...)
 
 		local firstVtx = self.vtxs.size
 		self.vtxs:resize(self.vtxs.size + o.vtxs.size)
-		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, ffio.vtxs:getNumBytes())
+		ffi.copy(self.vtxs.v + firstVtx, o.vtxs.v, o.vtxs:getNumBytes())
 
 		local firstIndex = self.triIndexes.size
 		self.triIndexes:resize(self.triIndexes.size + o.triIndexes.size)
