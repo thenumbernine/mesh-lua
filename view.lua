@@ -158,7 +158,11 @@ print('self.sdlGyro', self.sdlGyro)
 
 print('#unique vertexes', #mesh.vtxs)
 print('#unique triangles', #mesh.triIndexes/3)
-
+--[[
+for i,t in ipairs(mesh.tris) do
+	print('tri', i, 'normal', t.normal, 'com', t.com, 'plane', require 'vec-ffi.plane3f'():fromDirPt(t.normal, t.com))
+end
+--]]
 	-- TODO make this an option with specified threshold.
 	-- calcBBox has to be done first
 	-- after doing this you have to call findEdges and calcCOMs
