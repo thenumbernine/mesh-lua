@@ -48,7 +48,7 @@ function OBJLoader:load(filename)
 	-- mesh groups / materials
 	local group
 
-	local relpath = path(filename):getdir()
+	local objDir = path(filename):getdir()
 	mesh.mtlFilenames = table()
 
 	local function ensureGroup()
@@ -121,7 +121,7 @@ function OBJLoader:load(filename)
 			group = self:makeOrFindGroup(mtlname, mesh)
 		elseif lineType == 'mtllib' then
 			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
-			self:loadMtl(words:concat' ', mesh, relpath)
+			self:loadMtl(words:concat' ', mesh, objDir)
 		end
 	end
 	if not foundVT then
@@ -250,19 +250,20 @@ end
 function OBJLoader:buildTris(vs, vts, vns)
 	-- TODO move the code here
 end
-function OBJLoader:loadMtl(filename, mesh, relpath)
---DEBUG:print('OBJLoader:loadMtl begin', filename)
+function OBJLoader:loadMtl(mtlPath, mesh, objDir)
+--DEBUG:print('OBJLoader:loadMtl begin', mtlPath)
 	-- TODO don't store mtlFilenames
-	mesh.mtlFilenames:insert(filename)
+	mesh.mtlFilenames:insert(mtlPath)
 
 	local group
-	filename = (relpath/filename).path
+	mtlPath = objDir/mtlPath
+	local mtlDir = mtlPath:getdir()
 	-- TODO don't assert, and just flag what material files loaded vs didn't?
-	if not path(filename):exists() then
-		io.stderr:write("failed to find WavefrontObj material file "..filename..'\n')
+	if not mtlPath:exists() then
+		io.stderr:write("failed to find WavefrontObj material file "..mtlPath..'\n')
 		return
 	end
-	for line in io.lines(filename) do
+	for line in mtlPath:lines() do
 		local words = string.split(string.trim(line), '%s+')
 		local lineType = (words:remove(1) or ''):lower()
 		if lineType == 'newmtl' then
@@ -349,20 +350,20 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 				until not found
 			end
 			local opts = getTexOpts(words)
-			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in filename ...
+			-- TODO this replaces %s+ with space ... so no tabs or double-spaces in mtlPath ...
 			local localpath = words:concat' '
 			localpath = localpath:gsub('\\\\', '/')	-- why do I see windows mtl files with \\ as separators instead of just \ (let alone /) ?  is \\ a thing for mtl windows?
 			localpath = localpath:gsub('\\', '/')
-			local pathobj = relpath/localpath
-			if not pathobj:exists() then
-				print("couldn't load map_Kd "..tostring(pathobj))
+			local texPath = mtlDir/localpath
+			if not texPath:exists() then
+				print("couldn't load map_Kd "..texPath)
 			else
-				group.map_Kd = pathobj.path
+				group.map_Kd = texPath.path
 				-- TODO
 				-- load textures?
 				-- what if the caller isn't using GL?
 				-- load images instead?
-				-- just store filename and let the caller deal with it?
+				-- just store mtlPath and let the caller deal with it?
 				group.image_Kd = Image(group.map_Kd):rgba()
 --DEBUG:print('loaded map_Kd '..group.map_Kd..' as '..group.image_Kd.width..' x '..group.image_Kd.height..' x '..group.image_Kd.channels..' ('..group.image_Kd.format..')')
 				-- TODO here ... maybe I want a console .obj editor that doesn't use GL
@@ -377,7 +378,7 @@ function OBJLoader:loadMtl(filename, mesh, relpath)
 		-- and don't forget textre map options
 		end
 	end
---DEBUG:print('OBJLoader:loadMtl end', filename)
+--DEBUG:print('OBJLoader:loadMtl end', mtlPath)
 end
 
 function OBJLoader:makeOrFindGroup(name, mesh, inUseMtl)
